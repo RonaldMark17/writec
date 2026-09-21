@@ -29,6 +29,7 @@ import {
   formatFileSize,
   getFileKind,
 } from "./dashboard/plagiarismScan";
+import HighlightedText from "./HighlightedText";
 
 const submissionModes = [
   {
@@ -1292,39 +1293,7 @@ export default function StudentDashboard({ profile }) {
                         </span>
                       </div>
 
-                      {/* Transcribed text */}
-                      {viewingSubmission.transcribedText && (
-                        <div className="mt-5">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-extrabold text-gray-800">Transcribed handwriting</p>
-                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">YOLO26x + TrOCR</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await navigator.clipboard.writeText(viewingSubmission.transcribedText);
-                                  setStudentCopySuccess(true);
-                                  setTimeout(() => setStudentCopySuccess(false), 2000);
-                                } catch {}
-                              }}
-                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
-                            >
-                              {studentCopySuccess ? (
-                                <><CheckIcon className="h-3.5 w-3.5 text-emerald-600" /><span>Copied!</span></>
-                              ) : (
-                                <><CopyIcon className="h-3.5 w-3.5" /><span>Copy</span></>
-                              )}
-                            </button>
-                          </div>
-                          <pre className="mt-3 max-h-[200px] overflow-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-gray-800">
-                            {viewingSubmission.transcribedText}
-                          </pre>
-                        </div>
-                      )}
-
-                      {/* Score ring + stats */}
+                      {/* Score ring + stats FIRST */}
                       <div className="mt-5 grid gap-4 sm:grid-cols-[140px_1fr]">
                         <div className={`grid aspect-square place-items-center rounded-lg bg-white text-center ring-8 ${ringClass}`}>
                           <div>
@@ -1351,6 +1320,36 @@ export default function StudentDashboard({ profile }) {
                           </div>
                         </div>
                       </div>
+
+                      {/* Transcribed text SECOND */}
+                      {viewingSubmission.transcribedText && (
+                        <div className="mt-5">
+                          <div className="flex items-center justify-between pb-3">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-black text-gray-900">Transcribed handwriting</p>
+                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">YOLO26x + TrOCR</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(viewingSubmission.transcribedText);
+                                  setStudentCopySuccess(true);
+                                  setTimeout(() => setStudentCopySuccess(false), 2000);
+                                } catch {}
+                              }}
+                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
+                            >
+                              {studentCopySuccess ? (
+                                <><CheckIcon className="h-3.5 w-3.5 text-emerald-600" /><span>Copied!</span></>
+                              ) : (
+                                <><CopyIcon className="h-3.5 w-3.5" /><span>Copy</span></>
+                              )}
+                            </button>
+                          </div>
+                          <HighlightedText text={viewingSubmission.transcribedText} scanResult={sr} />
+                        </div>
+                      )}
 
                       {/* Classroom Peer-to-Peer Similarity Section */}
                       {sr.peerSimilarity && (
@@ -1393,17 +1392,22 @@ export default function StudentDashboard({ profile }) {
                       )}
 
                       {/* Matched sources */}
-                      {sr.matchedSources && sr.matchedSources.length > 0 && (
+                      {sr.matchedSources && sr.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length > 0 && (
                         <div className="mt-5">
                           <div className="flex items-center justify-between">
-                            <p className="text-sm font-extrabold text-gray-800">Matching sources ({sr.matchedSources.length})</p>
-                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">Copyleaks API</span>
+                            <p className="text-sm font-extrabold text-gray-800">Matching sources ({sr.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length})</p>
+                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">Copyleaks Database</span>
                           </div>
                           <div className="mt-3 space-y-2">
-                            {sr.matchedSources.map((source, idx) => (
+                            {sr.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).map((source, idx) => (
                               <div key={source.id || idx} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm">
                                 <div className="min-w-0 flex-1">
-                                  <p className="font-extrabold text-gray-900 truncate">{source.title || "Matched source"}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-extrabold text-gray-900 truncate">{source.title || "Matched source"}</p>
+                                    <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                      {source.source_type || "Copyleaks Database"}
+                                    </span>
+                                  </div>
                                   {source.url && (
                                     <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-700 hover:underline truncate block mt-0.5">
                                       {source.url}

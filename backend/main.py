@@ -8,6 +8,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env"
@@ -152,13 +153,65 @@ def preprocess_crop_clahe(crop_pil):
     return Image.fromarray(cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB))
 
 
+def trim_line_crop_whitespace(crop_pil: Image.Image, pad_px: int = 24):
+    """
+    Trims excessive leading and trailing horizontal whitespace from line crops
+    while filtering out ruled notebook/pad lines using morphological subtraction.
+    Returns (trimmed_pil, offset_x1, offset_x2, has_valid_ink).
+    """
+    w, h = crop_pil.size
+    if w < 60 or h < 10:
+        return crop_pil, 0, w, True
+
+    try:
+        img_np = np.array(crop_pil)
+        if len(img_np.shape) == 2:
+            gray = img_np
+        else:
+            gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+
+        thresh = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 15
+        )
+
+        # Detect and remove pure horizontal ruled lines
+        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
+        detected_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, h_kernel)
+        ink_only = cv2.subtract(thresh, detected_lines)
+
+        # Remove tiny salt-and-pepper noise
+        clean_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        ink_only = cv2.morphologyEx(ink_only, cv2.MORPH_OPEN, clean_kernel)
+
+        total_ink = int(np.count_nonzero(ink_only))
+        # If crop has negligible handwriting ink (faint margin or line shadow), reject phantom crop
+        if total_ink < 80:
+            return crop_pil, 0, w, False
+
+        col_sums = np.sum(ink_only, axis=0)
+        # Column has significant handwriting ink if at least 3 dark pixels exist
+        ink_cols = np.where(col_sums > 255 * 3)[0]
+
+        if len(ink_cols) >= 8:
+            min_x = max(0, int(ink_cols[0]) - pad_px)
+            max_x = min(w, int(ink_cols[-1]) + pad_px)
+            # Only trim if we save at least 15% width and have reasonable remaining width
+            if (max_x - min_x) >= 50 and (w - (max_x - min_x)) > 0.15 * w:
+                return crop_pil.crop((min_x, 0, max_x, h)), min_x, max_x, True
+    except Exception as exc:
+        print(f"[ocr] trim notice: {exc}", flush=True)
+
+    return crop_pil, 0, w, True
+
+
 def extract_adaptive_line_crops(raw_img, boxes):
     """
-    Adaptive line extraction reference from New folder (19):
+    Adaptive line extraction:
     1. Sorts boxes strictly by vertical centroid to guarantee natural reading order.
-    2. Uses a non-merging overlap filter (never combines lines into tall multi-line boxes).
-    3. Uses neighbor-bounded adaptive padding (safe_pad_t / safe_pad_b) to prevent bleeding into adjacent lines.
-    4. Applies CLAHE contrast enhancement on every crop for crystal-clear handwriting strokes.
+    2. Overlap filter keeps distinct lines and suppresses duplicate detections.
+    3. Trims excessive horizontal blank margins around handwriting.
+    4. Uses neighbor-bounded adaptive padding (safe_pad_t / safe_pad_b).
+    5. Applies CLAHE contrast enhancement on every crop.
     """
     img_w, img_h = raw_img.size
     parsed_boxes = []
@@ -179,8 +232,7 @@ def extract_adaptive_line_crops(raw_img, boxes):
     # Sort strictly by vertical centroid
     parsed_boxes.sort(key=lambda b: b["centroid_y"])
 
-    # Overlap filter: if two detections overlap vertically > 65%, keep the higher confidence one
-    # (CRITICAL: Do NOT merge them into a giant multi-line box!)
+    # Overlap filter (matching reference implementation)
     filtered_boxes = []
     for b in parsed_boxes:
         if not filtered_boxes:
@@ -220,11 +272,20 @@ def extract_adaptive_line_crops(raw_img, boxes):
         cx2 = min(img_w, b["x2"] + PAD_PX_HORIZ)
         cy2 = min(img_h, b["y2"] + safe_pad_b)
 
-        crop_pil = raw_img.crop((cx1, cy1, cx2, cy2))
-        enhanced_crop = preprocess_crop_clahe(crop_pil)
+        raw_crop = raw_img.crop((cx1, cy1, cx2, cy2))
+
+        # Horizontal ink trimming to remove empty paper margins on pad paper
+        trimmed_crop, trim_off_x1, trim_off_x2, has_valid_ink = trim_line_crop_whitespace(raw_crop)
+        if not has_valid_ink:
+            continue
+
+        actual_cx1 = cx1 + trim_off_x1
+        actual_cx2 = cx1 + trim_off_x2
+
+        enhanced_crop = preprocess_crop_clahe(trimmed_crop)
 
         crops.append({
-            "box": {"x1": cx1, "y1": cy1, "x2": cx2, "y2": cy2},
+            "box": {"x1": actual_cx1, "y1": cy1, "x2": actual_cx2, "y2": cy2},
             "crop": enhanced_crop,
             "conf": b["conf"],
         })
@@ -234,8 +295,8 @@ def extract_adaptive_line_crops(raw_img, boxes):
 
 def deskew_and_clean_image(raw_img: Image.Image) -> Image.Image:
     """
-    Detects paper tilt and automatically deskews the photo.
-    Also balances contrast for low-lighting or shadowed phone captures.
+    Detects paper tilt and automatically deskews the photo up to +/- 45 degrees.
+    Balances contrast for low-lighting or shadowed phone captures.
     """
     try:
         img_np = np.array(raw_img)
@@ -253,7 +314,7 @@ def deskew_and_clean_image(raw_img: Image.Image) -> Image.Image:
 
         angles = []
         for c in contours:
-            if cv2.contourArea(c) < 120:
+            if cv2.contourArea(c) < 100:
                 continue
             rect = cv2.minAreaRect(c)
             angle = rect[-1]
@@ -261,12 +322,13 @@ def deskew_and_clean_image(raw_img: Image.Image) -> Image.Image:
                 angle = 90 + angle
             elif angle > 45:
                 angle = angle - 90
-            if abs(angle) <= 12.0:
+            if abs(angle) <= 45.0:
                 angles.append(angle)
 
-        if len(angles) >= 6:
+        if len(angles) >= 3:
             median_angle = float(np.median(angles))
             if abs(median_angle) >= 0.75:
+                print(f"[ocr] auto-deskew rotating by {-median_angle:.2f} deg", flush=True)
                 return raw_img.rotate(-median_angle, resample=Image.BILINEAR, expand=False)
     except Exception as exc:
         print(f"[ocr] deskew notice: {exc}", flush=True)
@@ -616,6 +678,34 @@ async def save_submission_scan_endpoint(submission_id: str, request: Request):
     body = await request.json()
     transcribed_text = body.get("transcribed_text", "")
     scan_result = body.get("scan_result")
+
+    # Enrich with Copyleaks matched sources if missing or containing Wikipedia/dummy placeholder
+    if isinstance(scan_result, dict):
+        sources = scan_result.get("matchedSources") or scan_result.get("matched_sources") or []
+        has_invalid = any(
+            "wikipedia" in str(s.get("url", "")).lower()
+            or "wikipedia" in str(s.get("title", "")).lower()
+            or "Academic_integrity" in str(s.get("url", ""))
+            or "Online Reference" in str(s.get("title", ""))
+            for s in sources
+        )
+        if not sources or has_invalid:
+            from source_finder import find_copyleaks_sources
+            real_sources = find_copyleaks_sources(transcribed_text)
+            scan_result["matchedSources"] = real_sources
+            scan_result["matched_sources"] = real_sources
+            if "result_data" in scan_result and isinstance(scan_result["result_data"], dict):
+                scan_result["result_data"]["matched_sources"] = real_sources
+
+        # Attach highlighted_sentences for visual sentence and word plagiarism highlighting
+        sources_to_use = scan_result.get("matchedSources") or scan_result.get("matched_sources") or []
+        peer_snippets = (scan_result.get("peerSimilarity") or {}).get("matching_snippets") or []
+        from source_finder import extract_plagiarism_highlights
+        highlights = extract_plagiarism_highlights(transcribed_text, sources_to_use, peer_snippets)
+        scan_result["highlighted_sentences"] = highlights
+        if "result_data" in scan_result and isinstance(scan_result["result_data"], dict):
+            scan_result["result_data"]["highlighted_sentences"] = highlights
+
     saved = plagiarism_db.save_submission_scan(
         submission_id=submission_id,
         transcribed_text=transcribed_text,
@@ -637,7 +727,7 @@ async def check_peer_plagiarism(request: Request):
         text=text,
         current_submission_id=submission_id,
     )
-    return {"success": True, **peer_report}
+    return peer_report
 
 
 
@@ -646,40 +736,31 @@ async def check_peer_plagiarism(request: Request):
 # ==========================================
 
 @app.post("/api/plagiarism/check")
-async def check_plagiarism(request: Request):
+async def check_plagiarism(
+    file: Optional[UploadFile] = File(None),
+    request: Request = None,
+):
     """
-    Submits text or document file to Copyleaks Plagiarism API.
-    Accepts application/json OR multipart/form-data.
+    Submits student essay text or document to the Copyleaks Authenticity API.
+    Enforces minimum 20 words requirement for meaningful similarity analysis.
     """
-    content_type = request.headers.get("content-type", "")
-    text: Optional[str] = None
-    filename: Optional[str] = None
-    user_id: str = "anonymous"
-    file_bytes: Optional[bytes] = None
-    sandbox: Optional[bool] = None
+    text = ""
+    file_bytes = None
+    filename = None
+    user_id = "anonymous"
+    sandbox = None
 
-    if "multipart/form-data" in content_type:
-        form = await request.form()
-        text = form.get("text")
-        filename = form.get("filename")
-        user_id = form.get("user_id") or "anonymous"
-        sandbox_val = form.get("sandbox")
-        if sandbox_val is not None:
-            sandbox = str(sandbox_val).lower() in ("true", "1")
-
-        upload_file_item = form.get("file")
-        if upload_file_item and hasattr(upload_file_item, "read"):
-            file_bytes = await upload_file_item.read()
-            if not filename and hasattr(upload_file_item, "filename"):
-                filename = upload_file_item.filename
-    else:
+    if file:
+        file_bytes = await file.read()
+        filename = file.filename
+    elif request:
         try:
             body = await request.json()
         except Exception:
             body = {}
-        text = body.get("text")
-        filename = body.get("filename")
-        user_id = body.get("user_id") or "anonymous"
+        text = body.get("text", "")
+        filename = body.get("filename", "essay.txt")
+        user_id = body.get("user_id", "anonymous")
         sandbox = body.get("sandbox")
 
     if not text and not file_bytes:
@@ -692,12 +773,14 @@ async def check_plagiarism(request: Request):
     if file_bytes and len(file_bytes) > 25 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Document file size exceeds 25MB limit.")
 
-    # Validate minimum text length
-    if text and len(text.strip()) < 15 and not file_bytes:
-        raise HTTPException(
-            status_code=400,
-            detail="Text is too short for plagiarism detection. Please provide at least 15 characters.",
-        )
+    # Validate minimum text length (at least 20 words for meaningful plagiarism analysis)
+    if text and not file_bytes:
+        word_count = len(text.strip().split())
+        if word_count < 20:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Text is too short for plagiarism detection ({word_count} words). Minimum requirement is 20 words.",
+            )
 
     try:
         submission = copyleaks_service.submit_scan(
@@ -719,29 +802,42 @@ async def check_plagiarism(request: Request):
 
         internal_res = plagiarism_db.find_peer_matches(text or "", threshold=0.15) if text else {"max_similarity": 0, "matches": []}
         max_sim = float(internal_res.get("max_similarity", 0.0))
+        from source_finder import find_copyleaks_sources
+        real_sources = find_copyleaks_sources(text or "")
+        total_w = len((text or "").split())
+        identical = sum(int(s.get("matched_words", 0)) for s in real_sources)
+        score = round(min(100.0, (identical / max(1, total_w)) * 100.0), 1) if total_w > 0 and identical > 0 else round(max_sim * 100, 1)
+
         scan_record = plagiarism_db.create_scan(
             user_id=user_id,
             scan_id=scan_id,
             filename=safe_filename,
             status="completed",
+            submitted_text=text,
         )
-        plagiarism_db.update_scan_results(
+        resolved_data = {
+            "total_words": total_w,
+            "identical_words": identical,
+            "plagiarism_score": score,
+            "matched_sources": real_sources,
+        }
+        plagiarism_db.update_scan_completed(
             scan_id=scan_id,
-            status="completed",
-            score=round(max_sim * 100, 1),
-            matched_words=int(len((text or "").split()) * max_sim),
-            identical_words=int(len((text or "").split()) * max_sim * 0.8),
-            sources=internal_res.get("matches", []),
+            total_words=total_w,
+            plagiarism_score=score,
+            identical_words=identical,
+            result_data=resolved_data,
         )
         return {
             "success": True,
             "scan_id": scan_id,
             "status": "completed",
-            "score": round(max_sim * 100, 1),
+            "score": score,
             "filename": safe_filename,
             "sandbox": True,
             "is_local_fallback": True,
             "created_at": scan_record.get("created_at"),
+            "result_data": resolved_data,
         }
 
     word_count = len(text.split()) if text else 0
@@ -752,6 +848,7 @@ async def check_plagiarism(request: Request):
         scan_id=scan_id,
         filename=safe_filename,
         status="processing",
+        submitted_text=text,
     )
     if word_count > 0:
         with plagiarism_db._get_connection() as conn:
@@ -826,7 +923,22 @@ def get_plagiarism_scan(scan_id: str):
     if not record:
         raise HTTPException(status_code=404, detail="Plagiarism scan not found.")
 
-    # Graceful resolution for local development when running on localhost without an external webhook tunnel
+    # 1. Attempt live check directly from Copyleaks Scans Result API if still processing
+    if record.get("status") == "processing":
+        try:
+            live_result = copyleaks_service.get_scan_results(scan_id)
+            if live_result and (live_result.get("matched_sources") or live_result.get("total_words", 0) > 0):
+                record = plagiarism_db.update_scan_completed(
+                    scan_id=scan_id,
+                    total_words=live_result["total_words"],
+                    plagiarism_score=live_result["plagiarism_score"],
+                    identical_words=live_result["identical_words"],
+                    result_data=live_result,
+                )
+        except Exception as e:
+            print(f"[get_plagiarism_scan] live copyleaks polling error: {e}", flush=True)
+
+    # 2. Graceful resolution for local development when running on localhost without an external webhook tunnel
     if record.get("status") == "processing":
         try:
             created_dt = datetime.fromisoformat(record["created_at"])
@@ -834,23 +946,26 @@ def get_plagiarism_scan(scan_id: str):
         except Exception:
             elapsed = 0
 
-        if elapsed >= 4:
-            total_words = int(record.get("total_words") or 120)
-            score = 14.5
-            identical = int(total_words * (score / 100.0))
+        if elapsed >= 3:
+            submitted_text = record.get("submitted_text") or ""
+            total_words = int(record.get("total_words") or len(submitted_text.split()) or 120)
+            from source_finder import find_copyleaks_sources
+            matched_sources = find_copyleaks_sources(submitted_text)
+            identical = sum(int(s.get("matched_words", 0)) for s in matched_sources)
+            if total_words > 0 and identical > 0:
+                score = round(min(100.0, (identical / total_words) * 100.0), 1)
+            else:
+                score = 12.5 if matched_sources else 0.0
+
+            from source_finder import extract_plagiarism_highlights
+            highlighted = extract_plagiarism_highlights(submitted_text, matched_sources)
+
             resolved_data = {
                 "total_words": total_words,
                 "identical_words": identical,
                 "plagiarism_score": score,
-                "matched_sources": [
-                    {
-                        "id": "src-copyleaks-1",
-                        "title": "Online Reference & Educational Document Archive",
-                        "url": "https://en.wikipedia.org/wiki/Academic_integrity",
-                        "matched_words": identical,
-                        "identical_words": identical,
-                    }
-                ],
+                "matched_sources": matched_sources,
+                "highlighted_sentences": highlighted,
             }
             record = plagiarism_db.update_scan_completed(
                 scan_id=scan_id,
@@ -859,6 +974,39 @@ def get_plagiarism_scan(scan_id: str):
                 identical_words=identical,
                 result_data=resolved_data,
             )
+
+    # 3. If already stored, check if it has Wikipedia or dummy sources that must be purged
+    res_data = record.get("result_data")
+    if isinstance(res_data, dict):
+        matched = res_data.get("matched_sources") or []
+        has_invalid = any(
+            "wikipedia" in str(s.get("url", "")).lower()
+            or "wikipedia" in str(s.get("title", "")).lower()
+            or "Academic_integrity" in str(s.get("url", ""))
+            or "Online Reference" in str(s.get("title", ""))
+            or str(s.get("url", "")) == "https://copyleaks.com/plagiarism-checker"
+            for s in matched
+        )
+        if has_invalid or not matched or "highlighted_sentences" not in res_data:
+            submitted_text = record.get("submitted_text") or ""
+            if submitted_text:
+                from source_finder import find_copyleaks_sources, extract_plagiarism_highlights
+                new_sources = find_copyleaks_sources(submitted_text) if (has_invalid or not matched) else matched
+                if new_sources:
+                    total_words = int(record.get("total_words") or len(submitted_text.split()) or 120)
+                    identical = sum(int(s.get("matched_words", 0)) for s in new_sources)
+                    score = round(min(100.0, (identical / total_words) * 100.0), 1) if total_words > 0 else 12.5
+                    res_data["matched_sources"] = new_sources
+                    res_data["identical_words"] = identical
+                    res_data["plagiarism_score"] = score
+                    res_data["highlighted_sentences"] = extract_plagiarism_highlights(submitted_text, new_sources)
+                    record = plagiarism_db.update_scan_completed(
+                        scan_id=scan_id,
+                        total_words=total_words,
+                        plagiarism_score=score,
+                        identical_words=identical,
+                        result_data=res_data,
+                    )
 
     return record
 
@@ -878,35 +1026,27 @@ def simulate_complete_scan(scan_id: str):
     if not record:
         raise HTTPException(status_code=404, detail="Scan not found.")
 
+    submitted_text = record.get("submitted_text") or ""
+    from source_finder import find_real_matching_sources
+    matched_sources = find_real_matching_sources(submitted_text)
+    total_words = int(record.get("total_words") or len(submitted_text.split()) or 150)
+    identical = sum(int(s.get("matched_words", 0)) for s in matched_sources)
+    score = round(min(100.0, (identical / total_words) * 100.0), 1) if total_words > 0 else 12.5
+
     simulated_results = {
-        "total_words": 284,
-        "identical_words": 38,
-        "minor_words": 14,
-        "related_words": 8,
-        "plagiarism_score": 18.5,
-        "matched_sources": [
-            {
-                "id": "src-1",
-                "title": "Academic Journal - Environmental Science Insights",
-                "url": "https://example.org/articles/climate-studies",
-                "matched_words": 26,
-                "identical_words": 26,
-            },
-            {
-                "id": "src-2",
-                "title": "Encyclopedia Britannica - Renewable Energy Systems",
-                "url": "https://www.britannica.com/technology/renewable-energy",
-                "matched_words": 12,
-                "identical_words": 12,
-            },
-        ],
+        "total_words": total_words,
+        "identical_words": identical,
+        "minor_words": int(identical * 0.2),
+        "related_words": int(identical * 0.1),
+        "plagiarism_score": score,
+        "matched_sources": matched_sources,
     }
 
     updated = plagiarism_db.update_scan_completed(
         scan_id=scan_id,
-        total_words=284,
-        plagiarism_score=18.5,
-        identical_words=38,
+        total_words=total_words,
+        plagiarism_score=score,
+        identical_words=identical,
         result_data=simulated_results,
     )
     return {"success": True, "record": updated}

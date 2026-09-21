@@ -55,6 +55,12 @@ def init_db() -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_user_id ON plagiarism_scans(user_id);
         """)
+        # Auto-migrate plagiarism_scans if missing submitted_text
+        scan_cursor = conn.execute("PRAGMA table_info(plagiarism_scans)")
+        scan_cols = [row[1] for row in scan_cursor.fetchall()]
+        if "submitted_text" not in scan_cols:
+            conn.execute("ALTER TABLE plagiarism_scans ADD COLUMN submitted_text TEXT")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS submission_grades (
                 submission_id TEXT PRIMARY KEY,
@@ -166,6 +172,49 @@ def get_submission_grades() -> Dict[str, Dict[str, Any]]:
                     d["scan_result"] = json.loads(d["scan_result"])
                 except Exception:
                     pass
+
+                scan_res = d.get("scan_result")
+                if isinstance(scan_res, dict):
+                    matched = scan_res.get("matchedSources") or scan_res.get("matched_sources") or []
+                    if "result_data" in scan_res and isinstance(scan_res["result_data"], dict):
+                        sub_matched = scan_res["result_data"].get("matched_sources") or []
+                        if sub_matched:
+                            matched = sub_matched
+
+                    has_dummy = any(
+                        "wikipedia" in str(s.get("url", "")).lower()
+                        or "wikipedia" in str(s.get("title", "")).lower()
+                        or "Academic_integrity" in str(s.get("url", ""))
+                        or "Online Reference" in str(s.get("title", ""))
+                        or str(s.get("url", "")) == "https://copyleaks.com/plagiarism-checker"
+                        for s in matched
+                    )
+                    needs_enrichment = not matched or has_dummy or "highlighted_sentences" not in scan_res
+                    if needs_enrichment:
+                        text = d.get("transcribed_text") or ""
+                        if text:
+                            try:
+                                from source_finder import find_copyleaks_sources, extract_plagiarism_highlights
+                                real_sources = find_copyleaks_sources(text) if (not matched or has_dummy) else matched
+                                if real_sources:
+                                    scan_res["matchedSources"] = real_sources
+                                    scan_res["matched_sources"] = real_sources
+                                    if "result_data" in scan_res and isinstance(scan_res["result_data"], dict):
+                                        scan_res["result_data"]["matched_sources"] = real_sources
+                                    peer_snips = (scan_res.get("peerSimilarity") or {}).get("matching_snippets") or []
+                                    highlights = extract_plagiarism_highlights(text, real_sources, peer_snips)
+                                    scan_res["highlighted_sentences"] = highlights
+                                    if "result_data" in scan_res and isinstance(scan_res["result_data"], dict):
+                                        scan_res["result_data"]["highlighted_sentences"] = highlights
+                                    d["scan_result"] = scan_res
+                                    conn.execute(
+                                        "UPDATE submission_grades SET scan_result = ? WHERE submission_id = ?",
+                                        (json.dumps(scan_res, ensure_ascii=False), d["submission_id"]),
+                                    )
+                                    conn.commit()
+                            except Exception as e:
+                                print(f"[get_submission_grades] error enriching sources: {e}", flush=True)
+
             result[d["submission_id"]] = d
         return result
 
@@ -176,6 +225,7 @@ def create_scan(
     scan_id: str,
     filename: Optional[str] = None,
     status: str = "processing",
+    submitted_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     init_db()
     record_id = str(uuid.uuid4())
@@ -184,10 +234,10 @@ def create_scan(
         conn.execute(
             """
             INSERT INTO plagiarism_scans (
-                id, user_id, scan_id, filename, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                id, user_id, scan_id, filename, status, submitted_text, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (record_id, user_id, scan_id, filename, status, now_iso),
+            (record_id, user_id, scan_id, filename, status, submitted_text, now_iso),
         )
         conn.commit()
     return get_scan(scan_id) or {}

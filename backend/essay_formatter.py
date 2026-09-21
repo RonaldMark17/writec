@@ -175,11 +175,18 @@ def correct_domain_terms(text):
     result = re.sub(r'\bi\s*,?\s*were\b', 'I, were', result, flags=re.IGNORECASE)
     result = re.sub(r'\bi\s+ran\b', 'I ran', result)
     result = re.sub(r'\bi\s+love\b', 'I love', result)
+
+    # General handwriting OCR slip corrections for openers / greetings
+    result = re.sub(r'\b(?:Hablo|Hollo|HelID|Helld|Lollo)\b', 'Hello', result)
+    result = re.sub(r'\bOrtam\b', 'Optum', result)
+
     return result
 
 
 def clean_punctuation_and_casing(text):
-    """Standardizes punctuation spaces, quotes, and casing."""
+    """Standardizes punctuation spaces, quotes, and casing, and strips stray vertical margin bars."""
+    # Remove stray vertical bars / pipes (frequently produced by notebook margin lines)
+    text = re.sub(r'\s*\|\s*', ' ', text)
     # Ensure space after commas, colons, semicolons, and periods (unless numbers like 6:00 or 1.jpg)
     text = re.sub(r',([^\s\d])', r', \1', text)
     text = re.sub(r';([^\s])', r'; \1', text)

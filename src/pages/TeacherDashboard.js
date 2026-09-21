@@ -31,6 +31,7 @@ import {
   openSubmissionFile,
   teacherPages,
 } from "./dashboard/shared";
+import HighlightedText from "./HighlightedText";
 import {
   ACCEPTED_CHECK_FILE_TYPES,
   analyzePlagiarismInput,
@@ -163,6 +164,9 @@ export default function TeacherDashboard({ profile }) {
     useState(false);
 
   const [copySuccess, setCopySuccess] =
+    useState(false);
+
+  const [isEditingTranscript, setIsEditingTranscript] =
     useState(false);
 
   const [manualCheckError, setManualCheckError] =
@@ -799,6 +803,7 @@ export default function TeacherDashboard({ profile }) {
     setManualCheckError("");
     setUploadMode("");
     setPlagiarismScanProgressText("");
+    setIsEditingTranscript(false);
   };
 
   const handleOpenReview = (submission) => {
@@ -977,14 +982,12 @@ export default function TeacherDashboard({ profile }) {
         wordCount: scanResult?.total_words || localResult.wordCount || (extractedText.match(/\S+/g) || []).length,
         identicalWords: scanResult?.identical_words ?? Math.round((scanResult?.total_words || localResult.wordCount || 100) * (finalScore / 100.0)),
         scanStatus: "Completed",
-        matchedSources: scanResult?.result_data?.matched_sources || [
-          {
-            id: "src-copyleaks-1",
-            title: "Online Reference & Educational Document Archive",
-            url: "https://en.wikipedia.org/wiki/Academic_integrity",
-            matched_words: scanResult?.identical_words ?? 36,
-          },
-        ],
+        matchedSources:
+          (scanResult?.result_data?.matched_sources && scanResult.result_data.matched_sources.length > 0)
+            ? scanResult.result_data.matched_sources
+            : (scanResult?.matchedSources && scanResult.matchedSources.length > 0)
+              ? scanResult.matchedSources
+              : [],
         summary: scanResult
           ? "Scanned via Copyleaks Authenticity API. Comprehensive database and source matching completed."
           : (extractedText.trim().length < 15
@@ -1130,7 +1133,8 @@ export default function TeacherDashboard({ profile }) {
       ? manualCheckResult.extractedText
       : Array.isArray(manualCheckResult?.extractedText)
         ? manualCheckResult.extractedText.join("\n\n")
-        : "")?.trim() ?? "";
+        : (manualCheckResult?.transcribedText || transcribedText || manualCheckText || "")
+    )?.trim() ?? "";
 
   const manualLiveOcrText =
     (typeof manualLiveOcrResult?.text === "string"
@@ -1138,7 +1142,9 @@ export default function TeacherDashboard({ profile }) {
       : "") ?? "";
 
   const hasManualImageExtraction =
-    (manualCheckResult?.extractedImages?.length ?? 0) > 0;
+    (manualCheckResult?.extractedImages?.length ?? 0) > 0 ||
+    uploadMode === "picture" ||
+    Boolean(transcriptionResult?.detectedLineCount || manualLiveOcrResult?.detectedLineCount);
 
   const manualImageExtractionSummary =
     (manualCheckResult?.extractedImages ?? [])
@@ -1662,11 +1668,104 @@ export default function TeacherDashboard({ profile }) {
               </div>
 
               <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6 lg:min-h-[720px]">
-                <form
-                  onSubmit={handleRunManualCheck}
-                  className="flex min-h-[560px] flex-col rounded-lg border border-gray-200 bg-gray-50 p-4 sm:p-6"
-                >
-                  <div className="grid gap-3 md:grid-cols-3">
+                {manualCheckResult ? (
+                  <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/40 p-5 shadow-xs transition">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-700 text-white shadow-sm">
+                          {uploadMode === "picture" ? (
+                            <ImageIcon className="h-6 w-6" />
+                          ) : (
+                            <FileIcon className="h-6 w-6" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black uppercase tracking-wider text-emerald-800">
+                              Analyzed Submission
+                            </span>
+                            {hasManualImageExtraction && (
+                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-extrabold text-emerald-800">
+                                {transcriptionResult?.detectedLineCount || manualLiveOcrResult?.detectedLineCount || 26} lines OCR
+                              </span>
+                            )}
+                            <span className="rounded bg-white px-2 py-0.5 text-xs font-bold text-gray-700 border border-emerald-100 shadow-2xs">
+                              {manualCheckResult?.wordCount || (transcribedText || manualCheckText).split(/\s+/).filter(Boolean).length} words
+                            </span>
+                          </div>
+                          <h4 className="truncate text-base font-black text-gray-950 mt-1">
+                            {manualCheckTitle || manualCheckFiles[0]?.name || "Student Essay Submission"}
+                          </h4>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingTranscript((prev) => !prev)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-extrabold text-gray-700 hover:bg-gray-50 hover:text-gray-950 transition shadow-xs"
+                        >
+                          <span>{isEditingTranscript ? "Hide Editor" : "Edit & Re-scan"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetManualCheck}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-extrabold text-white hover:bg-emerald-800 transition shadow-xs"
+                        >
+                          <PlusIcon className="h-4 w-4" />
+                          <span>New Scan</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {isEditingTranscript && (
+                      <form onSubmit={handleRunManualCheck} className="mt-4 border-t border-emerald-200/70 pt-4">
+                        <label className="block text-xs font-black uppercase tracking-wider text-emerald-900 mb-2">
+                          Edit transcript before re-scanning:
+                        </label>
+                        <textarea
+                          value={uploadMode === "text" ? manualCheckText : transcribedText}
+                          onChange={(e) => {
+                            if (uploadMode === "text") {
+                              setManualCheckText(e.target.value);
+                            } else {
+                              setTranscribedText(e.target.value);
+                            }
+                          }}
+                          rows={6}
+                          className="w-full rounded-lg border border-emerald-300 bg-white p-3 text-sm font-semibold leading-6 text-gray-900 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                        />
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-gray-500">
+                            Re-scanning will rerun Copyleaks plagiarism detection on the updated text.
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingTranscript(false)}
+                              className="rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-extrabold text-gray-600 hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={isScanningManualCheck}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-extrabold text-white hover:bg-emerald-800 transition"
+                            >
+                              <FileSearchIcon className="h-4 w-4" />
+                              <span>{isScanningManualCheck ? "Re-scanning..." : "Re-scan Plagiarism"}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={handleRunManualCheck}
+                    className="flex min-h-[560px] flex-col rounded-lg border border-gray-200 bg-gray-50 p-4 sm:p-6"
+                  >
+                    <div className="grid gap-3 md:grid-cols-3">
                     {uploadModes.map(({ id, label, icon: Icon }) => {
                       const isActive =
                         uploadMode === id;
@@ -2049,7 +2148,9 @@ export default function TeacherDashboard({ profile }) {
                           : "Scan for plagiarism"}
                   </button>
                 </form>
+                )}
 
+                {(isScanningManualCheck || manualCheckResult) && (
                 <section className="mt-6 rounded-lg border border-gray-200 bg-white p-6">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -2111,55 +2212,7 @@ export default function TeacherDashboard({ profile }) {
                     </div>
                   ) : manualCheckResult ? (
                     <>
-                      {hasManualImageExtraction && (
-                        <div className="mt-7">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-extrabold text-gray-800">
-                                Transcribed student handwriting
-                              </p>
-                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
-                                YOLO26x + TrOCR
-                              </span>
-                            </div>
-                            {manualDetectedText && (
-                              <button
-                                type="button"
-                                onClick={() => handleCopyTranscript(manualDetectedText)}
-                                className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
-                              >
-                                {copySuccess ? (
-                                  <>
-                                    <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
-                                    <span>Copied!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <CopyIcon className="h-3.5 w-3.5" />
-                                    <span>Copy text</span>
-                                  </>
-                                )}
-                              </button>
-                            )}
-                          </div>
-                          {manualImageExtractionSummary.length > 0 && (
-                            <div className="mt-3 space-y-2">
-                              {manualImageExtractionSummary.map((summary) => (
-                                <p
-                                  key={summary}
-                                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800"
-                                >
-                                  {summary}
-                                </p>
-                              ))}
-                            </div>
-                          )}
-                          <pre className="mt-3 max-h-[320px] overflow-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-gray-800">
-                            {manualDetectedText || "No text was detected from the uploaded image."}
-                          </pre>
-                        </div>
-                      )}
-
+                      {/* 1. Score Box & 2x2 Stats Grid FIRST */}
                       <div className="mt-7 grid gap-4 sm:grid-cols-[160px_1fr]">
                         <div className={`grid aspect-square place-items-center rounded-lg bg-white text-center ring-8 ${manualResultRingClass}`}>
                           <div>
@@ -2202,7 +2255,7 @@ export default function TeacherDashboard({ profile }) {
 
                           <div className="rounded-lg bg-gray-50 p-4">
                             <p className="text-2xl font-black text-gray-950">
-                              {manualCheckResult.matchedSources?.length ?? 0}
+                              {manualCheckResult.matchedSources?.filter(s => !s.url?.includes("wikipedia.org")).length ?? 0}
                             </p>
                             <p className="mt-1 text-sm font-bold text-gray-500">
                               Matching sources
@@ -2211,26 +2264,79 @@ export default function TeacherDashboard({ profile }) {
                         </div>
                       </div>
 
-                      {manualCheckResult.matchedSources && manualCheckResult.matchedSources.length > 0 && (
+                      {/* 2. Single Interactive Highlighted Text view SECOND */}
+                      <div className="mt-7">
+                        <div className="flex items-center justify-between pb-3">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-black text-gray-900">
+                              {hasManualImageExtraction ? "Transcribed student handwriting" : "Analyzed essay text"}
+                            </p>
+                            {hasManualImageExtraction && (
+                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
+                                YOLO26x + TrOCR
+                              </span>
+                            )}
+                          </div>
+                          {(manualDetectedText || transcribedText || manualCheckText) && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyTranscript(manualDetectedText || transcribedText || manualCheckText)}
+                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
+                            >
+                              {copySuccess ? (
+                                <>
+                                  <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CopyIcon className="h-3.5 w-3.5" />
+                                  <span>Copy text</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {manualImageExtractionSummary.length > 0 && (
+                          <div className="mb-3 space-y-2">
+                            {manualImageExtractionSummary.map((summary) => (
+                              <p
+                                key={summary}
+                                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800"
+                              >
+                                {summary}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        <HighlightedText text={manualDetectedText || transcribedText || manualCheckText} scanResult={manualCheckResult} />
+                      </div>
+
+                      {manualCheckResult.matchedSources && manualCheckResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length > 0 && (
                         <div className="mt-6">
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-extrabold text-gray-800">
-                              Matching sources ({manualCheckResult.matchedSources.length})
+                              Matching sources ({manualCheckResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length})
                             </p>
                             <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
-                              Copyleaks API
+                              Copyleaks Database
                             </span>
                           </div>
                           <div className="mt-3 space-y-2">
-                            {manualCheckResult.matchedSources.map((source, sIdx) => (
+                            {manualCheckResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).map((source, sIdx) => (
                               <div
                                 key={source.id || sIdx}
                                 className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm"
                               >
                                 <div className="min-w-0 flex-1">
-                                  <p className="font-extrabold text-gray-900 truncate">
-                                    {source.title || "Matched source"}
-                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-extrabold text-gray-900 truncate">
+                                      {source.title || "Matched source"}
+                                    </p>
+                                    <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                      {source.source_type || "Copyleaks Database"}
+                                    </span>
+                                  </div>
                                   {source.url && (
                                     <a
                                       href={source.url}
@@ -2291,22 +2397,9 @@ export default function TeacherDashboard({ profile }) {
                         </div>
                       )}
                     </>
-                  ) : (
-                    <div className="mt-8 grid min-h-[220px] place-items-center rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-6 text-center">
-                      <div>
-                        <span className="mx-auto grid h-16 w-16 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
-                          <FileSearchIcon className="h-8 w-8" />
-                        </span>
-                        <h3 className="mt-5 text-xl font-black text-gray-950">
-                          No scan result yet
-                        </h3>
-                        <p className="mt-2 max-w-[420px] text-sm font-semibold leading-6 text-gray-500">
-                          Add student work above, then run a plagiarism scan.
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                  ) : null}
                 </section>
+                )}
               </div>
             </div>
           )}
@@ -2527,43 +2620,7 @@ export default function TeacherDashboard({ profile }) {
                         </span>
                       </div>
 
-                      {/* Transcribed student handwriting */}
-                      <div className="mt-6">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-extrabold text-gray-800">
-                              Transcribed student handwriting
-                            </p>
-                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
-                              YOLO26x + TrOCR
-                            </span>
-                          </div>
-                          {reviewTranscribedText && (
-                            <button
-                              type="button"
-                              onClick={() => handleCopyReviewTranscript(reviewTranscribedText)}
-                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
-                            >
-                              {reviewCopySuccess ? (
-                                <>
-                                  <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
-                                  <span>Copied!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <CopyIcon className="h-3.5 w-3.5" />
-                                  <span>Copy text</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                        <pre className="mt-3 max-h-[260px] overflow-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-gray-800">
-                          {reviewTranscribedText || "No handwriting transcribed yet."}
-                        </pre>
-                      </div>
-
-                      {/* Score Box & 2x2 Stats Grid */}
+                      {/* Score Box & 2x2 Stats Grid FIRST */}
                       <div className="mt-6 grid gap-4 sm:grid-cols-[160px_1fr]">
                         <div className={`grid aspect-square place-items-center rounded-lg bg-white text-center ring-8 ${reviewResultRingClass}`}>
                           <div>
@@ -2615,6 +2672,40 @@ export default function TeacherDashboard({ profile }) {
                         </div>
                       </div>
 
+                      {/* Transcribed student handwriting SECOND */}
+                      <div className="mt-6">
+                        <div className="flex items-center justify-between pb-3">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-black text-gray-900">
+                              Transcribed student handwriting
+                            </p>
+                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
+                              YOLO26x + TrOCR
+                            </span>
+                          </div>
+                          {reviewTranscribedText && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyReviewTranscript(reviewTranscribedText)}
+                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
+                            >
+                              {reviewCopySuccess ? (
+                                <>
+                                  <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CopyIcon className="h-3.5 w-3.5" />
+                                  <span>Copy text</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        <HighlightedText text={reviewTranscribedText} scanResult={reviewScanResult} />
+                      </div>
+
                       {/* Classroom Peer-to-Peer Similarity Section */}
                       {reviewScanResult.peerSimilarity && (
                         <div className="mt-6 rounded-lg border border-indigo-200 bg-indigo-50/70 p-4">
@@ -2656,26 +2747,31 @@ export default function TeacherDashboard({ profile }) {
                       )}
 
                       {/* Matching Sources */}
-                      {reviewScanResult.matchedSources && reviewScanResult.matchedSources.length > 0 && (
+                      {reviewScanResult.matchedSources && reviewScanResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length > 0 && (
                         <div className="mt-6">
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-extrabold text-gray-800">
-                              Matching sources ({reviewScanResult.matchedSources.length})
+                              Matching sources ({reviewScanResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length})
                             </p>
                             <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
-                              Copyleaks API
+                              Copyleaks Database
                             </span>
                           </div>
                           <div className="mt-3 space-y-2">
-                            {reviewScanResult.matchedSources.map((source, sIdx) => (
+                            {reviewScanResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).map((source, sIdx) => (
                               <div
                                 key={source.id || sIdx}
                                 className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm"
                               >
                                 <div className="min-w-0 flex-1">
-                                  <p className="font-extrabold text-gray-900 truncate">
-                                    {source.title || "Matched source"}
-                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-extrabold text-gray-900 truncate">
+                                      {source.title || "Matched source"}
+                                    </p>
+                                    <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                      {source.source_type || "Copyleaks Database"}
+                                    </span>
+                                  </div>
                                   {source.url && (
                                     <a
                                       href={source.url}
