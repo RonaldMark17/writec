@@ -194,16 +194,21 @@ def find_copyleaks_sources(text: str, max_sources: int = 5) -> List[Dict[str, An
                         if doi_url in seen_urls:
                             continue
 
+                        title_tokens = set(re.findall(r"[a-zA-Z]{3,}", f"{paper_title} {container}".lower())) - STOPWORDS
+                        actual_overlap = len(essay_words.intersection(title_tokens))
+                        if actual_overlap < 2 and len(essay_words) >= 10:
+                            continue
+
                         seen_urls.add(doi_url)
                         matched_sources.append({
                             "id": f"source-academic-{len(matched_sources) + 1}",
                             "title": f"{paper_title} ({container})" if container else paper_title,
                             "url": doi_url,
                             "snippet": f"Peer-reviewed research paper published in {container or 'Academic Publisher'}.",
-                            "matched_words": 20,
-                            "identical_words": 15,
+                            "matched_words": max(6, actual_overlap * 3),
+                            "identical_words": max(4, int(actual_overlap * 2)),
                             "source_type": container or "Academic Journal Index",
-                            "relevance": 15,
+                            "relevance": actual_overlap * 10 + 5,
                         })
 
                         if len(matched_sources) >= max_sources:
@@ -224,6 +229,7 @@ def extract_plagiarism_highlights(
     """
     Analyzes student essay sentences and words to pinpoint matches against
     the real verified source publications and classroom peer submissions.
+    Requires at least 2 distinct non-stopword tokens to flag an external match.
     """
     if not text:
         return []
@@ -267,9 +273,9 @@ def extract_plagiarism_highlights(
         if is_peer:
             continue
 
-        # 2. Check external real sources
+        # 2. Check external real sources (requires at least 2 distinct overlapping keywords)
         s_words = set(re.findall(r"[a-zA-Z]{3,}", sentence.lower())) - common_words
-        if not s_words:
+        if len(s_words) < 2:
             continue
 
         best_source = None
@@ -280,12 +286,12 @@ def extract_plagiarism_highlights(
             src_text = f"{src.get('title', '')} {src.get('snippet', '')}".lower()
             src_tokens = set(re.findall(r"[a-zA-Z]{3,}", src_text)) - common_words
             overlap = s_words.intersection(src_tokens)
-            if len(overlap) > max_overlap and len(overlap) >= 1:
+            if len(overlap) > max_overlap and len(overlap) >= 2:
                 max_overlap = len(overlap)
                 best_source = src
                 matched_tokens = list(overlap)
 
-        if best_source and max_overlap >= 1:
+        if best_source and max_overlap >= 2:
             highlights.append({
                 "index": s_idx,
                 "sentence": sentence,

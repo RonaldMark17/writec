@@ -187,6 +187,13 @@ def clean_punctuation_and_casing(text):
     """Standardizes punctuation spaces, quotes, and casing, and strips stray vertical margin bars."""
     # Remove stray vertical bars / pipes (frequently produced by notebook margin lines)
     text = re.sub(r'\s*\|\s*', ' ', text)
+    # Fix cursive pronoun slips where handwritten 'I' was recognized as '3' or '1' before verbs
+    text = re.sub(r'\b[31]\s+(still|like|am|was|think|thought|want|wanted|have|had|will|would|can|could|felt|know|said|saw)\b', r'I \1', text)
+    # Fix time colon spacing like 12: 00 pm -> 12:00 pm
+    text = re.sub(r'(\d{1,2}):\s*(\d{2})', r'\1:\2', text)
+    # Fix slash spacing between words: "home/ why" -> "home / why"
+    text = re.sub(r'([a-zA-Z0-9]),?\/([a-zA-Z0-9])', r'\1 / \2', text)
+    text = re.sub(r'([a-zA-Z0-9])\/([a-zA-Z0-9])', r'\1 / \2', text)
     # Ensure space after commas, colons, semicolons, and periods (unless numbers like 6:00 or 1.jpg)
     text = re.sub(r',([^\s\d])', r', \1', text)
     text = re.sub(r';([^\s])', r'; \1', text)
@@ -209,8 +216,11 @@ def format_essay_document(lines_with_meta):
     if not lines_with_meta:
         return ""
 
-    # Normal line gap on notebook/pad paper is <= 10px. True paragraph breaks are >= 15px.
-    paragraph_gap_threshold = 15
+    # Calculate average line height to dynamically scale paragraph gap threshold for high-res mobile photos
+    line_heights = [item["bbox"][3] - item["bbox"][1] for item in lines_with_meta if item.get("bbox")]
+    avg_line_height = sum(line_heights) / max(1, len(line_heights)) if line_heights else 30
+    # True paragraph breaks on notebook/pad paper are significantly taller than normal line-to-line leading
+    paragraph_gap_threshold = max(24, avg_line_height * 0.85)
 
     formatted_paragraphs = []
     current_para_lines = []

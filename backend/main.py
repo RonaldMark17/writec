@@ -959,10 +959,16 @@ async def check_plagiarism(
 
         internal_res = plagiarism_db.find_peer_matches(text or "", threshold=0.15) if text else {"max_similarity": 0, "matches": []}
         max_sim = float(internal_res.get("max_similarity", 0.0))
-        from source_finder import find_copyleaks_sources
+        from source_finder import find_copyleaks_sources, extract_plagiarism_highlights
         real_sources = find_copyleaks_sources(text or "")
+        highlighted = extract_plagiarism_highlights(text or "", real_sources)
         total_w = len((text or "").split())
-        identical = sum(int(s.get("matched_words", 0)) for s in real_sources)
+        unique_matched = set()
+        for h in highlighted:
+            for w in h.get("matched_words", []):
+                if len(w) >= 3:
+                    unique_matched.add(w.lower())
+        identical = len(unique_matched)
         score = round(min(100.0, (identical / max(1, total_w)) * 100.0), 1) if total_w > 0 and identical > 0 else round(max_sim * 100, 1)
 
         scan_record = plagiarism_db.create_scan(
@@ -977,6 +983,7 @@ async def check_plagiarism(
             "identical_words": identical,
             "plagiarism_score": score,
             "matched_sources": real_sources,
+            "highlighted_sentences": highlighted,
         }
         plagiarism_db.update_scan_completed(
             scan_id=scan_id,
@@ -1106,16 +1113,22 @@ def get_plagiarism_scan(scan_id: str):
         if elapsed >= 3:
             submitted_text = record.get("submitted_text") or ""
             total_words = int(record.get("total_words") or len(submitted_text.split()) or 120)
-            from source_finder import find_copyleaks_sources
+            from source_finder import find_copyleaks_sources, extract_plagiarism_highlights
             matched_sources = find_copyleaks_sources(submitted_text)
-            identical = sum(int(s.get("matched_words", 0)) for s in matched_sources)
+            highlighted = extract_plagiarism_highlights(submitted_text, matched_sources)
+
+            # Calculate actual count of unique matched words in highlighted passages
+            unique_matched = set()
+            for h in highlighted:
+                for w in h.get("matched_words", []):
+                    if len(w) >= 3:
+                        unique_matched.add(w.lower())
+
+            identical = len(unique_matched)
             if total_words > 0 and identical > 0:
                 score = round(min(100.0, (identical / total_words) * 100.0), 1)
             else:
-                score = 12.5 if matched_sources else 0.0
-
-            from source_finder import extract_plagiarism_highlights
-            highlighted = extract_plagiarism_highlights(submitted_text, matched_sources)
+                score = 0.0
 
             resolved_data = {
                 "total_words": total_words,
