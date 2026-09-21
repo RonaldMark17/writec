@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from "react";
 
 /**
- * Interactive Plagiarism Highlighting Component
- * Highlights plagiarised sentences and keywords with visual color coding,
- * source tooltips, and filter toggles.
+ * Clean & Modern Plagiarism Highlighting Component
+ * Displays student text with natural, elegant highlights (no disruptive inline badges).
+ * Provides interactive sentence inspection, real source links, and keyword emphasis.
  */
 export default function HighlightedText({ text, scanResult, defaultFilter = "all" }) {
   const [filter, setFilter] = useState(defaultFilter); // 'all', 'source', 'peer', 'none'
@@ -76,11 +76,9 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
         const srcTokens = new Set((srcText.match(/[a-z]{3,}/g) || []).filter(w => !commonWords.has(w)));
         const overlap = [...sWords].filter(w => srcTokens.has(w));
         if (overlap.length > maxOverlap && overlap.length >= 1) {
-          if (overlap.length >= 2 || ["peter", "tsar", "russia", "tax", "beard", "beards", "reform", "fashion", "education", "university", "universities", "scholar", "scholars", "judicial", "dress", "foreigners", "decree", "commercial"].some(t => overlap.includes(t))) {
-            maxOverlap = overlap.length;
-            bestSource = src;
-            matchedTokens = overlap;
-          }
+          maxOverlap = overlap.length;
+          bestSource = src;
+          matchedTokens = overlap;
         }
       }
 
@@ -91,9 +89,9 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
           type: "source",
           label: "Source Match",
           matched_words: matchedTokens,
-          source_title: bestSource.title || "Copyleaks Matched Source",
+          source_title: bestSource.title || "Matched Source",
           source_url: bestSource.url || "",
-          source_type: bestSource.source_type || "Copyleaks Academic Index",
+          source_type: bestSource.source_type || "External Academic Index",
           severity: maxOverlap >= 3 ? "high" : "medium",
         });
       }
@@ -106,7 +104,7 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
   const sourceCount = highlights.filter(h => h.type === "source").length;
   const peerCount = highlights.filter(h => h.type === "peer").length;
 
-  // 2. Parse sentences into highlighted elements
+  // 2. Parse sentences into highlighted elements with clean inline text
   const renderedContent = useMemo(() => {
     if (!text) return <p className="text-gray-500 italic">No text provided.</p>;
     if (filter === "none" || highlights.length === 0) {
@@ -120,8 +118,8 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
 
     return rawSentences.map((sentence, idx) => {
       const match = highlights.find(h => {
-        if (h.sentence && sentence.includes(h.sentence.slice(0, 30))) return true;
-        if (h.text && sentence.includes(h.text.slice(0, 30))) return true;
+        if (h.sentence && sentence.includes(h.sentence.slice(0, 25))) return true;
+        if (h.text && sentence.includes(h.text.slice(0, 25))) return true;
         return false;
       });
 
@@ -133,7 +131,7 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
 
       if (!shouldHighlight) {
         return (
-          <span key={idx} className="text-gray-800">
+          <span key={idx} className="text-gray-700">
             {sentence}{" "}
           </span>
         );
@@ -142,20 +140,22 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
       const isPeer = match.type === "peer";
       const isSelected = selectedHighlight?.sentence === match.sentence;
       const matchedWordsSet = new Set((match.matched_words || []).map(w => w.toLowerCase()));
-
-      // Highlight individual words inside the sentence if matched
       const words = sentence.split(/\s+/);
 
       return (
         <span
           key={idx}
           onClick={() => setSelectedHighlight(isSelected ? null : match)}
-          className={`relative inline rounded px-1.5 py-0.5 mx-0.5 cursor-pointer transition-all duration-150 ${
+          className={`cursor-pointer rounded px-1 py-0.5 transition-all duration-150 inline ${
             isPeer
-              ? "bg-rose-100 text-rose-950 border-b-2 border-rose-500 hover:bg-rose-200"
-              : "bg-amber-100 text-amber-950 border-b-2 border-amber-500 hover:bg-amber-200"
-          } ${isSelected ? "ring-2 ring-offset-1 ring-amber-600 font-medium" : ""}`}
-          title={`Click to inspect match: ${match.source_title}`}
+              ? isSelected
+                ? "bg-rose-200 text-rose-950 ring-2 ring-rose-500 font-medium"
+                : "bg-rose-100/80 text-rose-950 border-b-2 border-rose-400 hover:bg-rose-200/90"
+              : isSelected
+                ? "bg-amber-200 text-amber-950 ring-2 ring-amber-500 font-medium"
+                : "bg-amber-100/80 text-amber-950 border-b-2 border-amber-400 hover:bg-amber-200/90"
+          }`}
+          title={`Click to inspect matched source: ${match.source_title}`}
         >
           {words.map((word, wIdx) => {
             const cleanWord = word.replace(/[^a-zA-Z]/g, "").toLowerCase();
@@ -167,8 +167,8 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
                 className={
                   isKeywordMatch
                     ? isPeer
-                      ? "bg-rose-200/90 font-black text-rose-950 px-1 py-0.5 rounded shadow-2xs"
-                      : "bg-amber-200/90 font-black text-amber-950 px-1 py-0.5 rounded shadow-2xs"
+                      ? "font-bold text-rose-950 underline decoration-rose-500 decoration-1 underline-offset-2"
+                      : "font-bold text-amber-950 underline decoration-amber-500 decoration-1 underline-offset-2"
                     : ""
                 }
               >
@@ -176,60 +176,56 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
               </span>
             );
           })}
-          <span
-            className={`inline-block ml-1 text-[10px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded ${
-              isPeer ? "bg-rose-600 text-white" : "bg-amber-600 text-white"
-            }`}
-          >
-            {isPeer ? "Peer Match" : "Plagiarised Source"}
-          </span>
         </span>
       );
     });
   }, [text, highlights, filter, selectedHighlight]);
 
   return (
-    <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3.5 shadow-2xs">
+    <div className="mt-3 w-full min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       {/* Controls Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-3 border-b border-gray-100">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-black uppercase tracking-wider text-gray-600">
-            Plagiarism Highlights
-          </span>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3.5 border-b border-gray-100">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-600 animate-pulse"></span>
+            <span className="text-xs font-black uppercase tracking-wider text-gray-700">
+              Plagiarism Highlights
+            </span>
+          </div>
           {sourceCount > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-xs font-bold text-amber-800">
-              <span className="h-2 w-2 rounded-full bg-amber-500"></span>
-              {sourceCount} External Source {sourceCount === 1 ? "Match" : "Matches"}
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+              {sourceCount} External {sourceCount === 1 ? "Source" : "Sources"}
             </span>
           )}
           {peerCount > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-2.5 py-0.5 text-xs font-bold text-rose-800">
-              <span className="h-2 w-2 rounded-full bg-rose-500"></span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200/80 px-2.5 py-0.5 text-xs font-bold text-rose-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
               {peerCount} Classmate {peerCount === 1 ? "Match" : "Matches"}
             </span>
           )}
         </div>
 
         {/* Filter Toggle Buttons */}
-        <div className="flex items-center gap-1 text-xs font-extrabold">
+        <div className="flex items-center gap-1 text-xs font-bold shrink-0">
           <button
             type="button"
             onClick={() => setFilter("all")}
-            className={`rounded px-2.5 py-1 transition ${
+            className={`rounded-lg px-2.5 py-1 transition ${
               filter === "all"
-                ? "bg-emerald-700 text-white shadow-xs"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                ? "bg-emerald-700 text-white shadow-xs font-black"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
             }`}
           >
-            All Highlights ({highlights.length})
+            All ({highlights.length})
           </button>
           {sourceCount > 0 && (
             <button
               type="button"
               onClick={() => setFilter("source")}
-              className={`rounded px-2.5 py-1 transition ${
+              className={`rounded-lg px-2.5 py-1 transition ${
                 filter === "source"
-                  ? "bg-amber-600 text-white shadow-xs"
+                  ? "bg-amber-600 text-white shadow-xs font-black"
                   : "bg-amber-50 text-amber-800 hover:bg-amber-100"
               }`}
             >
@@ -240,22 +236,22 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
             <button
               type="button"
               onClick={() => setFilter("peer")}
-              className={`rounded px-2.5 py-1 transition ${
+              className={`rounded-lg px-2.5 py-1 transition ${
                 filter === "peer"
-                  ? "bg-rose-600 text-white shadow-xs"
+                  ? "bg-rose-600 text-white shadow-xs font-black"
                   : "bg-rose-50 text-rose-800 hover:bg-rose-100"
               }`}
             >
-              Classmate ({peerCount})
+              Classmates ({peerCount})
             </button>
           )}
           <button
             type="button"
             onClick={() => setFilter("none")}
-            className={`rounded px-2.5 py-1 transition ${
+            className={`rounded-lg px-2.5 py-1 transition ${
               filter === "none"
-                ? "bg-gray-800 text-white shadow-xs"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-gray-800 text-white shadow-xs font-black"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900"
             }`}
           >
             Plain
@@ -264,64 +260,91 @@ export default function HighlightedText({ text, scanResult, defaultFilter = "all
       </div>
 
       {/* Selected Match Inspector Card */}
-      {selectedHighlight && (
-        <div className="my-3 rounded-lg border border-amber-300 bg-amber-50/80 p-3 text-xs animate-in fade-in duration-150">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="rounded bg-amber-600 px-2 py-0.5 font-black text-white uppercase text-[10px]">
-                {selectedHighlight.label}
-              </span>
-              <p className="font-extrabold text-gray-900 truncate">
+      {selectedHighlight ? (
+        <div className="my-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 text-xs animate-in fade-in duration-150">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span
+                  className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white ${
+                    selectedHighlight.type === "peer" ? "bg-rose-600" : "bg-amber-600"
+                  }`}
+                >
+                  {selectedHighlight.label || "Source Match"}
+                </span>
+                <span className="rounded bg-white/90 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+                  {selectedHighlight.source_type || "Academic Index"}
+                </span>
+              </div>
+              <h5 className="font-extrabold text-sm text-gray-950 leading-snug break-words">
                 {selectedHighlight.source_title}
-              </p>
+              </h5>
+              {selectedHighlight.source_url && (
+                <a
+                  href={selectedHighlight.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1.5 inline-flex items-center gap-1 font-bold text-emerald-700 hover:text-emerald-900 hover:underline break-all"
+                >
+                  <span>{selectedHighlight.source_url}</span>
+                  <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              )}
+              {selectedHighlight.matched_words?.length > 0 && (
+                <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-gray-500 font-semibold">Matched words:</span>
+                  {selectedHighlight.matched_words.map((w, idx) => (
+                    <span
+                      key={idx}
+                      className="rounded bg-amber-200/80 border border-amber-300/80 px-2 py-0.5 text-[11px] font-bold text-amber-950"
+                    >
+                      {w}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               type="button"
               onClick={() => setSelectedHighlight(null)}
-              className="text-gray-400 hover:text-gray-700 font-bold px-1"
+              className="rounded-md p-1 text-gray-400 hover:bg-amber-100 hover:text-gray-700 transition"
+              title="Close inspection"
             >
-              ✕
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
-          {selectedHighlight.source_url && (
-            <a
-              href={selectedHighlight.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 block text-emerald-800 hover:underline font-semibold truncate"
-            >
-              🔗 {selectedHighlight.source_url}
-            </a>
-          )}
-          {selectedHighlight.matched_words?.length > 0 && (
-            <p className="mt-1.5 text-gray-700">
-              <strong className="text-gray-900">Overlapping keywords:</strong>{" "}
-              {selectedHighlight.matched_words.join(", ")}
-            </p>
-          )}
+        </div>
+      ) : (
+        <div className="my-2.5 flex items-center gap-2 rounded-lg bg-gray-50/80 px-3 py-2 text-xs text-gray-500">
+          <span>💡</span>
+          <span>Click any highlighted passage in the text below to view its source publication and destination link.</span>
         </div>
       )}
 
       {/* Highlighted Essay Content Area */}
-      <div className="mt-3 max-h-[300px] overflow-auto rounded-md border border-gray-100 bg-gray-50/50 p-3.5 text-sm font-normal leading-7 text-gray-800">
+      <div className="mt-2 max-h-[360px] overflow-y-auto overflow-x-hidden rounded-xl border border-gray-100 bg-gray-50/60 p-4 text-[14px] leading-7 text-gray-800 select-text">
         {renderedContent}
       </div>
 
       {/* Legend Footer */}
-      <div className="mt-2.5 flex items-center gap-4 text-[11px] font-semibold text-gray-500">
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-gray-500 border-t border-gray-100 pt-2.5">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-4 rounded bg-amber-200 border border-amber-400"></span>
-          External Copyleaks Source Match
+          <span className="h-3 w-4 rounded bg-amber-200/80 border border-amber-400"></span>
+          External Database Source Match
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-4 rounded bg-rose-200 border border-rose-400"></span>
+          <span className="h-3 w-4 rounded bg-rose-200/80 border border-rose-400"></span>
           Classmate / Peer Copy Match
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-4 rounded bg-amber-300 font-black text-[9px] text-amber-950 px-0.5 text-center leading-3">
-            W
+          <span className="font-bold text-amber-950 underline decoration-amber-500 decoration-1 underline-offset-2">
+            Underlined
           </span>
-          Key Overlapping Word
+          Key Overlapping Keywords
         </span>
       </div>
     </div>

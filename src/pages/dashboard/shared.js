@@ -370,33 +370,143 @@ export function normalizeAssignment(row, classroomsById = new Map(), extra = {})
   };
 }
 
-export async function resolveStorageImageUrl(fileUrl) {
-  if (!fileUrl) return "";
+// In-memory cache for resolved blob URLs to prevent redundant network downloads
+const blobUrlCache = new Map();
 
-  // If it's a local backend URL, return directly
-  if (fileUrl.includes("localhost:8000") || fileUrl.includes("127.0.0.1:8000")) {
-    return fileUrl;
+/**
+ * Downloads a submission file directly from Supabase Storage as a native Blob.
+ * Handles relative paths, folder structures, full URLs, and backend fallbacks.
+ */
+export async function downloadSubmissionFileBlob(fileUrl) {
+  if (!fileUrl) throw new Error("No file path provided.");
+
+  // 1. If already a Blob or Data URI, convert directly
+  if (fileUrl.startsWith("blob:") || fileUrl.startsWith("data:")) {
+    const res = await fetch(fileUrl);
+    return await res.blob();
   }
 
-  // Extract relative storage path if it's already a full Supabase storage URL
+  const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+
+  // 2. If it is already a direct backend URL, fetch from backend immediately (fastest & bypasses Supabase 400)
+  if (fileUrl.startsWith(backendUrl) || /^https?:\/\/[^/]+:(?:8000|5000)\/uploads/i.test(fileUrl)) {
+    try {
+      const res = await fetch(fileUrl);
+      if (res.ok) {
+        const b = await res.blob();
+        if (b.size > 0) return b;
+      }
+    } catch {
+      // continue to fallback resolution
+    }
+  }
+
+  // 3. Clean storage path
   let cleanPath = fileUrl;
   if (/^https?:\/\/[^/]+\/storage\/v1\/object\/(?:public\/|sign\/)?essay-submissions\//i.test(fileUrl)) {
     cleanPath = fileUrl.replace(/^https?:\/\/[^/]+\/storage\/v1\/object\/(?:public\/|sign\/)?essay-submissions\//i, "").split("?")[0];
-  } else if (/^https?:\/\//i.test(fileUrl)) {
+  } else if (/^https?:\/\/[^/]+\/uploads\/(?:submissions\/)?/i.test(fileUrl)) {
+    cleanPath = fileUrl.replace(/^https?:\/\/[^/]+\/uploads\/(?:submissions\/)?/i, "").split("?")[0];
+  }
+
+  cleanPath = cleanPath.replace(/^\/?essay-submissions\//, "").replace(/^\/+/, "");
+  const filename = cleanPath.split("/").pop();
+
+  // 4. Primary: Try direct Supabase Storage SDK download (bypasses browser CORS restrictions)
+  try {
+    const { data: blob, error } = await supabase.storage.from(ESSAY_BUCKET).download(cleanPath);
+    if (!error && blob && blob.size > 0) {
+      return blob;
+    }
+  } catch {
+    // continue
+  }
+
+  // 5. If path was just a filename (e.g. 1789...jpg), search recursively in Supabase storage
+  if (filename && !cleanPath.includes("/")) {
+    try {
+      const { data: topFolders } = await supabase.storage.from(ESSAY_BUCKET).list();
+      if (topFolders && topFolders.length > 0) {
+        for (const tf of topFolders) {
+          if (!tf.id) {
+            const { data: subFolders } = await supabase.storage.from(ESSAY_BUCKET).list(tf.name);
+            if (subFolders) {
+              for (const sf of subFolders) {
+                const subPath = `${tf.name}/${sf.name}`;
+                const { data: files } = await supabase.storage.from(ESSAY_BUCKET).list(subPath);
+                const found = (files || []).find(f => f.name === filename);
+                if (found) {
+                  const exactPath = `${subPath}/${filename}`;
+                  const { data: foundBlob } = await supabase.storage.from(ESSAY_BUCKET).download(exactPath);
+                  if (foundBlob && foundBlob.size > 0) return foundBlob;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  // 6. Try local backend uploads server and backend storage proxy
+  const backendCandidates = [
+    `${backendUrl}/uploads/submissions/${filename || cleanPath}`,
+    `${backendUrl}/uploads/${filename || cleanPath}`,
+    `${backendUrl}/api/storage/file?path=${encodeURIComponent(cleanPath)}`,
+  ];
+
+  for (const bUrl of backendCandidates) {
+    try {
+      const res = await fetch(bUrl);
+      if (res.ok) {
+        const b = await res.blob();
+        if (b.size > 0) return b;
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  throw new Error(`Could not fetch submission image for path: ${fileUrl}`);
+}
+
+/**
+ * Resolves a reliable, browser-renderable image preview URL for any submission.
+ * Prioritizes native Supabase Storage blobs (CORS-immune, persistent, zero token expiry).
+ */
+export async function resolveStorageImageUrl(fileUrl) {
+  if (!fileUrl) return "";
+
+  if (blobUrlCache.has(fileUrl)) {
+    return blobUrlCache.get(fileUrl);
+  }
+
+  const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+
+  // If already a backend URL, it is immediately renderable by the browser
+  if (fileUrl.startsWith(backendUrl) || /^https?:\/\/[^/]+:(?:8000|5000)\/uploads/i.test(fileUrl)) {
     return fileUrl;
   }
 
   try {
-    const { data, error } = await supabase.storage.from(ESSAY_BUCKET).createSignedUrl(cleanPath, 3600);
-    if (!error && data?.signedUrl) {
-      return data.signedUrl;
+    const blob = await downloadSubmissionFileBlob(fileUrl);
+    if (blob) {
+      const blobUrl = URL.createObjectURL(blob);
+      blobUrlCache.set(fileUrl, blobUrl);
+      return blobUrl;
     }
   } catch (err) {
-    console.warn("createSignedUrl failed, falling back to publicUrl:", err);
+    console.warn("[resolveStorageImageUrl] direct blob retrieval notice:", err?.message || err);
   }
 
-  const { data: pubData } = supabase.storage.from(ESSAY_BUCKET).getPublicUrl(cleanPath);
-  return pubData?.publicUrl || fileUrl;
+  // Safe fallback to local backend server instead of invalid Supabase public URL (avoids 400 NoSuchKey errors)
+  let cleanPath = fileUrl.replace(/^https?:\/\/[^/]+\/storage\/v1\/object\/(?:public\/|sign\/)?essay-submissions\//i, "").split("?")[0];
+  cleanPath = cleanPath.replace(/^\/?essay-submissions\//, "").replace(/^\/+/, "");
+  const filename = cleanPath.split("/").pop();
+
+  return `${backendUrl}/uploads/submissions/${filename || cleanPath}`;
 }
 
 export async function openSubmissionFile(filePath, onError) {
@@ -405,34 +515,32 @@ export async function openSubmissionFile(filePath, onError) {
     return;
   }
 
-  if (/^https?:\/\//i.test(filePath) && !filePath.includes("supabase.co/storage/v1/object/")) {
-    window.open(filePath, "_blank", "noopener,noreferrer");
-    return;
-  }
-
-  let cleanPath = filePath;
-  if (/^https?:\/\/[^/]+\/storage\/v1\/object\/(?:public\/|sign\/)?essay-submissions\//i.test(filePath)) {
-    cleanPath = filePath.replace(/^https?:\/\/[^/]+\/storage\/v1\/object\/(?:public\/|sign\/)?essay-submissions\//i, "").split("?")[0];
-  }
-
   try {
-    const { data, error } =
-      await supabase
-        .storage
-        .from(ESSAY_BUCKET)
-        .createSignedUrl(cleanPath, 3600);
-
-    if (error || !data?.signedUrl) {
-      const { data: pubData } = supabase.storage.from(ESSAY_BUCKET).getPublicUrl(cleanPath);
-      if (pubData?.publicUrl) {
-        window.open(pubData.publicUrl, "_blank", "noopener,noreferrer");
-        return;
-      }
-      if (onError) onError(error?.message || "Could not open file from storage.");
+    const blob = await downloadSubmissionFileBlob(filePath);
+    if (blob) {
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
       return;
     }
+  } catch (err) {
+    console.warn("[openSubmissionFile] blob open failed, falling back:", err);
+  }
 
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  // Fallback to signed URL or public URL
+  let cleanPath = filePath.replace(/^https?:\/\/[^/]+\/storage\/v1\/object\/(?:public\/|sign\/)?essay-submissions\//i, "").split("?")[0];
+  cleanPath = cleanPath.replace(/^\/?essay-submissions\//, "").replace(/^\/+/, "");
+
+  try {
+    const { data } = await supabase.storage.from(ESSAY_BUCKET).createSignedUrl(cleanPath, 3600);
+    if (data?.signedUrl) {
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const { data: pubData } = supabase.storage.from(ESSAY_BUCKET).getPublicUrl(cleanPath);
+    if (pubData?.publicUrl) {
+      window.open(pubData.publicUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
   } catch (err) {
     if (onError) onError(err.message || "Failed to open submission file.");
   }
@@ -524,6 +632,33 @@ export function Header({ workspace, pages, activePage, onPageChange }) {
   );
 }
 
+export function EditIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  );
+}
 
-
-
+export function toDateTimeLocalInput(isoString) {
+  if (!isoString) return "";
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return "";
+    const offsetMs = d.getTimezoneOffset() * 60000;
+    const local = new Date(d.getTime() - offsetMs);
+    return local.toISOString().slice(0, 16);
+  } catch {
+    return "";
+  }
+}

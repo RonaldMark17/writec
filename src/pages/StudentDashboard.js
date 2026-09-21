@@ -219,7 +219,7 @@ export default function StudentDashboard({ profile }) {
       const { data: submissionsData, error: submissionError } =
         await supabase
           .from(SUBMISSION_TABLE)
-          .select("id, created_at, assignment_id, classroom_id, student_id, essay_title, file_url, status")
+          .select("*")
           .eq("student_id", profile.id)
           .in("assignment_id", assignmentIds)
           .order("created_at", { ascending: false });
@@ -322,11 +322,11 @@ export default function StudentDashboard({ profile }) {
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
           fileUrl: submission.file_url,
-          status: gradeInfo.status || submission.status || "submitted",
-          grade: gradeInfo.grade || submission.grade || "",
-          feedback: gradeInfo.feedback || submission.feedback || "",
-          transcribedText: gradeInfo.transcribed_text || "",
-          scanResult: gradeInfo.scan_result || null,
+          status: submission.status || gradeInfo.status || "submitted",
+          grade: submission.grade || gradeInfo.grade || "",
+          feedback: submission.feedback || gradeInfo.feedback || "",
+          transcribedText: submission.transcribed_text || gradeInfo.transcribed_text || "",
+          scanResult: submission.scan_result || gradeInfo.scan_result || null,
         };
       });
 
@@ -1150,7 +1150,7 @@ export default function StudentDashboard({ profile }) {
         {/* Student Submission Detail Modal */}
         {viewingSubmission && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
-            <div className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+            <div className="relative max-h-[92vh] w-full max-w-4xl lg:max-w-5xl overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
               {/* Header */}
               <div className="flex items-start justify-between border-b border-gray-100 pb-4">
                 <div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "../supabaseClient";
 import {
@@ -28,8 +28,11 @@ import {
   formatDateTime,
   normalizeAssignment,
   normalizeClassroom,
+  downloadSubmissionFileBlob,
   openSubmissionFile,
   teacherPages,
+  EditIcon,
+  toDateTimeLocalInput,
 } from "./dashboard/shared";
 import HighlightedText from "./HighlightedText";
 import {
@@ -88,6 +91,9 @@ export default function TeacherDashboard({ profile }) {
   const [assignmentForm, setAssignmentForm] =
     useState(emptyAssignmentForm);
 
+  const [editingAssignment, setEditingAssignment] = useState(null);
+  const [isUpdatingAssignment, setIsUpdatingAssignment] = useState(false);
+
   const [uploadMode, setUploadMode] =
     useState("");
 
@@ -145,6 +151,9 @@ export default function TeacherDashboard({ profile }) {
   const [isImageExpanded, setIsImageExpanded] =
     useState(false);
 
+  const [isManualImageExpanded, setIsManualImageExpanded] =
+    useState(false);
+
   const [manualLiveOcrResult, setManualLiveOcrResult] =
     useState(null);
 
@@ -171,6 +180,33 @@ export default function TeacherDashboard({ profile }) {
 
   const [manualCheckError, setManualCheckError] =
     useState("");
+
+  const manualCheckImageUrl = useMemo(() => {
+    if (manualImagePreview) return manualImagePreview;
+    if (manualCheckResult?.imageUrl) return manualCheckResult.imageUrl;
+
+    const candidateFile = manualCheckFiles?.find((f) => f.type?.startsWith("image/"));
+    if (candidateFile) {
+      try {
+        return URL.createObjectURL(candidateFile);
+      } catch {
+        // ignore
+      }
+    }
+
+    const candidateName =
+      manualCheckFiles?.[0]?.name ||
+      manualCheckResult?.imageName ||
+      manualCheckResult?.extractedImages?.[0]?.fileName ||
+      (manualCheckTitle && /\.(jpe?g|png|webp|gif)$/i.test(manualCheckTitle) ? manualCheckTitle : null);
+
+    if (candidateName && /\.(jpe?g|png|webp|gif)$/i.test(candidateName)) {
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      return `${backendUrl}/uploads/${candidateName}`;
+    }
+
+    return "";
+  }, [manualImagePreview, manualCheckResult, manualCheckFiles, manualCheckTitle]);
 
   const [isCreatingClassroom, setIsCreatingClassroom] =
     useState(false);
@@ -267,7 +303,7 @@ export default function TeacherDashboard({ profile }) {
       const { data: submissionsData, error: submissionError } =
         await supabase
           .from(SUBMISSION_TABLE)
-          .select("id, created_at, assignment_id, classroom_id, student_id, essay_title, file_url, status")
+          .select("*")
           .in("assignment_id", assignmentIds)
           .order("created_at", { ascending: false });
 
@@ -381,11 +417,11 @@ export default function TeacherDashboard({ profile }) {
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
           fileUrl: submission.file_url,
-          status: gradeInfo.status || submission.status || "submitted",
-          grade: gradeInfo.grade || submission.grade || "",
-          feedback: gradeInfo.feedback || submission.feedback || "",
-          transcribedText: gradeInfo.transcribed_text || "",
-          scanResult: gradeInfo.scan_result || null,
+          status: submission.status || gradeInfo.status || "submitted",
+          grade: submission.grade || gradeInfo.grade || "",
+          feedback: submission.feedback || gradeInfo.feedback || "",
+          transcribedText: submission.transcribed_text || gradeInfo.transcribed_text || "",
+          scanResult: submission.scan_result || gradeInfo.scan_result || null,
         };
       });
 
@@ -530,6 +566,60 @@ export default function TeacherDashboard({ profile }) {
     setSuccessMessage("Assignment created.");
     setIsSavingAssignment(false);
     await loadTeacherData();
+  };
+
+  const handleOpenEditAssignment = (assignment) => {
+    setEditingAssignment({
+      id: assignment.id,
+      classroomId: assignment.classroomId,
+      title: assignment.title || "",
+      instructions: assignment.instructions || "",
+      dueDate: toDateTimeLocalInput(assignment.dueDate),
+    });
+  };
+
+  const handleCloseEditAssignment = () => {
+    setEditingAssignment(null);
+    setIsUpdatingAssignment(false);
+  };
+
+  const handleUpdateAssignment = async (event) => {
+    event.preventDefault();
+    if (!editingAssignment) return;
+
+    setErrorMessage("");
+    setSuccessMessage("");
+    setIsUpdatingAssignment(true);
+
+    const dueDate = editingAssignment.dueDate
+      ? new Date(editingAssignment.dueDate).toISOString()
+      : null;
+
+    try {
+      const { error } = await supabase
+        .from(ASSIGNMENT_TABLE)
+        .update({
+          classroom_id: editingAssignment.classroomId,
+          title: editingAssignment.title.trim(),
+          instructions: editingAssignment.instructions?.trim() || null,
+          due_date: dueDate,
+        })
+        .eq("id", editingAssignment.id);
+
+      if (error) {
+        setErrorMessage(error.message || "Failed to update assignment.");
+        setIsUpdatingAssignment(false);
+        return;
+      }
+
+      setSuccessMessage("Assignment updated successfully.");
+      setEditingAssignment(null);
+      await loadTeacherData();
+    } catch (err) {
+      setErrorMessage(err.message || "Could not update assignment.");
+    } finally {
+      setIsUpdatingAssignment(false);
+    }
   };
 
   const handleCopyTranscript = (textToCopy) => {
@@ -779,6 +869,10 @@ export default function TeacherDashboard({ profile }) {
         extractedImages: fileText.extractedImages,
         readableFiles: fileText.readableFiles,
         unreadableFiles: fileText.unreadableFiles,
+        imageUrl:
+          manualImagePreview ||
+          (manualCheckFiles[0]?.name ? `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/uploads/${manualCheckFiles[0].name}` : ""),
+        imageName: manualCheckFiles[0]?.name || manualCheckTitle || "Submission image",
         summary: scanResult
           ? "Scanned via Copyleaks Authenticity API. Comprehensive database and source matching completed."
           : localResult.summary,
@@ -804,6 +898,7 @@ export default function TeacherDashboard({ profile }) {
     setUploadMode("");
     setPlagiarismScanProgressText("");
     setIsEditingTranscript(false);
+    setIsManualImageExpanded(false);
   };
 
   const handleOpenReview = (submission) => {
@@ -814,9 +909,36 @@ export default function TeacherDashboard({ profile }) {
     setReviewImagePreviewUrl("");
     setIsImageExpanded(false);
 
+    // Calculate actual peer submissions for THIS assignment only
+    const currentAssignmentId = submission.assignmentId || submission.assignment_id;
+    const classmateCount = (submissions || []).filter(
+      (s) => (s.assignmentId || s.assignment_id) === currentAssignmentId && s.id !== submission.id
+    ).length;
+
     if (submission.scanResult) {
-      setReviewScanResult(submission.scanResult);
-      setReviewTranscribedText(submission.transcribedText || submission.scanResult.transcribedText || "");
+      let initialScanResult = { ...submission.scanResult };
+      if (classmateCount === 0) {
+        initialScanResult.peerSimilarity = {
+          peer_similarity_score: 0.0,
+          has_peer_match: false,
+          highest_match_submission_id: null,
+          matched_submission_label: null,
+          matching_snippets: [],
+          all_matches: [],
+          total_peers_compared: 0,
+        };
+        initialScanResult.peerScore = 0.0;
+      } else if (
+        initialScanResult.peerSimilarity &&
+        initialScanResult.peerSimilarity.total_peers_compared > classmateCount
+      ) {
+        initialScanResult.peerSimilarity = {
+          ...initialScanResult.peerSimilarity,
+          total_peers_compared: classmateCount,
+        };
+      }
+      setReviewScanResult(initialScanResult);
+      setReviewTranscribedText(submission.transcribedText || initialScanResult.transcribedText || "");
     } else if (manualCheckResult && manualCheckResult.score !== undefined) {
       setReviewScanResult(manualCheckResult);
       setReviewTranscribedText(transcribedText || manualDetectedText || "");
@@ -880,15 +1002,21 @@ export default function TeacherDashboard({ profile }) {
       const fileUrl = reviewingSubmission.fileUrl;
 
       if (fileUrl) {
-        setReviewScanProgressText("Downloading student submission...");
+        setReviewScanProgressText("Downloading student submission from Supabase Storage...");
         let blob;
         let filename = reviewingSubmission.essayTitle || "submission";
 
-        const downloadUrl = await resolveStorageImageUrl(fileUrl);
-        const res = await fetch(downloadUrl);
-        if (!res.ok) throw new Error("Could not download submission file.");
-        blob = await res.blob();
-        filename = fileUrl.split("/").pop().split("?")[0] || filename;
+        try {
+          blob = await downloadSubmissionFileBlob(fileUrl);
+          filename = fileUrl.split("/").pop().split("?")[0] || filename;
+        } catch (downloadErr) {
+          console.warn("downloadSubmissionFileBlob error, attempting fallback:", downloadErr);
+          const downloadUrl = await resolveStorageImageUrl(fileUrl);
+          const res = await fetch(downloadUrl);
+          if (!res.ok) throw new Error("Could not download submission file from Supabase Storage.");
+          blob = await res.blob();
+          filename = fileUrl.split("/").pop().split("?")[0] || filename;
+        }
 
         const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
 
@@ -945,10 +1073,27 @@ export default function TeacherDashboard({ profile }) {
 
       setReviewScanProgressText("Cross-checking with classroom submissions...");
       let peerResult = null;
+      const currentAssignmentId = reviewingSubmission.assignmentId || reviewingSubmission.assignment_id;
       try {
+        const classmateSubmissions = (submissions || [])
+          .filter(
+            (s) =>
+              (s.assignmentId || s.assignment_id) === currentAssignmentId &&
+              s.id !== reviewingSubmission.id
+          )
+          .map((s) => ({
+            id: s.id,
+            submission_id: s.id,
+            studentName: s.studentName || "Classmate",
+            text: s.transcribedText || s.scanResult?.transcribedText || s.essayText || "",
+          }))
+          .filter((s) => (s.text || "").trim().length >= 15);
+
         peerResult = await checkPeerSimilarityViaBackend({
           text: extractedText,
           submissionId: reviewingSubmission.id,
+          assignmentId: currentAssignmentId,
+          peerSubmissions: classmateSubmissions,
         });
       } catch (peerErr) {
         console.warn("Peer similarity check in review notice:", peerErr);
@@ -1005,6 +1150,19 @@ export default function TeacherDashboard({ profile }) {
 
       setReviewScanResult(finalDetectionResult);
 
+      // 1. Primary: Save status update to Supabase submissionTable
+      try {
+        await supabase
+          .from(SUBMISSION_TABLE)
+          .update({
+            status: reviewingSubmission.grade ? "graded" : "scanned",
+          })
+          .eq("id", reviewingSubmission.id);
+      } catch (sbErr) {
+        console.warn("Supabase scan update warning:", sbErr);
+      }
+
+      // 2. Backup: Save to local backend SQLite
       try {
         const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
         await fetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/scan`, {
@@ -1013,10 +1171,11 @@ export default function TeacherDashboard({ profile }) {
           body: JSON.stringify({
             transcribed_text: extractedText,
             scan_result: finalDetectionResult,
+            assignment_id: currentAssignmentId,
           }),
         });
-      } catch (saveErr) {
-        console.warn("Error saving submission scan:", saveErr);
+      } catch (backupErr) {
+        console.warn("Backend backup scan save notice:", backupErr);
       }
 
       setSubmissions((prev) =>
@@ -1073,6 +1232,7 @@ export default function TeacherDashboard({ profile }) {
           status: gradeVal ? "graded" : reviewingSubmission.status,
           transcribed_text: reviewTranscribedText,
           scan_result: reviewScanResult,
+          assignment_id: reviewingSubmission.assignmentId || reviewingSubmission.assignment_id,
         }),
       });
     } catch (err) {
@@ -1615,24 +1775,35 @@ export default function TeacherDashboard({ profile }) {
                   {assignments.map((assignment) => (
                     <article
                       key={assignment.id}
-                      className="rounded-lg border border-gray-200 bg-white p-5"
+                      className="rounded-lg border border-gray-200 bg-white p-5 transition hover:shadow-xs"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h3 className="text-xl font-black text-gray-950">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-xl font-black text-gray-950 break-words">
                             {assignment.title}
                           </h3>
                           <p className="mt-1 text-sm font-bold text-gray-500">
                             {assignment.classroomName} | {formatDateTime(assignment.dueDate)}
                           </p>
                         </div>
-                        <span className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700">
-                          {assignment.submissions} submitted
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
+                            {assignment.submissions} submitted
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditAssignment(assignment)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-extrabold text-gray-700 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 shadow-2xs"
+                            title="Edit this assignment"
+                          >
+                            <EditIcon className="h-3.5 w-3.5" />
+                            <span>Edit</span>
+                          </button>
+                        </div>
                       </div>
 
                       {assignment.instructions && (
-                        <p className="mt-4 text-sm font-semibold leading-6 text-gray-600">
+                        <p className="mt-4 text-sm font-semibold leading-6 text-gray-600 break-words whitespace-pre-wrap">
                           {assignment.instructions}
                         </p>
                       )}
@@ -1672,8 +1843,25 @@ export default function TeacherDashboard({ profile }) {
                   <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/40 p-5 shadow-xs transition">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-700 text-white shadow-sm">
-                          {uploadMode === "picture" ? (
+                        <div
+                          className="relative grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-700 text-white shadow-sm overflow-hidden cursor-pointer group"
+                          onClick={() => {
+                            if (manualCheckImageUrl) setIsManualImageExpanded(true);
+                          }}
+                          title={manualCheckImageUrl ? "Click to expand image" : ""}
+                        >
+                          {manualCheckImageUrl ? (
+                            <>
+                              <img
+                                src={manualCheckImageUrl}
+                                alt="Submission thumbnail"
+                                className="h-full w-full object-cover transition group-hover:scale-110"
+                              />
+                              <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" /></svg>
+                              </div>
+                            </>
+                          ) : uploadMode === "picture" ? (
                             <ImageIcon className="h-6 w-6" />
                           ) : (
                             <FileIcon className="h-6 w-6" />
@@ -1699,7 +1887,18 @@ export default function TeacherDashboard({ profile }) {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                        {manualCheckImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setIsManualImageExpanded(true)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3.5 py-2 text-xs font-extrabold text-emerald-800 hover:bg-emerald-50 transition shadow-2xs"
+                            title="Open full view of the scanned essay image"
+                          >
+                            <ImageIcon className="h-3.5 w-3.5 text-emerald-700" />
+                            <span>View image</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setIsEditingTranscript((prev) => !prev)}
@@ -2264,52 +2463,149 @@ export default function TeacherDashboard({ profile }) {
                         </div>
                       </div>
 
-                      {/* 2. Single Interactive Highlighted Text view SECOND */}
+                      {/* 2. Original Scanned Image & Transcribed Handwriting Section */}
                       <div className="mt-7">
-                        <div className="flex items-center justify-between pb-3">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-black text-gray-900">
-                              {hasManualImageExtraction ? "Transcribed student handwriting" : "Analyzed essay text"}
-                            </p>
-                            {hasManualImageExtraction && (
-                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
-                                YOLO26x + TrOCR
-                              </span>
-                            )}
-                          </div>
-                          {(manualDetectedText || transcribedText || manualCheckText) && (
-                            <button
-                              type="button"
-                              onClick={() => handleCopyTranscript(manualDetectedText || transcribedText || manualCheckText)}
-                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
-                            >
-                              {copySuccess ? (
-                                <>
-                                  <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
-                                  <span>Copied!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <CopyIcon className="h-3.5 w-3.5" />
-                                  <span>Copy text</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                        {manualImageExtractionSummary.length > 0 && (
-                          <div className="mb-3 space-y-2">
-                            {manualImageExtractionSummary.map((summary) => (
-                              <p
-                                key={summary}
-                                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800"
+                        {manualCheckImageUrl ? (
+                          <div className="grid gap-6 lg:grid-cols-2">
+                            {/* Left Column: Original Scanned Image */}
+                            <div className="flex flex-col">
+                              <div className="flex items-center justify-between pb-3">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-black text-gray-900">
+                                    Original essay image
+                                  </p>
+                                  <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
+                                    Handwriting photo
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsManualImageExpanded(true)}
+                                  className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
+                                >
+                                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l-5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                                  <span>Click to expand</span>
+                                </button>
+                              </div>
+
+                              <div
+                                className="group relative flex flex-1 min-h-[360px] max-h-[520px] cursor-zoom-in items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50/80 shadow-xs transition hover:border-emerald-500 hover:bg-gray-100/50"
+                                onClick={() => setIsManualImageExpanded(true)}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => e.key === "Enter" && setIsManualImageExpanded(true)}
+                                title="Click to view full screen"
                               >
-                                {summary}
-                              </p>
-                            ))}
+                                <img
+                                  src={manualCheckImageUrl}
+                                  alt="Original essay submission"
+                                  className="max-h-[500px] w-full object-contain p-2 transition duration-200 group-hover:scale-[1.01]"
+                                />
+                                <div className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-black/60 px-3 py-1.5 text-xs font-bold text-white opacity-0 backdrop-blur-xs transition-opacity group-hover:opacity-100">
+                                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l-5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                                  Expand
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Right Column: Transcribed Text & Plagiarism Highlights */}
+                            <div className="flex flex-col">
+                              <div className="flex items-center justify-between pb-3">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-black text-gray-900">
+                                    Transcribed student handwriting
+                                  </p>
+                                  {hasManualImageExtraction && (
+                                    <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
+                                      YOLO26x + TrOCR
+                                    </span>
+                                  )}
+                                </div>
+                                {(manualDetectedText || transcribedText || manualCheckText) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyTranscript(manualDetectedText || transcribedText || manualCheckText)}
+                                    className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
+                                  >
+                                    {copySuccess ? (
+                                      <>
+                                        <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
+                                        <span>Copied!</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CopyIcon className="h-3.5 w-3.5" />
+                                        <span>Copy text</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                              {manualImageExtractionSummary.length > 0 && (
+                                <div className="mb-3 space-y-2">
+                                  {manualImageExtractionSummary.map((summary) => (
+                                    <p
+                                      key={summary}
+                                      className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800"
+                                    >
+                                      {summary}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="flex-1">
+                                <HighlightedText text={manualDetectedText || transcribedText || manualCheckText} scanResult={manualCheckResult} />
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="flex items-center justify-between pb-3">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-black text-gray-900">
+                                  {hasManualImageExtraction ? "Transcribed student handwriting" : "Analyzed essay text"}
+                                </p>
+                                {hasManualImageExtraction && (
+                                  <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
+                                    YOLO26x + TrOCR
+                                  </span>
+                                )}
+                              </div>
+                              {(manualDetectedText || transcribedText || manualCheckText) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyTranscript(manualDetectedText || transcribedText || manualCheckText)}
+                                  className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
+                                >
+                                  {copySuccess ? (
+                                    <>
+                                      <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
+                                      <span>Copied!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CopyIcon className="h-3.5 w-3.5" />
+                                      <span>Copy text</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            {manualImageExtractionSummary.length > 0 && (
+                              <div className="mb-3 space-y-2">
+                                {manualImageExtractionSummary.map((summary) => (
+                                  <p
+                                    key={summary}
+                                    className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800"
+                                  >
+                                    {summary}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                            <HighlightedText text={manualDetectedText || transcribedText || manualCheckText} scanResult={manualCheckResult} />
                           </div>
                         )}
-                        <HighlightedText text={manualDetectedText || transcribedText || manualCheckText} scanResult={manualCheckResult} />
                       </div>
 
                       {manualCheckResult.matchedSources && manualCheckResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length > 0 && (
@@ -2467,9 +2763,128 @@ export default function TeacherDashboard({ profile }) {
             </div>
           )}
 
+          {/* Edit Assignment Modal Dialog */}
+          {editingAssignment && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+              <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+                <div className="flex items-start justify-between border-b border-gray-100 pb-4">
+                  <div>
+                    <span className="inline-block rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
+                      Edit Assignment
+                    </span>
+                    <h3 className="mt-1.5 text-2xl font-black text-gray-950">
+                      Update details
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseEditAssignment}
+                    className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 text-lg font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleUpdateAssignment} className="mt-5 space-y-4">
+                  <label className="block">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
+                      Classroom
+                    </span>
+                    <select
+                      value={editingAssignment.classroomId}
+                      onChange={(e) =>
+                        setEditingAssignment((prev) => ({
+                          ...prev,
+                          classroomId: e.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                      required
+                    >
+                      {classrooms.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
+                      Title
+                    </span>
+                    <input
+                      type="text"
+                      value={editingAssignment.title}
+                      onChange={(e) =>
+                        setEditingAssignment((prev) => ({
+                          ...prev,
+                          title: e.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                      required
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
+                      Instructions
+                    </span>
+                    <textarea
+                      value={editingAssignment.instructions}
+                      onChange={(e) =>
+                        setEditingAssignment((prev) => ({
+                          ...prev,
+                          instructions: e.target.value,
+                        }))
+                      }
+                      rows="4"
+                      className="mt-1.5 w-full rounded-lg border border-gray-300 p-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
+                      Due date
+                    </span>
+                    <input
+                      type="datetime-local"
+                      value={editingAssignment.dueDate}
+                      onChange={(e) =>
+                        setEditingAssignment((prev) => ({
+                          ...prev,
+                          dueDate: e.target.value,
+                        }))
+                      }
+                      className="mt-1.5 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                    />
+                  </label>
+
+                  <div className="mt-6 flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleCloseEditAssignment}
+                      className="h-11 rounded-lg border border-gray-300 bg-white px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isUpdatingAssignment}
+                      className="inline-flex h-11 items-center gap-2 rounded-lg bg-emerald-700 px-5 text-sm font-extrabold text-white transition hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm"
+                    >
+                      {isUpdatingAssignment ? "Saving..." : "Save changes"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {reviewingSubmission && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
-              <div className="relative max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+              <div className="relative max-h-[92vh] w-full max-w-4xl lg:max-w-5xl overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
                 <div className="flex items-start justify-between border-b border-gray-100 pb-4">
                   <div>
                     <span className="inline-block rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
@@ -2719,17 +3134,29 @@ export default function TeacherDashboard({ profile }) {
                                   Classroom Peer Similarity
                                 </h4>
                                 <p className="text-xs font-semibold text-indigo-700">
-                                  Cross-checked against {reviewScanResult.peerSimilarity.total_peers_compared ?? 0} classmate submissions
+                                  {reviewScanResult.peerSimilarity.total_peers_compared === 0
+                                    ? "No other classmate submissions for this assignment yet"
+                                    : reviewScanResult.peerSimilarity.total_peers_compared === 1
+                                      ? "Cross-checked against 1 classmate submission"
+                                      : `Cross-checked against ${reviewScanResult.peerSimilarity.total_peers_compared} classmate submissions`}
                                 </p>
                               </div>
                             </div>
                             <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black ${
-                              reviewScanResult.peerSimilarity.has_peer_match
-                                ? "bg-red-100 text-red-800 border border-red-200"
-                                : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              reviewScanResult.peerSimilarity.total_peers_compared === 0
+                                ? "bg-gray-100 text-gray-700 border border-gray-200"
+                                : reviewScanResult.peerSimilarity.has_peer_match
+                                  ? "bg-red-100 text-red-800 border border-red-200"
+                                  : "bg-emerald-100 text-emerald-800 border border-emerald-200"
                             }`}>
-                              {reviewScanResult.peerSimilarity.peer_similarity_score}% Match
-                              {reviewScanResult.peerSimilarity.has_peer_match ? " (High Peer Copy)" : " (Original Work)"}
+                              {reviewScanResult.peerSimilarity.total_peers_compared === 0 ? (
+                                "Only Submission (No Peers)"
+                              ) : (
+                                <>
+                                  {reviewScanResult.peerSimilarity.peer_similarity_score}% Match
+                                  {reviewScanResult.peerSimilarity.has_peer_match ? " (High Peer Copy)" : " (Original Work)"}
+                                </>
+                              )}
                             </span>
                           </div>
 
@@ -2911,6 +3338,33 @@ export default function TeacherDashboard({ profile }) {
                     </div>
                   </form>
                 </div>
+              </div>
+            </div>
+          )}
+          {/* Lightbox for Upload station manual check image */}
+          {isManualImageExpanded && manualCheckImageUrl && (
+            <div
+              className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+              onClick={() => setIsManualImageExpanded(false)}
+            >
+              <div className="relative max-h-[95vh] max-w-[95vw]">
+                <button
+                  type="button"
+                  onClick={() => setIsManualImageExpanded(false)}
+                  className="absolute -right-3 -top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white font-bold text-gray-800 shadow-xl hover:bg-gray-100 text-sm transition"
+                  title="Close full view"
+                >
+                  ✕
+                </button>
+                <img
+                  src={manualCheckImageUrl}
+                  alt="Original essay full view"
+                  className="max-h-[92vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <p className="mt-2 text-center text-xs font-semibold text-white/80">
+                  {manualCheckTitle || manualCheckFiles[0]?.name || "Original Scanned Essay"}
+                </p>
               </div>
             </div>
           )}

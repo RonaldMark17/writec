@@ -79,6 +79,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE submission_grades ADD COLUMN transcribed_text TEXT")
         if "scan_result" not in col_names:
             conn.execute("ALTER TABLE submission_grades ADD COLUMN scan_result TEXT")
+        if "assignment_id" not in col_names:
+            conn.execute("ALTER TABLE submission_grades ADD COLUMN assignment_id TEXT")
         conn.commit()
 
 
@@ -89,6 +91,7 @@ def save_submission_grade(
     status: str = "graded",
     transcribed_text: Optional[str] = None,
     scan_result: Optional[Union[Dict[str, Any], str]] = None,
+    assignment_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     init_db()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -101,9 +104,10 @@ def save_submission_grade(
         conn.execute(
             """
             INSERT INTO submission_grades (
-                submission_id, grade, feedback, status, transcribed_text, scan_result, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                submission_id, assignment_id, grade, feedback, status, transcribed_text, scan_result, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(submission_id) DO UPDATE SET
+                assignment_id = COALESCE(excluded.assignment_id, submission_grades.assignment_id),
                 grade = excluded.grade,
                 feedback = excluded.feedback,
                 status = excluded.status,
@@ -111,11 +115,13 @@ def save_submission_grade(
                 scan_result = COALESCE(excluded.scan_result, submission_grades.scan_result),
                 updated_at = excluded.updated_at
             """,
-            (submission_id, str(grade), str(feedback), status, transcribed_text, scan_result_str, now_iso),
+            (submission_id, assignment_id, str(grade), str(feedback), status, transcribed_text, scan_result_str, now_iso),
         )
         conn.commit()
-    return {
+
+    saved_grade = {
         "submission_id": submission_id,
+        "assignment_id": assignment_id,
         "grade": grade,
         "feedback": feedback,
         "status": status,
@@ -124,11 +130,28 @@ def save_submission_grade(
         "updated_at": now_iso,
     }
 
+    try:
+        from supabase_sync import sync_submission_grade
+        sync_submission_grade(
+            submission_id=submission_id,
+            grade=grade,
+            feedback=feedback,
+            status=status,
+            transcribed_text=transcribed_text or "",
+            scan_result=scan_result,
+            updated_at=now_iso,
+        )
+    except Exception as e:
+        print(f"[save_submission_grade] supabase sync notice: {e}", flush=True)
+
+    return saved_grade
+
 
 def save_submission_scan(
     submission_id: str,
     transcribed_text: str = "",
     scan_result: Optional[Union[Dict[str, Any], str]] = None,
+    assignment_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     init_db()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -141,22 +164,40 @@ def save_submission_scan(
         conn.execute(
             """
             INSERT INTO submission_grades (
-                submission_id, grade, feedback, status, transcribed_text, scan_result, updated_at
-            ) VALUES (?, '', '', 'submitted', ?, ?, ?)
+                submission_id, assignment_id, grade, feedback, status, transcribed_text, scan_result, updated_at
+            ) VALUES (?, ?, '', '', 'submitted', ?, ?, ?)
             ON CONFLICT(submission_id) DO UPDATE SET
+                assignment_id = COALESCE(excluded.assignment_id, submission_grades.assignment_id),
                 transcribed_text = COALESCE(excluded.transcribed_text, submission_grades.transcribed_text),
                 scan_result = COALESCE(excluded.scan_result, submission_grades.scan_result),
                 updated_at = excluded.updated_at
             """,
-            (submission_id, transcribed_text, scan_result_str, now_iso),
+            (submission_id, assignment_id, transcribed_text, scan_result_str, now_iso),
         )
         conn.commit()
-    return {
+
+    saved_scan = {
         "submission_id": submission_id,
+        "assignment_id": assignment_id,
         "transcribed_text": transcribed_text,
         "scan_result": scan_result,
         "updated_at": now_iso,
     }
+
+    try:
+        from supabase_sync import sync_submission_grade
+        sync_submission_grade(
+            submission_id=submission_id,
+            transcribed_text=transcribed_text or "",
+            scan_result=scan_result,
+            updated_at=now_iso,
+        )
+    except Exception as e:
+        print(f"[save_submission_scan] supabase sync notice: {e}", flush=True)
+
+    return saved_scan
+
+
 
 
 def get_submission_grades() -> Dict[str, Dict[str, Any]]:
@@ -240,7 +281,13 @@ def create_scan(
             (record_id, user_id, scan_id, filename, status, submitted_text, now_iso),
         )
         conn.commit()
-    return get_scan(scan_id) or {}
+    scan_rec = get_scan(scan_id) or {}
+    try:
+        from supabase_sync import sync_plagiarism_scan
+        sync_plagiarism_scan(scan_rec)
+    except Exception as e:
+        print(f"[create_scan] supabase sync notice: {e}", flush=True)
+    return scan_rec
 
 
 def get_scan(scan_id: str) -> Optional[Dict[str, Any]]:
@@ -288,7 +335,14 @@ def update_scan_completed(
             ),
         )
         conn.commit()
-    return get_scan(scan_id)
+    updated_rec = get_scan(scan_id)
+    if updated_rec:
+        try:
+            from supabase_sync import sync_plagiarism_scan
+            sync_plagiarism_scan(updated_rec)
+        except Exception as e:
+            print(f"[update_scan_completed] supabase sync notice: {e}", flush=True)
+    return updated_rec
 
 
 def update_scan_failed(
@@ -388,10 +442,12 @@ def _find_matching_phrases(words_a: List[str], words_b: List[str], min_length: i
 def compute_peer_similarity(
     text: str,
     current_submission_id: Optional[str] = None,
+    assignment_id: Optional[str] = None,
+    peer_submissions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    Compares the given text against all previous student submissions stored
-    in the database to detect cross-student copying (peer-to-peer plagiarism).
+    Compares the given text against classmate student submissions in the SAME assignment
+    to detect cross-student copying (peer-to-peer plagiarism).
     """
     init_db()
     clean_text = (text or "").strip()
@@ -407,22 +463,41 @@ def compute_peer_similarity(
             "total_peers_compared": 0,
         }
 
-    trigrams_input = _extract_ngrams(words_input, n=3)
-    quadgrams_input = _extract_ngrams(words_input, n=4)
-
     peer_records = []
-    with _get_connection() as conn:
-        cursor = conn.execute(
-            "SELECT submission_id, grade, status, transcribed_text, updated_at FROM submission_grades"
-        )
-        for row in cursor.fetchall():
-            d = dict(row)
-            sub_id = str(d.get("submission_id") or "")
-            if current_submission_id and sub_id == str(current_submission_id):
+
+    # 1. If explicit classmate peer submissions were passed from the frontend for this assignment
+    if peer_submissions is not None:
+        for p in peer_submissions:
+            p_id = str(p.get("id") or p.get("submission_id") or p.get("submissionId") or "")
+            if current_submission_id and p_id == str(current_submission_id):
                 continue
-            t_text = (d.get("transcribed_text") or "").strip()
-            if len(t_text) >= 15:
-                peer_records.append({"submission_id": sub_id, "text": t_text})
+            p_text = (p.get("text") or "").strip()
+            if len(p_text) >= 15:
+                peer_records.append({
+                    "submission_id": p_id,
+                    "student_name": p.get("studentName") or p.get("student_name") or p.get("name") or f"Classmate #{p_id[:6]}",
+                    "text": p_text,
+                })
+    else:
+        # 2. Database query: strictly require assignment_id so unrelated assignments are not mixed
+        if assignment_id:
+            with _get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT submission_id, grade, status, transcribed_text, updated_at FROM submission_grades WHERE assignment_id = ?",
+                    (str(assignment_id),),
+                )
+                for row in cursor.fetchall():
+                    d = dict(row)
+                    sub_id = str(d.get("submission_id") or "")
+                    if current_submission_id and sub_id == str(current_submission_id):
+                        continue
+                    t_text = (d.get("transcribed_text") or "").strip()
+                    if len(t_text) >= 15:
+                        peer_records.append({
+                            "submission_id": sub_id,
+                            "student_name": f"Classmate #{sub_id[:8]}",
+                            "text": t_text,
+                        })
 
     if not peer_records:
         return {
@@ -435,6 +510,9 @@ def compute_peer_similarity(
             "total_peers_compared": 0,
         }
 
+    trigrams_input = _extract_ngrams(words_input, n=3)
+    quadgrams_input = _extract_ngrams(words_input, n=4)
+
     scored_matches = []
     for peer in peer_records:
         words_peer = _tokenize_words(peer["text"])
@@ -444,32 +522,26 @@ def compute_peer_similarity(
         trigrams_peer = _extract_ngrams(words_peer, n=3)
         quadgrams_peer = _extract_ngrams(words_peer, n=4)
 
-        # 3-gram Jaccard
         intersect_3 = len(trigrams_input.intersection(trigrams_peer))
+        intersect_4 = len(quadgrams_input.intersection(quadgrams_peer))
+
+        # Crucial: If zero 3-gram or 4-gram overlap, there is no peer copying
+        if intersect_3 == 0 and intersect_4 == 0:
+            scored_matches.append({
+                "submission_id": peer["submission_id"],
+                "score_percent": 0.0,
+                "identical_phrases_count": 0,
+                "matching_snippets": [],
+            })
+            continue
+
         union_3 = len(trigrams_input.union(trigrams_peer)) or 1
         jaccard_3 = intersect_3 / union_3
 
-        # 4-gram Overlap relative to shorter document
-        intersect_4 = len(quadgrams_input.intersection(quadgrams_peer))
         min_4 = max(1, min(len(quadgrams_input), len(quadgrams_peer)))
         containment_4 = intersect_4 / min_4
 
-        # Word frequency cosine similarity
-        freq_a = {}
-        for w in words_input:
-            freq_a[w] = freq_a.get(w, 0) + 1
-        freq_b = {}
-        for w in words_peer:
-            freq_b[w] = freq_b.get(w, 0) + 1
-
-        all_words = set(freq_a.keys()).union(freq_b.keys())
-        dot = sum(freq_a.get(w, 0) * freq_b.get(w, 0) for w in all_words)
-        mag_a = sum(v ** 2 for v in freq_a.values()) ** 0.5
-        mag_b = sum(v ** 2 for v in freq_b.values()) ** 0.5
-        cosine = dot / (mag_a * mag_b) if (mag_a and mag_b) else 0.0
-
-        # Blended Peer Score (emphasizing n-gram containment for exact phrase copying)
-        blended = (containment_4 * 0.55) + (jaccard_3 * 0.25) + (cosine * 0.20)
+        blended = (containment_4 * 0.70) + (jaccard_3 * 0.30)
         score_percent = round(min(100.0, max(0.0, blended * 100.0)), 1)
 
         snippets = []
@@ -491,7 +563,7 @@ def compute_peer_similarity(
         "peer_similarity_score": top_score,
         "has_peer_match": top_score >= 15.0,
         "highest_match_submission_id": top_match["submission_id"] if top_match else None,
-        "matched_submission_label": f"Submission #{top_match['submission_id'][:8]}" if top_match else None,
+        "matched_submission_label": f"Classmate #{top_match['submission_id'][:8]}" if top_match else None,
         "matching_snippets": top_match["matching_snippets"] if top_match else [],
         "all_matches": [m for m in scored_matches if m["score_percent"] >= 8.0][:5],
         "total_peers_compared": len(peer_records),

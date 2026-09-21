@@ -588,17 +588,139 @@ def warmup_models():
 
 warmup_models()
 
+# Background synchronization to Supabase for all local plagiarism.db records
+try:
+    from supabase_sync import sync_all_from_local_db
+    import threading
+    threading.Thread(target=sync_all_from_local_db, daemon=True).start()
+except Exception as _e:
+    print(f"[supabase sync] startup sync notice: {_e}", flush=True)
+
 os.makedirs(UPLOAD_DIR / "submissions", exist_ok=True)
 
-# Serve uploaded files with explicit CORS headers.
-# StaticFiles bypasses CORSMiddleware, so we use a custom route instead.
+def _fetch_from_supabase_storage(relative_path: str, filename: str) -> Optional[bytes]:
+    """Downloads a file from Supabase Storage 'essay-submissions', supporting deep nested paths."""
+    try:
+        from supabase_sync import SUPABASE_URL, SUPABASE_KEY
+        import urllib.request
+        import json
+
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+
+        # 1. Direct fetch attempts
+        direct_paths = [relative_path]
+        if filename and filename != relative_path:
+            direct_paths.append(filename)
+
+        for p in direct_paths:
+            clean = p.replace("essay-submissions/", "").lstrip("/")
+            for endpoint in ["authenticated", "public"]:
+                url = f"{SUPABASE_URL}/storage/v1/object/{endpoint}/essay-submissions/{clean}"
+                try:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        if resp.status == 200:
+                            return resp.read()
+                except Exception:
+                    pass
+
+        # 2. Deep recursive search in bucket if target is just a filename
+        target_name = filename or Path(relative_path).name
+        if target_name:
+            try:
+                list_url = f"{SUPABASE_URL}/storage/v1/object/list/essay-submissions"
+                req = urllib.request.Request(
+                    list_url,
+                    data=json.dumps({"prefix": "", "limit": 100}).encode("utf-8"),
+                    headers={**headers, "Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    top_folders = json.loads(resp.read().decode("utf-8"))
+
+                for f1 in (top_folders or []):
+                    if not f1.get("id"):
+                        p1 = f1["name"]
+                        req2 = urllib.request.Request(
+                            list_url,
+                            data=json.dumps({"prefix": p1, "limit": 100}).encode("utf-8"),
+                            headers={**headers, "Content-Type": "application/json"},
+                        )
+                        with urllib.request.urlopen(req2, timeout=5) as resp2:
+                            sub_folders = json.loads(resp2.read().decode("utf-8"))
+
+                        for f2 in (sub_folders or []):
+                            p2 = f"{p1}/{f2['name']}"
+                            req3 = urllib.request.Request(
+                                list_url,
+                                data=json.dumps({"prefix": p2, "limit": 100}).encode("utf-8"),
+                                headers={**headers, "Content-Type": "application/json"},
+                            )
+                            with urllib.request.urlopen(req3, timeout=5) as resp3:
+                                files = json.loads(resp3.read().decode("utf-8"))
+
+                            for f in (files or []):
+                                if f.get("name") == target_name:
+                                    exact_path = f"{p2}/{target_name}"
+                                    get_url = f"{SUPABASE_URL}/storage/v1/object/authenticated/essay-submissions/{exact_path}"
+                                    req_file = urllib.request.Request(get_url, headers=headers)
+                                    with urllib.request.urlopen(req_file, timeout=6) as fresp:
+                                        if fresp.status == 200:
+                                            return fresp.read()
+            except Exception as _e:
+                print(f"[supabase storage] deep search warning: {_e}", flush=True)
+
+    except Exception as e:
+        print(f"[supabase storage] fetch error: {e}", flush=True)
+
+    return None
+
+
+# Serve uploaded files with explicit CORS headers and automatic Supabase Storage resolution.
 @app.api_route("/uploads/{file_path:path}", methods=["GET", "HEAD", "OPTIONS"])
 async def serve_upload(file_path: str):
-    full_path = UPLOAD_DIR / file_path
-    if not full_path.exists() or not full_path.is_file():
+    filename = Path(file_path).name
+    candidates = [
+        UPLOAD_DIR / file_path,
+        UPLOAD_DIR / filename,
+        UPLOAD_DIR / "submissions" / filename,
+    ]
+
+    found = next((c for c in candidates if c.exists() and c.is_file()), None)
+
+    # If still not found, search UPLOAD_DIR recursively for filename
+    if not found and filename:
+        for root, _, files in os.walk(UPLOAD_DIR):
+            if filename in files:
+                found = Path(root) / filename
+                break
+
+    # If still not found, fetch from Supabase Storage and cache locally
+    if not found:
+        clean_path = file_path.replace("submissions/", "").lstrip("/")
+        data = _fetch_from_supabase_storage(clean_path, filename)
+        if data:
+            save_path = UPLOAD_DIR / "submissions" / filename
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            save_path.write_bytes(data)
+            found = save_path
+
+    if not found or not found.is_file():
         raise HTTPException(status_code=404, detail="File not found")
+
+    # Mirror to ensure both /uploads/<name> and /uploads/submissions/<name> are always cached
+    try:
+        f_sub = UPLOAD_DIR / "submissions" / filename
+        f_root = UPLOAD_DIR / filename
+        if not f_sub.exists():
+            f_sub.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(found, f_sub)
+        if not f_root.exists():
+            shutil.copy2(found, f_root)
+    except Exception:
+        pass
+
     return FileResponse(
-        str(full_path),
+        str(found),
         headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
@@ -606,6 +728,32 @@ async def serve_upload(file_path: str):
             "Cache-Control": "public, max-age=3600",
         },
     )
+
+
+@app.get("/api/storage/file")
+async def proxy_storage_file(path: str = Query(..., description="Supabase storage relative path or filename")):
+    """
+    Direct proxy to download and serve files from Supabase Storage 'essay-submissions' bucket.
+    """
+    filename = Path(path).name
+    clean = path.replace("essay-submissions/", "").lstrip("/")
+
+    data = _fetch_from_supabase_storage(clean, filename)
+    if data:
+        # Determine media type
+        suffix = Path(filename).suffix.lower()
+        media_type = "image/png" if suffix == ".png" else "image/jpeg"
+        from fastapi.responses import Response
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
+
+    raise HTTPException(status_code=404, detail="File not found in Supabase Storage.")
 
 # ==========================================
 # API ROUTES
@@ -661,6 +809,7 @@ async def save_submission_grade_endpoint(submission_id: str, request: Request):
     status = body.get("status", "graded")
     transcribed_text = body.get("transcribed_text")
     scan_result = body.get("scan_result")
+    assignment_id = body.get("assignment_id")
     saved = plagiarism_db.save_submission_grade(
         submission_id=submission_id,
         grade=str(grade),
@@ -668,6 +817,7 @@ async def save_submission_grade_endpoint(submission_id: str, request: Request):
         status=status,
         transcribed_text=transcribed_text,
         scan_result=scan_result,
+        assignment_id=assignment_id,
     )
     return {"success": True, "grade_record": saved}
 
@@ -678,6 +828,7 @@ async def save_submission_scan_endpoint(submission_id: str, request: Request):
     body = await request.json()
     transcribed_text = body.get("transcribed_text", "")
     scan_result = body.get("scan_result")
+    assignment_id = body.get("assignment_id")
 
     # Enrich with Copyleaks matched sources if missing or containing Wikipedia/dummy placeholder
     if isinstance(scan_result, dict):
@@ -710,6 +861,7 @@ async def save_submission_scan_endpoint(submission_id: str, request: Request):
         submission_id=submission_id,
         transcribed_text=transcribed_text,
         scan_result=scan_result,
+        assignment_id=assignment_id,
     )
     return {"success": True, "scan_record": saved}
 
@@ -717,15 +869,20 @@ async def save_submission_scan_endpoint(submission_id: str, request: Request):
 @app.post("/api/plagiarism/peer-check")
 async def check_peer_plagiarism(request: Request):
     """
-    Checks the submitted text against all other student submissions in the class database
+    Checks the submitted text against other student submissions in the SAME assignment
     to detect cross-student copying (peer-to-peer plagiarism).
     """
     body = await request.json()
     text = body.get("text", "")
     submission_id = body.get("submission_id")
+    assignment_id = body.get("assignment_id")
+    peer_submissions = body.get("peer_submissions")
+
     peer_report = plagiarism_db.compute_peer_similarity(
         text=text,
         current_submission_id=submission_id,
+        assignment_id=assignment_id,
+        peer_submissions=peer_submissions,
     )
     return peer_report
 

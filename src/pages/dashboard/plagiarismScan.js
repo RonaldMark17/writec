@@ -378,7 +378,12 @@ export async function checkPlagiarismViaBackend({
  * Checks student text against all other submissions in the class database
  * for cross-student (peer-to-peer) similarity.
  */
-export async function checkPeerSimilarityViaBackend({ text = "", submissionId = null } = {}) {
+export async function checkPeerSimilarityViaBackend({
+  text = "",
+  submissionId = null,
+  assignmentId = null,
+  peerSubmissions = null,
+} = {}) {
   if (!text || text.trim().length < 15) {
     return {
       peer_similarity_score: 0.0,
@@ -386,6 +391,19 @@ export async function checkPeerSimilarityViaBackend({ text = "", submissionId = 
       highest_match_submission_id: null,
       matching_snippets: [],
       all_matches: [],
+      total_peers_compared: 0,
+    };
+  }
+
+  // If explicit classmate list was provided and is empty, there are no classmates to compare
+  if (Array.isArray(peerSubmissions) && peerSubmissions.length === 0) {
+    return {
+      peer_similarity_score: 0.0,
+      has_peer_match: false,
+      highest_match_submission_id: null,
+      matching_snippets: [],
+      all_matches: [],
+      total_peers_compared: 0,
     };
   }
 
@@ -398,6 +416,8 @@ export async function checkPeerSimilarityViaBackend({ text = "", submissionId = 
       body: JSON.stringify({
         text,
         submission_id: submissionId,
+        assignment_id: assignmentId,
+        peer_submissions: peerSubmissions,
       }),
     });
 
@@ -408,6 +428,7 @@ export async function checkPeerSimilarityViaBackend({ text = "", submissionId = 
         highest_match_submission_id: null,
         matching_snippets: [],
         all_matches: [],
+        total_peers_compared: 0,
       };
     }
 
@@ -420,6 +441,7 @@ export async function checkPeerSimilarityViaBackend({ text = "", submissionId = 
       highest_match_submission_id: null,
       matching_snippets: [],
       all_matches: [],
+      total_peers_compared: 0,
     };
   }
 }
