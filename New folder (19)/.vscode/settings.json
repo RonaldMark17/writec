@@ -1,0 +1,9 @@
+{
+    "python.defaultInterpreterPath": "C:\\Python313\\python.exe",
+    "python.analysis.extraPaths": [
+        "C:\\Users\\ronal\\AppData\\Roaming\\Python\\Python313\\site-packages"
+    ],
+    "python.autoComplete.extraPaths": [
+        "C:\\Users\\ronal\\AppData\\Roaming\\Python\\Python313\\site-packages"
+    ]
+}
