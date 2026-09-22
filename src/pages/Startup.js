@@ -187,36 +187,76 @@ function SunIcon({ className = "h-5 w-5" }) {
   );
 }
 
+function ClassroomHatIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+      <path d="M6 12v5c3 3 9 3 12 0v-5" />
+    </svg>
+  );
+}
+
+function CheckShieldIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
 const lightTheme = {
-  "--page-bg": "#eeece5",
-  "--page-text": "#101010",
-  "--muted": "#6f716f",
-  "--accent": "#167765",
-  "--accent-hover": "#106456",
-  "--accent-soft": "#e4f5f1",
+  "--page-bg": "#ffffff",
+  "--page-text": "#202124",
+  "--muted": "#5f6368",
+  "--accent": "#137333",
+  "--accent-hover": "#0d652d",
+  "--accent-soft": "#e6f4ea",
+  "--accent-border": "#ceead6",
   "--panel": "#ffffff",
-  "--panel-soft": "#f1efe9",
-  "--border": "#dedbd3",
-  "--border-soft": "#e5e1d9",
-  "--line": "#e8e4dc",
-  "--nav-bg": "rgba(244, 242, 236, 0.95)",
-  "--shadow": "0 14px 32px rgba(20, 20, 20, 0.06)",
+  "--panel-soft": "#f8f9fa",
+  "--border": "#dadce0",
+  "--border-soft": "#f1f3f4",
+  "--line": "#e8eaed",
+  "--nav-bg": "rgba(255, 255, 255, 0.96)",
+  "--shadow": "0 1px 3px 0 rgba(60, 64, 67, 0.08), 0 4px 8px 3px rgba(60, 64, 67, 0.04)",
+  "--card-shadow": "0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15)",
 };
 
 const darkTheme = {
-  "--page-bg": "#101411",
-  "--page-text": "#f6f4ee",
-  "--muted": "#aeb8b0",
-  "--accent": "#38bfa4",
-  "--accent-hover": "#2fa98f",
-  "--accent-soft": "#173b35",
-  "--panel": "#171d19",
-  "--panel-soft": "#202821",
-  "--border": "#33413a",
-  "--border-soft": "#2a352f",
-  "--line": "#34433c",
-  "--nav-bg": "rgba(16, 20, 17, 0.94)",
-  "--shadow": "0 16px 38px rgba(0, 0, 0, 0.28)",
+  "--page-bg": "#202124",
+  "--page-text": "#e8eaed",
+  "--muted": "#9aa0a6",
+  "--accent": "#81c995",
+  "--accent-hover": "#a8dab5",
+  "--accent-soft": "rgba(129, 201, 149, 0.15)",
+  "--accent-border": "rgba(129, 201, 149, 0.3)",
+  "--panel": "#292a2d",
+  "--panel-soft": "#303134",
+  "--border": "#3c4043",
+  "--border-soft": "#35363a",
+  "--line": "#3c4043",
+  "--nav-bg": "rgba(32, 33, 36, 0.96)",
+  "--shadow": "0 4px 14px rgba(0, 0, 0, 0.35)",
+  "--card-shadow": "0 2px 6px rgba(0, 0, 0, 0.4)",
 };
 
 function getInitialDarkMode() {
@@ -237,12 +277,16 @@ function getInitialDarkMode() {
 }
 
 const stats = [
-  ["3", "Intake options"],
-  ["Live", "Paste-text scan"],
-  ["1", "Teacher review station"],
+  ["YOLO26x + TrOCR", "Handwriting OCR engine"],
+  ["Copyleaks API", "Web & peer plagiarism scan"],
 ];
 
-const steps = ["Upload", "Detect", "Transcribe", "Check"];
+const steps = [
+  { step: "1", title: "Intake", desc: "Photo, Doc, or Paste" },
+  { step: "2", title: "Detect", desc: "Text region segmentation" },
+  { step: "3", title: "Transcribe", desc: "Handwriting OCR" },
+  { step: "4", title: "Verify", desc: "Copyleaks similarity" },
+];
 
 const demoModes = [
   {
@@ -252,39 +296,39 @@ const demoModes = [
   },
   {
     id: "file",
-    label: "File",
+    label: "Document",
     icon: FileIcon,
   },
   {
     id: "text",
-    label: "Paste",
+    label: "Paste Text",
     icon: ClipboardIcon,
   },
 ];
 
 const features = [
   {
-    title: "Text region detection",
+    title: "Classroom Section Isolation",
     copy:
-      "Find essay regions in uploaded pages before handwriting is sent through OCR.",
-    icon: LayoutIcon,
+      "Every assignment is strictly bound to its section. Submissions, files, and grades never cross between classes.",
+    icon: ClassroomHatIcon,
   },
   {
-    title: "Handwriting OCR",
+    title: "Handwriting OCR & Vision",
     copy:
-      "Convert clean handwritten scans into text that teachers can review and compare.",
+      "Transcribes handwritten student essay scans and photographs into searchable text using advanced OCR models.",
     icon: LayersIcon,
   },
   {
-    title: "Source matching",
+    title: "Copyleaks Plagiarism Engine",
     copy:
-      "Flag repeated phrases, missing source markers, and passages that need closer checking.",
+      "Checks student submissions against billions of web pages, published academic papers, and local peer submissions.",
     icon: SearchIcon,
   },
   {
-    title: "PDF reports",
+    title: "Official PDF Audit Reports",
     copy:
-      "Keep review signals, uploaded evidence, and teacher notes together for follow-up.",
+      "Export grade-ready plagiarism summary cards with matched excerpts, similarity percentages, and student timestamps.",
     icon: FileIcon,
   },
 ];
@@ -306,8 +350,8 @@ export default function Startup() {
 
   useEffect(() => {
     const updateActiveSection = () => {
-      const sectionIds = ["home", "about"];
-      const scrollMarker = window.scrollY + 180;
+      const sectionIds = ["home", "about", "features"];
+      const scrollMarker = window.scrollY + 160;
 
       const currentSection = sectionIds.reduce((current, sectionId) => {
         const section = document.getElementById(sectionId);
@@ -336,25 +380,21 @@ export default function Startup() {
   }, []);
 
   useEffect(() => {
-    const imageFile =
-      demoFiles.find((file) => file.type?.startsWith("image/"));
+    const imageFile = demoFiles.find((file) => file.type?.startsWith("image/"));
 
     if (!imageFile) {
       setDemoPreview("");
       return undefined;
     }
 
-    const previewUrl =
-      URL.createObjectURL(imageFile);
-
+    const previewUrl = URL.createObjectURL(imageFile);
     setDemoPreview(previewUrl);
 
     return () => URL.revokeObjectURL(previewUrl);
   }, [demoFiles]);
 
   const handleDemoFiles = (event) => {
-    const nextFiles =
-      Array.from(event.target.files ?? []);
+    const nextFiles = Array.from(event.target.files ?? []);
 
     setDemoFiles(nextFiles);
     setDemoResult(null);
@@ -371,21 +411,19 @@ export default function Startup() {
     setDemoResult(null);
 
     if (!demoText.trim() && demoFiles.length === 0) {
-      setDemoError("Add a picture, file, or pasted text to scan.");
+      setDemoError("Select an essay picture, upload a file, or paste text to scan.");
       return;
     }
 
     setIsDemoScanning(true);
 
     try {
-      const fileText =
-        await readTextFromFiles(demoFiles);
+      const fileText = await readTextFromFiles(demoFiles);
 
-      const combinedText =
-        [demoText, fileText.text]
-          .map((value) => value.trim())
-          .filter(Boolean)
-          .join("\n\n");
+      const combinedText = [demoText, fileText.text]
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .join("\n\n");
 
       setDemoResult({
         ...analyzePlagiarismInput({
@@ -407,7 +445,7 @@ export default function Startup() {
   const handleUseSampleText = () => {
     setDemoMode("text");
     setDemoText(
-      "Climate change affects communities in many ways. Climate change affects communities in many ways because rising heat changes food, water, and health. Students should explain where facts came from and include clear source markers when borrowed ideas are used."
+      "Climate change impacts agricultural yields through erratic precipitation and elevated temperatures. Peer-reviewed research confirms that sustainable irrigation practices and soil biodiversity reduce vulnerability across diverse microclimates."
     );
     setDemoResult(null);
     setDemoError("");
@@ -415,382 +453,478 @@ export default function Startup() {
 
   const getNavLinkClass = (sectionId) =>
     activeSection === sectionId
-      ? "text-[var(--page-text)] transition"
-      : "transition hover:text-[var(--page-text)]";
+      ? "text-[var(--accent)] font-semibold bg-[var(--accent-soft)] px-3.5 py-1.5 rounded-full transition"
+      : "text-[var(--muted)] font-medium hover:text-[var(--page-text)] hover:bg-[var(--border-soft)] px-3.5 py-1.5 rounded-full transition";
 
   const demoResultBadgeClass =
     demoResult?.tone === "red"
-      ? "bg-red-50 text-red-700"
+      ? "bg-red-50 text-red-700 border border-red-200"
       : demoResult?.tone === "amber"
-        ? "bg-amber-50 text-amber-700"
-        : "bg-emerald-50 text-emerald-700";
+        ? "bg-amber-50 text-amber-700 border border-amber-200"
+        : "bg-emerald-50 text-emerald-700 border border-emerald-200";
 
   return (
     <div
-      className="min-h-screen bg-[var(--page-bg)] text-[var(--page-text)] antialiased transition-colors duration-300"
+      className="min-h-screen bg-[var(--page-bg)] text-[var(--page-text)] antialiased transition-colors duration-200"
       style={isDark ? darkTheme : lightTheme}
     >
-      <nav className="fixed inset-x-0 top-0 z-20 border-b border-[var(--border)] bg-[var(--nav-bg)] px-5 py-4 shadow-[var(--shadow)] backdrop-blur">
-        <div className="mx-auto flex max-w-[1360px] items-center justify-between gap-5">
-          <a
-            href="#home"
-            className="flex min-w-fit items-center gap-3 text-xl font-black text-[var(--page-text)]"
-            aria-label="WriteCheck home"
-          >
-            <span className="grid h-10 w-10 place-items-center rounded-lg bg-[var(--accent)] text-white">
-              <ImageIcon className="h-5 w-5" />
-            </span>
-            <span>WriteCheck</span>
-          </a>
+      {/* Google Classroom styled Top Navigation */}
+      <header className="fixed inset-x-0 top-0 z-30 border-b border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-6">
+            <a
+              href="#home"
+              className="flex items-center gap-2.5 group"
+              aria-label="WriteCheck Classroom Home"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-sm transition-transform group-hover:scale-105">
+                <ClassroomHatIcon className="h-5 w-5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-lg font-semibold tracking-tight text-[var(--page-text)]">
+                  WriteCheck
+                </span>
+                <span className="text-[10px] font-medium text-[var(--accent)] tracking-wider uppercase -mt-1">
+                  Classroom
+                </span>
+              </div>
+            </a>
 
-          <div className="hidden items-center gap-8 text-base font-bold text-[var(--muted)] md:flex lg:text-lg">
-            <a href="#home" className={getNavLinkClass("home")}>
-              Home
-            </a>
-            <a href="#about" className={getNavLinkClass("about")}>
-              About
-            </a>
-            <a href="mailto:hello@writecheck.ai" className="transition hover:text-[var(--page-text)]">
-              Contact
-            </a>
+            <nav className="hidden md:flex items-center gap-1 pl-4 border-l border-[var(--border)] text-sm">
+              <a href="#home" className={getNavLinkClass("home")}>
+                Home
+              </a>
+              <a href="#about" className={getNavLinkClass("about")}>
+                About
+              </a>
+              <a href="#features" className={getNavLinkClass("features")}>
+                Features
+              </a>
+            </nav>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => setIsDark((current) => !current)}
-              className="grid h-11 w-11 place-items-center rounded-full border border-[var(--border)] bg-[var(--panel-soft)] text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--page-text)]"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--border-soft)] hover:text-[var(--page-text)] transition"
               aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
               aria-pressed={isDark}
             >
               {isDark ? (
-                <SunIcon className="h-5 w-5" />
+                <SunIcon className="h-4 w-4" />
               ) : (
-                <MoonIcon className="h-5 w-5" />
+                <MoonIcon className="h-4 w-4" />
               )}
             </button>
 
             <Link
               to="/login"
-              className="inline-flex h-11 items-center justify-center rounded-lg px-3 text-base font-extrabold text-[var(--page-text)] transition hover:bg-[var(--panel)] sm:px-5 sm:text-lg"
+              className="inline-flex h-9 items-center justify-center rounded-full px-4 text-sm font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] transition"
             >
-              Login
+              Sign in
             </Link>
 
             <Link
               to="/register"
-              className="inline-flex h-11 items-center justify-center rounded-lg bg-[var(--accent)] px-4 text-base font-extrabold text-white transition hover:bg-[var(--accent-hover)] sm:px-6 sm:text-lg"
+              className="inline-flex h-9 items-center justify-center rounded-full bg-[var(--accent)] px-5 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] transition"
             >
-              Register
+              Get started
             </Link>
           </div>
         </div>
-      </nav>
+      </header>
 
-      <main className="mx-auto w-full max-w-[1160px] px-6 pb-32 pt-32 sm:px-10 lg:pt-40">
+      {/* Hero Section */}
+      <main className="mx-auto w-full max-w-7xl px-4 pt-28 pb-20 sm:px-6 sm:pt-32 lg:px-8">
         <section
           id="home"
-          className="grid min-h-[660px] scroll-mt-32 items-start gap-16 lg:scroll-mt-40 lg:grid-cols-[1fr_0.95fr]"
+          className="grid items-start gap-12 lg:grid-cols-12 lg:gap-8 xl:gap-12"
         >
-          <div>
-            <p className="mb-6 text-xs font-extrabold uppercase tracking-normal text-[var(--accent)]">
-              Teacher-first plagiarism review
-            </p>
-
-            <h1 className="max-w-[720px] text-balance text-4xl font-black leading-[1.08] tracking-normal sm:text-5xl lg:text-6xl xl:text-[4.75rem]">
+          {/* Left Column: Heading & Google Classroom Intro */}
+          <div className="lg:col-span-6 xl:col-span-6 pt-2">
+            <h1 className="text-4xl font-semibold tracking-tight text-[var(--page-text)] sm:text-5xl lg:text-[3.25rem] lg:leading-[1.15]">
               Detect plagiarism in handwritten essays
             </h1>
 
-            <p className="mt-8 max-w-[510px] text-lg font-medium leading-8 text-[var(--muted)] sm:text-xl">
-              Upload essay photos, review document files, or paste copied text into one station built for classroom plagiarism checks.
+            <p className="mt-6 text-base sm:text-lg leading-relaxed text-[var(--muted)] max-w-xl">
+              Upload essay photos, review document files, or paste copied text directly into your classroom review station. Purpose-built for educators checking handwritten drafts alongside digital submissions.
             </p>
 
-            <div className="mt-10 flex flex-wrap gap-3">
+            <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
                 to="/register"
-                className="inline-flex h-12 items-center justify-center rounded-lg bg-[var(--accent)] px-6 text-base font-extrabold text-white shadow-sm transition hover:bg-[var(--accent-hover)] focus:outline-none focus:ring-4 focus:ring-[var(--accent)]"
+                className="inline-flex h-11 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 transition"
               >
                 Get started free
               </Link>
 
               <a
                 href="#about"
-                className="inline-flex h-12 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--panel-soft)] px-6 text-base font-extrabold text-[var(--page-text)] transition hover:bg-[var(--panel)] focus:outline-none focus:ring-4 focus:ring-[var(--accent)]"
+                className="inline-flex h-11 items-center justify-center rounded-full border border-[var(--border)] bg-transparent px-6 text-sm font-medium text-[var(--page-text)] hover:bg-[var(--panel-soft)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] transition"
               >
                 See how it works
               </a>
             </div>
 
-            <div className="mt-14 grid max-w-[530px] grid-cols-3 gap-6 border-t border-[var(--border)] pt-8">
-              {stats.map(([value, label]) => (
-                <div key={label}>
-                  <strong className="block text-4xl font-black leading-none">
-                    {value}
-                  </strong>
-                  <span className="mt-2 block text-sm font-bold text-[var(--muted)]">
-                    {label}
-                  </span>
+            {/* Metrics strip */}
+            <div className="mt-12 grid max-w-md grid-cols-2 gap-6 border-t border-[var(--border)] pt-8">
+              {stats.map(([title, desc]) => (
+                <div key={title} className="pr-2">
+                  <div className="text-base sm:text-lg font-semibold text-[var(--page-text)]">
+                    {title}
+                  </div>
+                  <div className="mt-1 text-xs text-[var(--muted)] font-normal leading-normal">
+                    {desc}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
 
-          <form
-            onSubmit={handleDemoScan}
-            className="rounded-lg border border-[var(--border)] bg-[var(--panel)] shadow-[var(--shadow)]"
-          >
-            <div className="flex min-h-14 flex-wrap items-center gap-3 border-b border-[var(--border-soft)] px-5 py-3">
-              <span className="h-3 w-3 rounded-full bg-[#ff5b57]" />
-              <span className="h-3 w-3 rounded-full bg-[#ffbd2f]" />
-              <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-              <span className="ml-2 text-sm font-bold text-[var(--muted)] sm:text-base">
-                upload-station
-              </span>
-            </div>
-
-            <div className="p-5 sm:p-6">
-              <div className="grid gap-2 rounded-lg bg-[var(--panel-soft)] p-2 sm:grid-cols-3">
-                {demoModes.map(({ id, label, icon: Icon }) => {
-                  const isActive =
-                    demoMode === id;
-
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setDemoMode(id)}
-                      className={
-                        isActive
-                          ? "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--panel)] px-3 text-sm font-extrabold text-[var(--page-text)] shadow-sm"
-                          : "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-extrabold text-[var(--muted)] transition hover:bg-[var(--panel)] hover:text-[var(--page-text)]"
-                      }
-                    >
-                      <Icon className="h-4 w-4" />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <label className="mt-5 flex min-h-[190px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-[var(--border)] bg-[var(--panel)] px-5 text-center transition hover:border-[var(--accent)]">
-                {demoPreview ? (
-                  <img
-                    src={demoPreview}
-                    alt="Essay upload preview"
-                    className="max-h-[170px] w-full rounded-lg object-contain"
-                  />
-                ) : (
-                  <>
-                    <span className="mb-4 grid h-14 w-14 place-items-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent)]">
-                      <UploadIcon className="h-7 w-7" />
-                    </span>
-                    <span className="text-base font-extrabold text-[var(--page-text)]">
-                      Upload picture or file
-                    </span>
-                    <span className="mt-2 max-w-[330px] text-sm font-semibold leading-6 text-[var(--muted)]">
-                      Images, PDFs, Word documents, and readable text files
-                    </span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  accept={
-                    demoMode === "picture"
-                      ? "image/png,image/jpeg,image/jpg,image/webp"
-                      : ACCEPTED_CHECK_FILE_TYPES
-                  }
-                  multiple
-                  onChange={handleDemoFiles}
-                  className="sr-only"
-                />
-              </label>
-
-              {demoFiles.length > 0 && (
-                <div className="mt-4 rounded-lg border border-[var(--border-soft)]">
-                  {demoFiles.slice(0, 2).map((file) => (
-                    <div
-                      key={`${file.name}-${file.size}-${file.lastModified}`}
-                      className="grid grid-cols-[1fr_auto] gap-3 border-b border-[var(--border-soft)] px-3 py-2 text-sm last:border-b-0"
-                    >
-                      <span className="min-w-0 truncate font-bold text-[var(--page-text)]">
-                        {file.name}
-                      </span>
-                      <span className="font-bold text-[var(--muted)]">
-                        {getFileKind(file)} | {formatFileSize(file.size)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <label className="mt-4 block">
-                <span className="text-sm font-extrabold text-[var(--page-text)]">
-                  Pasted text
-                </span>
-                <textarea
-                  value={demoText}
-                  onChange={(event) => {
-                    setDemoText(event.target.value);
-                    setDemoResult(null);
-                    if (event.target.value && demoMode !== "text") {
-                      setDemoMode("text");
-                    }
-                  }}
-                  rows="4"
-                  placeholder="Paste essay text or OCR output."
-                  className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-3 text-sm font-semibold leading-6 text-[var(--page-text)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-4 focus:ring-[var(--accent-soft)]"
-                />
-              </label>
-
-              {demoError && (
-                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                  {demoError}
-                </p>
-              )}
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
-                <button
-                  type="submit"
-                  disabled={isDemoScanning}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-5 text-sm font-extrabold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <SearchIcon className="h-4 w-4" />
-                  {isDemoScanning ? "Scanning..." : "Scan demo"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleUseSampleText}
-                  className="inline-flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--panel-soft)] px-5 text-sm font-extrabold text-[var(--page-text)] transition hover:bg-[var(--panel)]"
-                >
-                  Use sample
-                </button>
-              </div>
-
-              <div className="mt-5 rounded-lg border border-[var(--border-soft)] bg-[var(--panel-soft)] p-4">
-                {demoResult ? (
-                  <div>
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-3xl font-black">
-                          {demoResult.score}
-                        </p>
-                        <p className="text-xs font-extrabold uppercase tracking-normal text-[var(--muted)]">
-                          Risk score
-                        </p>
-                      </div>
-                      <span className={`rounded-lg px-3 py-2 text-sm font-black ${demoResultBadgeClass}`}>
-                        {demoResult.label}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-                      <div>
-                        <strong className="block text-xl font-black">
-                          {demoResult.wordCount}
-                        </strong>
-                        <span className="text-xs font-bold text-[var(--muted)]">
-                          Words
-                        </span>
-                      </div>
-                      <div>
-                        <strong className="block text-xl font-black">
-                          {demoResult.sourceSignals}
-                        </strong>
-                        <span className="text-xs font-bold text-[var(--muted)]">
-                          Sources
-                        </span>
-                      </div>
-                      <div>
-                        <strong className="block text-xl font-black">
-                          {demoResult.unreadableFiles.length}
-                        </strong>
-                        <span className="text-xs font-bold text-[var(--muted)]">
-                          OCR
-                        </span>
-                      </div>
-                    </div>
-
-                    <p className="mt-4 text-sm font-semibold leading-6 text-[var(--muted)]">
-                      {demoResult.flags[0]}
-                    </p>
-
-                    {demoResult.extractedText && (
-                      <div className="mt-4">
-                        <p className="text-xs font-extrabold uppercase tracking-normal text-[var(--muted)]">
-                          Extracted text
-                        </p>
-                        <pre className="mt-2 max-h-[180px] overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-3 text-sm font-semibold leading-6 text-[var(--page-text)]">
-                          {demoResult.extractedText}
-                        </pre>
-                      </div>
-                    )}
+          {/* Right Column: Google Classroom Originality Station Card */}
+          <div className="lg:col-span-6 xl:col-span-6">
+            <form
+              onSubmit={handleDemoScan}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-sm overflow-hidden"
+            >
+              {/* Classroom header strip */}
+              <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--panel-soft)] px-5 py-3.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]">
+                    <CheckShieldIcon className="h-4 w-4" />
                   </div>
-                ) : (
-                  <div className="grid grid-cols-4 items-start gap-4">
-                    {steps.map((step, index) => (
-                      <div key={step} className="relative text-center">
-                        {index < steps.length - 1 && (
-                          <span className="absolute left-[58%] top-5 hidden h-px w-[84%] bg-[var(--line)] sm:block" />
-                        )}
-                        <span className="relative z-10 mx-auto grid h-10 w-10 place-items-center rounded-full bg-[var(--accent-soft)] text-sm font-black text-[var(--accent)]">
-                          {index + 1}
+                  <div>
+                    <span className="text-sm font-semibold text-[var(--page-text)]">
+                      Classroom Review Station
+                    </span>
+                    <span className="hidden sm:inline-block ml-2 text-xs text-[var(--muted)]">
+                      • Live submission check
+                    </span>
+                  </div>
+                </div>
+                <span className="inline-flex items-center rounded-full bg-[var(--accent-soft)] px-2.5 py-0.5 text-xs font-medium text-[var(--accent)]">
+                  Interactive Demo
+                </span>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-4">
+                {/* Segmented Mode Selector */}
+                <div className="flex rounded-lg bg-[var(--panel-soft)] p-1 border border-[var(--border-soft)]">
+                  {demoModes.map(({ id, label, icon: Icon }) => {
+                    const isActive = demoMode === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setDemoMode(id)}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs sm:text-sm font-medium rounded-md transition ${
+                          isActive
+                            ? "bg-[var(--panel)] text-[var(--accent)] shadow-sm font-semibold"
+                            : "text-[var(--muted)] hover:text-[var(--page-text)]"
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span>{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Upload or Drop Area */}
+                {demoMode !== "text" && (
+                  <label className="flex min-h-[170px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--panel-soft)] p-6 text-center hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]/20 transition group">
+                    {demoPreview ? (
+                      <img
+                        src={demoPreview}
+                        alt="Essay upload preview"
+                        className="max-h-[150px] w-full rounded-lg object-contain"
+                      />
+                    ) : (
+                      <>
+                        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)] transition-transform group-hover:scale-105">
+                          <UploadIcon className="h-5 w-5" />
+                        </div>
+                        <span className="text-sm font-medium text-[var(--page-text)]">
+                          Upload handwritten essay or document
                         </span>
-                        <span className="mt-4 block text-xs font-extrabold text-[var(--muted)]">
-                          {step}
+                        <span className="mt-1 text-xs text-[var(--muted)]">
+                          Images (PNG, JPG), PDF, or Word files
+                        </span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept={
+                        demoMode === "picture"
+                          ? "image/png,image/jpeg,image/jpg,image/webp"
+                          : ACCEPTED_CHECK_FILE_TYPES
+                      }
+                      multiple
+                      onChange={handleDemoFiles}
+                      className="sr-only"
+                    />
+                  </label>
+                )}
+
+                {demoFiles.length > 0 && (
+                  <div className="rounded-lg border border-[var(--border)] divide-y divide-[var(--border)] overflow-hidden text-xs">
+                    {demoFiles.slice(0, 2).map((file) => (
+                      <div
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        className="flex items-center justify-between px-3 py-2 bg-[var(--panel)]"
+                      >
+                        <span className="truncate font-medium text-[var(--page-text)] max-w-[220px]">
+                          {file.name}
+                        </span>
+                        <span className="text-[var(--muted)]">
+                          {getFileKind(file)} • {formatFileSize(file.size)}
                         </span>
                       </div>
                     ))}
                   </div>
                 )}
+
+                {/* Pasted text textarea */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label
+                      htmlFor="pasted-text"
+                      className="text-xs font-medium text-[var(--muted)]"
+                    >
+                      Student Text / OCR Input
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleUseSampleText}
+                      className="text-xs font-medium text-[var(--accent)] hover:underline"
+                    >
+                      Insert sample essay
+                    </button>
+                  </div>
+                  <textarea
+                    id="pasted-text"
+                    value={demoText}
+                    onChange={(event) => {
+                      setDemoText(event.target.value);
+                      setDemoResult(null);
+                      if (event.target.value && demoMode !== "text") {
+                        setDemoMode("text");
+                      }
+                    }}
+                    rows={3}
+                    placeholder="Paste essay paragraph or OCR transcript here..."
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 text-sm text-[var(--page-text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition"
+                  />
+                </div>
+
+                {demoError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                    {demoError}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 pt-1">
+                  <button
+                    type="submit"
+                    disabled={isDemoScanning}
+                    className="flex-1 inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-5 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition"
+                  >
+                    <SearchIcon className="h-4 w-4" />
+                    <span>{isDemoScanning ? "Analyzing..." : "Run Originality Check"}</span>
+                  </button>
+                </div>
+
+                {/* Results or Workflow Steps */}
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--panel-soft)] p-4">
+                  {demoResult ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-2xl font-bold text-[var(--page-text)]">
+                            {demoResult.score}
+                          </div>
+                          <div className="text-xs uppercase tracking-wider text-[var(--muted)] font-medium">
+                            Similarity Index
+                          </div>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${demoResultBadgeClass}`}
+                        >
+                          {demoResult.label}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 rounded-lg bg-[var(--panel)] p-2.5 border border-[var(--border-soft)] text-center">
+                        <div>
+                          <div className="text-sm font-bold text-[var(--page-text)]">
+                            {demoResult.wordCount}
+                          </div>
+                          <div className="text-[11px] text-[var(--muted)]">Words</div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-[var(--page-text)]">
+                            {demoResult.sourceSignals}
+                          </div>
+                          <div className="text-[11px] text-[var(--muted)]">Sources</div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-[var(--page-text)]">
+                            {demoResult.unreadableFiles.length === 0 ? "Ready" : "Flags"}
+                          </div>
+                          <div className="text-[11px] text-[var(--muted)]">OCR Status</div>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-[var(--muted)] leading-relaxed">
+                        {demoResult.flags[0]}
+                      </p>
+
+                      {demoResult.extractedText && (
+                        <div>
+                          <span className="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider">
+                            Extracted Transcript
+                          </span>
+                          <pre className="mt-1 max-h-24 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--panel)] p-2 text-xs font-mono text-[var(--page-text)] whitespace-pre-wrap">
+                            {demoResult.extractedText}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)] mb-3 text-center">
+                        Classroom Verification Pipeline
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-center">
+                        {steps.map(({ step, title, desc }) => (
+                          <div key={step} className="flex flex-col items-center">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)] mb-1">
+                              {step}
+                            </div>
+                            <span className="text-xs font-semibold text-[var(--page-text)]">
+                              {title}
+                            </span>
+                            <span className="text-[10px] text-[var(--muted)] leading-tight mt-0.5">
+                              {desc}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          </form>
+            </form>
+          </div>
         </section>
 
+        {/* Section 2: Built for Educators (About) */}
         <section
           id="about"
-          className="mt-28 grid scroll-mt-24 gap-16 lg:scroll-mt-28 lg:grid-cols-[0.92fr_1fr]"
+          className="mt-28 scroll-mt-24 border-t border-[var(--border)] pt-20"
         >
-          <div>
-            <p className="mb-6 text-xs font-extrabold uppercase tracking-normal text-[var(--accent)]">
-              Built for classroom review
-            </p>
-            <h2 className="max-w-[470px] text-5xl font-black leading-tight tracking-normal sm:text-6xl">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--accent-border)] bg-[var(--accent-soft)] px-3 py-0.5 text-xs font-medium text-[var(--accent)] mb-4">
+              Designed for Classroom Workflows
+            </div>
+            <h2 className="text-3xl font-semibold tracking-tight text-[var(--page-text)] sm:text-4xl">
               Built for educators checking original work
             </h2>
-            <p className="mt-8 max-w-[570px] text-lg font-medium leading-8 text-[var(--muted)]">
-              WriteCheck gives teachers one place to collect essay scans, pasted text, and classroom submissions for plagiarism review.
+            <p className="mt-4 text-base sm:text-lg leading-relaxed text-[var(--muted)]">
+              WriteCheck brings together handwritten student submissions, printed drafts, and digital papers into one streamlined teacher dashboard. Assignments and student submissions are automatically organized by classroom section.
             </p>
-            <p className="mt-6 max-w-[570px] text-lg font-medium leading-8 text-[var(--muted)]">
-              It is designed for schools that still use handwritten drafts, printed work, and mixed digital submissions in the same class.
-            </p>
-            <a
-              href="#features"
-              className="mt-9 inline-flex h-12 items-center justify-center rounded-lg bg-[var(--accent)] px-6 text-base font-extrabold text-white transition hover:bg-[var(--accent-hover)] focus:outline-none focus:ring-4 focus:ring-[var(--accent)]"
-            >
-              See our features
-            </a>
           </div>
 
-          <div id="features" className="grid scroll-mt-24 gap-6 sm:grid-cols-2 lg:scroll-mt-28">
+          {/* Features Grid */}
+          <div
+            id="features"
+            className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4 scroll-mt-24"
+          >
             {features.map(({ title, copy, icon: Icon }) => (
-              <article
+              <div
                 key={title}
-                className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-7 shadow-[var(--shadow)]"
+                className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6 transition-all hover:shadow-md hover:border-[var(--accent)]"
               >
-                <span className="mb-8 grid h-11 w-11 place-items-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent)]">
-                  <Icon className="h-6 w-6" />
-                </span>
-                <h3 className="text-lg font-black">{title}</h3>
-                <p className="mt-3 text-base font-medium leading-7 text-[var(--muted)]">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] mb-5">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="text-base font-semibold text-[var(--page-text)]">
+                  {title}
+                </h3>
+                <p className="mt-2 text-sm text-[var(--muted)] leading-relaxed">
                   {copy}
                 </p>
-              </article>
+              </div>
             ))}
           </div>
         </section>
+
+        {/* Google Classroom Integration Banner */}
+        <section className="mt-24 rounded-2xl border border-[var(--border)] bg-[var(--panel-soft)] p-8 sm:p-12">
+          <div className="max-w-3xl mx-auto text-center">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)] mb-4">
+              <ClassroomHatIcon className="h-6 w-6" />
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--page-text)]">
+              Ready to verify student work with Google Classroom?
+            </h2>
+            <p className="mt-3 text-sm sm:text-base text-[var(--muted)] max-w-xl mx-auto">
+              Join teachers and students already checking handwritten essays, upholding academic integrity, and reviewing clear submission reports.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Link
+                to="/register"
+                className="inline-flex h-10 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] transition"
+              >
+                Create Teacher Account
+              </Link>
+              <Link
+                to="/login"
+                className="inline-flex h-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel)] px-6 text-sm font-medium text-[var(--page-text)] hover:bg-[var(--border-soft)] transition"
+              >
+                Student Sign In
+              </Link>
+            </div>
+          </div>
+        </section>
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-[var(--border)] bg-[var(--panel)] py-8">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6 lg:px-8 text-xs text-[var(--muted)]">
+          <div className="flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded bg-[var(--accent)] text-white">
+              <ClassroomHatIcon className="h-3.5 w-3.5" />
+            </div>
+            <span className="font-semibold text-[var(--page-text)]">WriteCheck</span>
+            <span>— Google Classroom Inspired Academic Integrity</span>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <a href="#home" className="hover:text-[var(--page-text)] transition">
+              Home
+            </a>
+            <a href="#about" className="hover:text-[var(--page-text)] transition">
+              About
+            </a>
+            <a href="#features" className="hover:text-[var(--page-text)] transition">
+              Features
+            </a>
+            <a
+              href="mailto:support@writecheck.ai"
+              className="hover:text-[var(--page-text)] transition"
+            >
+              Contact
+            </a>
+          </div>
+
+          <div>
+            &copy; {new Date().getFullYear()} WriteCheck AI. All rights reserved.
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

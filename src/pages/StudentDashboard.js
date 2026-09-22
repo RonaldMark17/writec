@@ -115,6 +115,9 @@ export default function StudentDashboard({ profile }) {
   const [isJoiningClassroom, setIsJoiningClassroom] =
     useState(false);
 
+  const [isJoinModalOpen, setIsJoinModalOpen] =
+    useState(false);
+
   const [isSubmittingEssay, setIsSubmittingEssay] =
     useState(false);
 
@@ -156,6 +159,9 @@ export default function StudentDashboard({ profile }) {
   }, []);
 
   const loadStudentData = useCallback(async () => {
+    const studentId = profile?.id;
+    if (!studentId) return;
+
     setIsLoading(true);
     setErrorMessage("");
 
@@ -163,7 +169,7 @@ export default function StudentDashboard({ profile }) {
       await supabase
         .from(MEMBER_TABLE)
         .select("id, classroom_id, student_id")
-        .eq("student_id", profile.id);
+        .eq("student_id", studentId);
 
     if (membershipError) {
       setErrorMessage(membershipError.message);
@@ -220,7 +226,7 @@ export default function StudentDashboard({ profile }) {
         await supabase
           .from(SUBMISSION_TABLE)
           .select("*")
-          .eq("student_id", profile.id)
+          .eq("student_id", studentId)
           .in("assignment_id", assignmentIds)
           .order("created_at", { ascending: false });
 
@@ -349,10 +355,24 @@ export default function StudentDashboard({ profile }) {
           : "",
     }));
     setIsLoading(false);
-  }, [profile.id, resetSubmissionDraft]);
+  }, [profile?.id, resetSubmissionDraft]);
 
   useEffect(() => {
-    loadStudentData();
+    if (profile?.id) {
+      loadStudentData();
+    }
+  }, [profile?.id, loadStudentData]);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.id) {
+        loadStudentData();
+      }
+    });
+
+    return () => subscription?.unsubscribe?.();
   }, [loadStudentData]);
 
   useEffect(() => {
@@ -456,6 +476,7 @@ export default function StudentDashboard({ profile }) {
     }
 
     setJoinCode("");
+    setIsJoinModalOpen(false);
     setSuccessMessage(`Joined ${classroom.classroom_name}.`);
     setIsJoiningClassroom(false);
     await loadStudentData();
@@ -640,7 +661,7 @@ export default function StudentDashboard({ profile }) {
     profile?.full_name || profile?.email || "Student";
 
   return (
-    <div className="min-h-screen bg-[#f4f3ef] text-gray-950">
+    <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
       <Header
         workspace="Student workspace"
         pages={studentPages}
@@ -648,147 +669,211 @@ export default function StudentDashboard({ profile }) {
         onPageChange={setActivePage}
       />
 
-      <main className="mx-auto max-w-[1180px] px-6 py-8">
-        <section className="mb-8 rounded-lg border border-gray-200 bg-white p-6">
-          <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-            Welcome back
-          </p>
-          <h2 className="mt-2 text-4xl font-black tracking-normal">
-            {displayName}
-          </h2>
-          <p className="mt-2 max-w-[620px] text-base font-semibold leading-7 text-gray-500">
-            View your classrooms, open assignment bins, and submit essay images.
-          </p>
-        </section>
-
-        <div className="mb-8">
+      <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6">
           <StatusMessage
             error={errorMessage}
             message={successMessage}
           />
         </div>
 
+        {/* Join Class Modal Dialog */}
+        {isJoinModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="flex items-start justify-between pb-4 border-b border-[#dadce0]">
+                <div>
+                  <h3 className="text-xl font-medium text-[#202124]">Join class</h3>
+                  <p className="mt-0.5 text-xs text-[#5f6368]">
+                    Ask your teacher for the class code, then enter it here.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsJoinModalOpen(false);
+                    setJoinCode("");
+                  }}
+                  className="rounded-full p-1 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#202124]"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleJoinClassroom} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="text-xs font-medium text-[#3c4043]">Class code</span>
+                  <input
+                    type="text"
+                    value={joinCode}
+                    onChange={(event) => setJoinCode(event.target.value)}
+                    placeholder="e.g. CLAS1234"
+                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm font-mono uppercase text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                    required
+                  />
+                </label>
+
+                <p className="text-xs text-[#5f6368]">
+                  To sign in with a class code: Use an authorized account, and enter a 5–8 character code with letters or numbers and no spaces.
+                </p>
+
+                <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#dadce0]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsJoinModalOpen(false);
+                      setJoinCode("");
+                    }}
+                    className="rounded-full px-4 py-2 text-sm font-medium text-[#5f6368] hover:bg-[#f1f3f4]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isJoiningClassroom}
+                    className="rounded-full bg-[#137333] px-5 py-2 text-sm font-medium text-white hover:bg-[#0f5b28] disabled:bg-gray-300"
+                  >
+                    {isJoiningClassroom ? "Joining..." : "Join"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Classes Page */}
         {activePage === "classrooms" && (
-          <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-            <form
-              onSubmit={handleJoinClassroom}
-              className="h-fit rounded-lg border border-gray-200 bg-white p-6"
-            >
-              <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-                Join classroom
-              </p>
-              <h3 className="mt-2 text-2xl font-black">
-                Enter class code
-              </h3>
-              <input
-                type="text"
-                value={joinCode}
-                onChange={(event) => setJoinCode(event.target.value)}
-                placeholder="Example: CW12A"
-                className="mt-5 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold uppercase outline-none transition placeholder:normal-case focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
-                required
-              />
+          <div className="space-y-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#dadce0] pb-5">
+              <div>
+                <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
+                  Classes
+                </h2>
+                <p className="mt-1 text-sm text-[#5f6368]">
+                  View your enrolled classes, teacher announcements, and assigned coursework.
+                </p>
+              </div>
+
               <button
-                type="submit"
-                disabled={isJoiningClassroom}
-                className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                type="button"
+                onClick={() => {
+                  setJoinCode("");
+                  setIsJoinModalOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-[#0f5b28] active:scale-[0.98]"
               >
                 <PlusIcon className="h-4 w-4" />
-                {isJoiningClassroom ? "Joining..." : "Join"}
+                <span>Join class</span>
               </button>
-            </form>
+            </div>
 
-            <div className="grid gap-5 md:grid-cols-2">
-              {isLoading && (
-                <div className="rounded-lg border border-gray-200 bg-white p-6">
-                  <p className="text-sm font-bold text-gray-500">
-                    Loading classrooms...
-                  </p>
+            {isLoading ? (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {[1, 2].map((n) => (
+                  <div key={n} className="h-64 rounded-xl border border-[#dadce0] bg-white animate-pulse" />
+                ))}
+              </div>
+            ) : classrooms.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                  <DoorIcon className="h-7 w-7" />
                 </div>
-              )}
-
-              {!isLoading && classrooms.length === 0 && (
-                <div className="rounded-lg border border-gray-200 bg-white p-6">
-                  <h3 className="text-xl font-black text-gray-950">
-                    No classrooms joined yet
-                  </h3>
-                  <p className="mt-2 text-sm font-semibold text-gray-500">
-                    Enter the code your teacher shared to join a classroom.
-                  </p>
-                </div>
-              )}
-
-              {classrooms.map((classroom) => (
-                <article
-                  key={classroom.id}
-                  className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+                <h3 className="mt-4 text-lg font-medium text-[#202124]">No classes yet</h3>
+                <p className="mt-1 text-sm text-[#5f6368]">
+                  Ask your teacher for the class code to join your first classroom.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJoinCode("");
+                    setIsJoinModalOpen(true);
+                  }}
+                  className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#0f5b28]"
                 >
-                  <div className={`${classroom.accent} h-24 p-5 text-white`}>
-                    <h3 className="truncate text-xl font-black">
-                      {classroom.name}
-                    </h3>
-                    <p className="mt-1 text-sm font-bold text-white/80">
-                      {classroom.teacher}
-                    </p>
-                  </div>
-
-                  <div className="p-5">
-                    <p className="text-sm font-bold text-gray-500">
-                      {classroom.section} | Class code {classroom.code}
-                    </p>
-                    <div className="mt-5 grid grid-cols-2 gap-3 text-center">
-                      <div className="rounded-lg bg-gray-50 p-3">
-                        <strong className="block text-xl font-black">
-                          {classroom.assignments}
-                        </strong>
-                        <span className="text-xs font-bold text-gray-500">
-                          Assignments
-                        </span>
+                  <PlusIcon className="h-4 w-4" />
+                  <span>Join class</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {classrooms.map((classroom) => (
+                  <article
+                    key={classroom.id}
+                    className="group flex flex-col rounded-xl border border-[#dadce0] bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200"
+                  >
+                    <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 pr-14">
+                          <h3
+                            onClick={() => handleViewClassroomAssignments(classroom.id)}
+                            className="text-xl font-medium tracking-tight text-white hover:underline cursor-pointer truncate"
+                            title={classroom.name}
+                          >
+                            {classroom.name}
+                          </h3>
+                          <p className="text-xs font-normal text-white/90 truncate mt-0.5">
+                            Section {classroom.section} • {classroom.teacher}
+                          </p>
+                        </div>
                       </div>
-                      <div className="rounded-lg bg-gray-50 p-3">
-                        <strong className="block text-xl font-black">
-                          {classroom.submissions}
-                        </strong>
-                        <span className="text-xs font-bold text-gray-500">
-                          Submitted
-                        </span>
+
+                      <div
+                        className="absolute -bottom-6 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#137333] text-lg font-bold shadow-sm ring-4 ring-white border border-gray-100"
+                        title={classroom.teacher}
+                      >
+                        {(classroom.teacher || classroom.name || "T").slice(0, 2).toUpperCase()}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleViewClassroomAssignments(classroom.id)}
-                      className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-lg border border-gray-200 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
-                    >
-                      View assignments
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
+
+                    <div className="p-4 pt-7 flex-1 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between text-xs text-[#5f6368]">
+                          <span>{classroom.assignments} assignments</span>
+                          <span className="font-medium text-[#137333]">
+                            {classroom.submissions} turned in
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-[#e0e0e0] flex items-center justify-between text-xs font-medium">
+                        <button
+                          type="button"
+                          onClick={() => handleViewClassroomAssignments(classroom.id)}
+                          className="inline-flex items-center gap-1.5 text-[#137333] hover:underline"
+                        >
+                          <ClipboardIcon className="h-3.5 w-3.5" />
+                          <span>View classwork</span>
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {activePage === "assignments" && (
           <div>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-[#dadce0] pb-5">
               <div>
-                <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-                  Assignment bins
-                </p>
-                <h2 className="mt-2 text-4xl font-black tracking-normal">
-                  Assigned essays
+                <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
+                  To-do
                 </h2>
+                <p className="mt-1 text-sm text-[#5f6368]">
+                  Work assigned to you across your enrolled classes.
+                </p>
                 {selectedClassroom && (
-                  <p className="mt-2 text-sm font-bold text-gray-500">
-                    {selectedClassroom.name} | {selectedClassroom.section}
+                  <p className="mt-1 text-xs text-[#137333] font-medium">
+                    Filtering: {selectedClassroom.name} — Section {selectedClassroom.section}
                   </p>
                 )}
               </div>
 
               {classrooms.length > 1 && (
                 <label className="block w-full sm:w-[280px]">
-                  <span className="text-sm font-extrabold text-gray-800">
-                    Classroom
+                  <span className="text-xs font-medium text-[#3c4043]">
+                    Classroom filter
                   </span>
                   <select
                     value={selectedClassroomId}
@@ -796,7 +881,7 @@ export default function StudentDashboard({ profile }) {
                       setSelectedClassroomId(event.target.value);
                       resetSubmissionDraft();
                     }}
-                    className="mt-2 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                    className="mt-1.5 h-10 w-full rounded-md border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                   >
                     {classrooms.map((classroom) => (
                       <option
@@ -811,87 +896,100 @@ export default function StudentDashboard({ profile }) {
               )}
             </div>
 
-            <div className="mt-6 space-y-4">
-              {visibleAssignments.length === 0 && (
-                <div className="rounded-lg border border-gray-200 bg-white p-6">
-                  <p className="text-sm font-bold text-gray-500">
-                    No assignments available yet.
-                  </p>
-                </div>
-              )}
-
-              {visibleAssignments.map((assignment) => {
-                const isDraftOpen =
-                  submissionDraft.assignmentId === assignment.id;
-
-                const submissionBlockMessage =
-                  isDraftOpen
-                    ? getSubmissionBlockMessage(submissionDraft, submissionFile)
-                    : "";
-
-                return (
-                  <article
-                    key={assignment.id}
-                    className="rounded-lg border border-gray-200 bg-white p-5"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <h3 className="text-xl font-black text-gray-950">
-                          {assignment.title}
-                        </h3>
-                        <p className="mt-1 text-sm font-bold text-gray-500">
-                          {assignment.classroomName} | {formatDateTime(assignment.dueDate)}
-                        </p>
-                      </div>
-                      <span
-                        className={
-                          assignment.submitted
-                            ? "rounded-lg bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700"
-                            : "rounded-lg bg-amber-50 px-3 py-2 text-sm font-black text-amber-700"
-                        }
-                      >
-                        {assignment.submitted ? "Submitted" : "Open"}
-                      </span>
+              <div className="mt-6 space-y-4">
+                {visibleAssignments.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                      <ClipboardIcon className="h-7 w-7" />
                     </div>
+                    <h3 className="mt-4 text-lg font-medium text-[#202124]">No work due</h3>
+                    <p className="mt-1 text-sm text-[#5f6368]">
+                      You're all caught up! When teachers assign new work, it will appear here.
+                    </p>
+                  </div>
+                )}
 
-                    {assignment.instructions && (
-                      <p className="mt-4 text-sm font-semibold leading-6 text-gray-600">
-                        {assignment.instructions}
-                      </p>
-                    )}
+                {visibleAssignments.map((assignment) => {
+                  const isDraftOpen =
+                    submissionDraft.assignmentId === assignment.id;
 
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      {assignment.submitted ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openSubmissionFile(
-                              assignment.submission?.file_url || assignment.submission?.fileUrl,
-                              setErrorMessage
-                            )
-                          }
-                          className="inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
-                        >
-                          Open submission
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            isDraftOpen
-                              ? resetSubmissionDraft()
-                              : handleOpenSubmissionDraft(assignment)
-                          }
+                  const submissionBlockMessage =
+                    isDraftOpen
+                      ? getSubmissionBlockMessage(submissionDraft, submissionFile)
+                      : "";
+
+                  return (
+                    <article
+                      key={assignment.id}
+                      className="rounded-xl border border-[#dadce0] bg-white p-5 shadow-2xs hover:shadow-xs transition duration-150"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex items-start gap-3.5 min-w-0">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                            <ClipboardIcon className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-base font-medium text-[#202124]">
+                              {assignment.title}
+                            </h3>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#5f6368]">
+                              <span className="font-medium text-[#202124]">{assignment.classroomName}</span>
+                              <span>•</span>
+                              <span>Due {formatDateTime(assignment.dueDate)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
                           className={
-                            isDraftOpen
-                              ? "inline-flex h-10 items-center justify-center rounded-lg border border-red-200 bg-red-600 px-4 text-sm font-extrabold text-white transition hover:bg-red-700"
-                              : "inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
+                            assignment.submitted
+                              ? "rounded-full bg-[#e6f4ea] px-3 py-1 text-xs font-medium text-[#137333]"
+                              : "rounded-full bg-[#f1f3f4] px-3 py-1 text-xs font-medium text-[#3c4043]"
                           }
                         >
-                          {isDraftOpen ? "Close" : "Turn in"}
-                        </button>
+                          {assignment.submitted ? "Turned in" : "Assigned"}
+                        </span>
+                      </div>
+
+                      {assignment.instructions && (
+                        <p className="mt-3 text-xs text-[#5f6368] leading-relaxed pl-14">
+                          {assignment.instructions}
+                        </p>
                       )}
-                    </div>
+
+                      <div className="mt-4 flex flex-wrap gap-3 pl-14">
+                        {assignment.submitted ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openSubmissionFile(
+                                assignment.submission?.file_url || assignment.submission?.fileUrl,
+                                setErrorMessage
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-4 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333]"
+                          >
+                            <FileIcon className="h-3.5 w-3.5 text-[#5f6368]" />
+                            <span>View submission</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              isDraftOpen
+                                ? resetSubmissionDraft()
+                                : handleOpenSubmissionDraft(assignment)
+                            }
+                            className={
+                              isDraftOpen
+                                ? "inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-4 py-1.5 text-xs font-medium text-[#c5221f] hover:bg-red-50"
+                                : "inline-flex items-center gap-1.5 rounded-full bg-[#137333] px-4 py-1.5 text-xs font-medium text-white hover:bg-[#0f5b28]"
+                            }
+                          >
+                            {isDraftOpen ? "Cancel" : "Add or create"}
+                          </button>
+                        )}
+                      </div>
 
                     {isDraftOpen && !assignment.submitted && (
                       <form
@@ -1068,81 +1166,91 @@ export default function StudentDashboard({ profile }) {
         )}
 
         {activePage === "submissions" && (
-          <div>
-            <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-              Turned in
-            </p>
-            <h2 className="mt-2 text-4xl font-black tracking-normal">
-              My submissions
-            </h2>
+          <div className="space-y-6">
+            <div className="border-b border-[#dadce0] pb-5">
+              <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
+                Submissions
+              </h2>
+              <p className="mt-1 text-sm text-[#5f6368]">
+                Review your turned in assignments, teacher feedback, and OCR/plagiarism scan reports.
+              </p>
+            </div>
 
-            <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
-              <div className="grid grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] gap-4 border-b border-gray-200 px-5 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
+            <div className="overflow-hidden rounded-xl border border-[#dadce0] bg-white shadow-2xs">
+              <div className="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.8fr] gap-4 border-b border-[#dadce0] bg-[#f8f9fa] px-5 py-3 text-xs font-medium text-[#5f6368]">
                 <span>Assignment</span>
-                <span>Essay</span>
+                <span>Essay Title</span>
                 <span>Grade</span>
                 <span>Status</span>
-                <span>Action</span>
+                <span className="text-right">Action</span>
               </div>
 
               {submissions.length === 0 && (
-                <p className="px-5 py-5 text-sm font-bold text-gray-500">
-                  No submissions yet.
-                </p>
+                <div className="p-12 text-center">
+                  <p className="text-sm font-medium text-[#5f6368]">
+                    No submissions turned in yet.
+                  </p>
+                </div>
               )}
 
-              {submissions.map((submission) => (
-                <div
-                  key={submission.id}
-                  className="grid grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0"
-                >
-                  <span className="font-extrabold text-gray-950">
-                    {submission.assignmentTitle}
-                  </span>
-                  <span className="font-semibold text-gray-600">
-                    {submission.essayTitle}
-                  </span>
-                  <div>
-                    {submission.grade ? (
-                      <span className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-800">
-                        {submission.grade}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-400">
-                        Pending
-                      </span>
-                    )}
-                  </div>
-                  <span className={`font-extrabold capitalize ${
-                    submission.status === "graded" ? "text-emerald-700" :
-                    submission.status === "submitted" ? "text-blue-600" : "text-gray-500"
-                  }`}>
-                    {submission.status}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewingSubmission(submission);
-                      setStudentCopySuccess(false);
-                      setIsStudentImageExpanded(false);
-                      setStudentImagePreviewUrl("");
-                      const fileUrl = submission.fileUrl;
-                      if (!fileUrl) return;
-                      resolveStorageImageUrl(fileUrl)
-                        .then((resolvedUrl) => {
-                          if (resolvedUrl) setStudentImagePreviewUrl(resolvedUrl);
-                        })
-                        .catch((err) => {
-                          console.warn("Failed to resolve student preview URL:", err);
-                        });
-                    }}
-                    className="inline-flex h-8 w-fit items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-xs font-extrabold text-gray-700 transition hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300"
+              <div className="divide-y divide-[#dadce0]">
+                {submissions.map((submission) => (
+                  <div
+                    key={submission.id}
+                    className="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.8fr] items-center gap-4 px-5 py-4 text-sm transition hover:bg-[#f8f9fa]"
                   >
-                    <FileSearchIcon className="h-3.5 w-3.5" />
-                    View
-                  </button>
-                </div>
-              ))}
+                    <span className="font-medium text-[#202124] truncate">
+                      {submission.assignmentTitle}
+                    </span>
+                    <span className="text-xs text-[#5f6368] truncate">
+                      {submission.essayTitle}
+                    </span>
+                    <div>
+                      {submission.grade ? (
+                        <span className="inline-flex items-center rounded-md border border-[#ceead6] bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-medium text-[#137333]">
+                          {submission.grade} / 100
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[#5f6368] italic">
+                          Not graded yet
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        submission.status === "graded" ? "bg-[#e6f4ea] text-[#137333]" :
+                        submission.status === "submitted" ? "bg-[#e8f0fe] text-[#1967d2]" : "bg-[#f1f3f4] text-[#3c4043]"
+                      }`}>
+                        {submission.status === "graded" ? "Graded" : "Turned in"}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setViewingSubmission(submission);
+                          setStudentCopySuccess(false);
+                          setIsStudentImageExpanded(false);
+                          setStudentImagePreviewUrl("");
+                          const fileUrl = submission.fileUrl;
+                          if (!fileUrl) return;
+                          resolveStorageImageUrl(fileUrl)
+                            .then((resolvedUrl) => {
+                              if (resolvedUrl) setStudentImagePreviewUrl(resolvedUrl);
+                            })
+                            .catch((err) => {
+                              console.warn("Failed to resolve student preview URL:", err);
+                            });
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] px-3.5 py-1 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333]"
+                      >
+                        <FileSearchIcon className="h-3.5 w-3.5 text-[#5f6368]" />
+                        <span>View details</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}

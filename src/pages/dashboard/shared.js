@@ -1,4 +1,4 @@
-import { supabase } from "../../supabaseClient";
+import { supabase, signOutAndExpireToken } from "../../supabaseClient";
 
 export const CLASSROOM_TABLE = "classroomTable";
 export const MEMBER_TABLE = "classroomMembers";
@@ -220,6 +220,80 @@ export function CopyIcon({ className = "h-5 w-5" }) {
   );
 }
 
+export function ArrowLeftIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  );
+}
+
+export function SearchIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+export function ExternalLinkIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+export function DownloadIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
 export function ChevronDownIcon({ className = "h-5 w-5" }) {
   return (
     <svg
@@ -258,31 +332,31 @@ function LogOutIcon({ className = "h-5 w-5" }) {
 
 export const teacherPages = [
   {
-    id: "upload",
-    label: "Upload Station",
-  },
-  {
     id: "classrooms",
-    label: "Classrooms",
+    label: "Classes",
   },
   {
     id: "assignments",
-    label: "Assignments",
+    label: "Classwork",
   },
   {
     id: "submissions",
-    label: "Submissions",
+    label: "Grades",
+  },
+  {
+    id: "upload",
+    label: "Scan Station",
   },
 ];
 
 export const studentPages = [
   {
     id: "classrooms",
-    label: "Classrooms",
+    label: "Classes",
   },
   {
     id: "assignments",
-    label: "Assignments",
+    label: "To-do",
   },
   {
     id: "submissions",
@@ -291,10 +365,12 @@ export const studentPages = [
 ];
 
 const classroomAccentClasses = [
-  "bg-emerald-700",
-  "bg-sky-700",
-  "bg-violet-700",
-  "bg-amber-700",
+  "bg-[#137333]", // Classic Classroom Green
+  "bg-[#1967d2]", // Classic Classroom Blue
+  "bg-[#b06000]", // Warm Ochre
+  "bg-[#7627bb]", // Amethyst Purple
+  "bg-[#007b83]", // Teal
+  "bg-[#c5221f]", // Crimson Red
 ];
 
 export const emptyClassroomForm = {
@@ -364,6 +440,8 @@ export function normalizeAssignment(row, classroomsById = new Map(), extra = {})
     createdAt: row.created_at,
     classroomName: classroom?.name || "Classroom",
     classroomSection: classroom?.section || "",
+    classroomSubject: classroom?.subject || "",
+    classroomCode: classroom?.code || "",
     submissions: extra.submissions ?? 0,
     submitted: extra.submitted ?? false,
     submission: extra.submission ?? null,
@@ -567,7 +645,7 @@ export function StatusMessage({ error, message }) {
 function PageNav({ pages, activePage, onChange, label }) {
   return (
     <nav
-      className="flex flex-wrap items-center gap-2"
+      className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar"
       aria-label={label}
     >
       {pages.map((page) => {
@@ -581,8 +659,8 @@ function PageNav({ pages, activePage, onChange, label }) {
             onClick={() => onChange(page.id)}
             className={
               isActive
-                ? "rounded-lg px-4 py-2 text-sm font-extrabold text-gray-950 transition"
-                : "rounded-lg px-4 py-2 text-sm font-extrabold text-gray-500 transition hover:bg-gray-100 hover:text-gray-950"
+                ? "relative border-b-2 border-[#137333] px-3.5 py-3 text-sm font-semibold text-[#137333] transition-colors"
+                : "border-b-2 border-transparent px-3.5 py-3 text-sm font-medium text-[#5f6368] transition-colors hover:bg-[#f1f3f4] hover:text-[#202124] rounded-t-md"
             }
             aria-current={isActive ? "page" : undefined}
           >
@@ -596,37 +674,52 @@ function PageNav({ pages, activePage, onChange, label }) {
 
 export function Header({ workspace, pages, activePage, onPageChange }) {
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/";
+    await signOutAndExpireToken("/login");
   };
 
   return (
-    <header className="border-b border-gray-200 bg-white">
-      <div className="mx-auto flex max-w-[1240px] flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-xs font-extrabold uppercase tracking-normal text-emerald-700">
-            {workspace}
-          </p>
-          <h1 className="text-2xl font-black">
-            WriteCheck
-          </h1>
+    <header className="sticky top-0 z-30 border-b border-[#dadce0] bg-white shadow-2xs">
+      <div className="mx-auto flex max-w-[1280px] items-center justify-between px-4 sm:px-6">
+        {/* Brand Left */}
+        <div className="flex items-center gap-3 py-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#137333] text-white shadow-2xs">
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
+              <polyline points="10 2 10 10 13 7 16 10 16 2" />
+            </svg>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xl font-bold tracking-tight text-[#202124]">WriteCheck</span>
+            <span className="text-xs font-medium text-[#5f6368] hidden sm:inline">Classroom</span>
+          </div>
         </div>
 
-        <PageNav
-          pages={pages}
-          activePage={activePage}
-          onChange={onPageChange}
-          label={`${workspace} pages`}
-        />
+        {/* Center Nav */}
+        <div className="flex-1 flex justify-center px-2">
+          <PageNav
+            pages={pages}
+            activePage={activePage}
+            onChange={onPageChange}
+            label={`${workspace} navigation`}
+          />
+        </div>
 
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
-        >
-          <LogOutIcon className="h-4 w-4" />
-          Logout
-        </button>
+        {/* Right Actions */}
+        <div className="flex items-center gap-2.5 py-2.5">
+          <span className="hidden md:inline-flex items-center rounded-full bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-semibold text-[#137333]">
+            {workspace}
+          </span>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] px-3 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-gray-400"
+            title="Sign out of account"
+          >
+            <LogOutIcon className="h-3.5 w-3.5 text-[#5f6368]" />
+            <span className="hidden sm:inline">Sign out</span>
+          </button>
+        </div>
       </div>
     </header>
   );

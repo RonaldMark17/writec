@@ -33,6 +33,10 @@ import {
   teacherPages,
   EditIcon,
   toDateTimeLocalInput,
+  ArrowLeftIcon,
+  SearchIcon,
+  ExternalLinkIcon,
+  DownloadIcon,
 } from "./dashboard/shared";
 import HighlightedText from "./HighlightedText";
 import {
@@ -71,7 +75,7 @@ const uploadModes = [
 
 export default function TeacherDashboard({ profile }) {
   const [activePage, setActivePage] =
-    useState("upload");
+    useState("classrooms");
 
   const [classrooms, setClassrooms] =
     useState([]);
@@ -93,6 +97,16 @@ export default function TeacherDashboard({ profile }) {
 
   const [editingAssignment, setEditingAssignment] = useState(null);
   const [isUpdatingAssignment, setIsUpdatingAssignment] = useState(false);
+  const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
+  const [assignmentDetailTab, setAssignmentDetailTab] = useState("roster");
+
+  const [classroomMembers, setClassroomMembers] = useState([]);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState(null);
+  const [assignmentFilterClassroomId, setAssignmentFilterClassroomId] = useState("all");
+  const [submissionRosterFilter, setSubmissionRosterFilter] = useState("all");
+  const [submissionRosterSearch, setSubmissionRosterSearch] = useState("");
+  const [selectedSubmissionsClassroomId, setSelectedSubmissionsClassroomId] = useState("all");
+  const [selectedSubmissionsAssignmentId, setSelectedSubmissionsAssignmentId] = useState("all");
 
   const [uploadMode, setUploadMode] =
     useState("");
@@ -244,7 +258,144 @@ export default function TeacherDashboard({ profile }) {
       accent: "bg-emerald-700",
     };
 
+  const selectedAssignment = useMemo(() => {
+    return assignments.find((a) => a.id === selectedAssignmentId) || null;
+  }, [assignments, selectedAssignmentId]);
+
+  const assignmentRoster = useMemo(() => {
+    if (!selectedAssignment) return [];
+
+    const enrolledMembers = classroomMembers.filter(
+      (m) => m.classroomId === selectedAssignment.classroomId
+    );
+
+    const assignmentSubmissions = submissions.filter(
+      (s) =>
+        s.assignmentId === selectedAssignment.id &&
+        s.classroomId === selectedAssignment.classroomId
+    );
+
+    const submissionByStudentId = new Map(
+      assignmentSubmissions.map((s) => [s.studentId, s])
+    );
+
+    const enrolledStudentIds = new Set(enrolledMembers.map((m) => m.studentId));
+    const roster = enrolledMembers.map((member) => {
+      const sub = submissionByStudentId.get(member.studentId);
+      const isSubmitted = Boolean(sub);
+      const isGraded = Boolean(sub?.grade);
+
+      let status = "missing";
+      if (isGraded) {
+        status = "graded";
+      } else if (isSubmitted) {
+        if (
+          selectedAssignment.dueDate &&
+          new Date(sub.createdAt) > new Date(selectedAssignment.dueDate)
+        ) {
+          status = "late";
+        } else {
+          status = "submitted";
+        }
+      }
+
+      return {
+        studentId: member.studentId,
+        studentName: member.studentName || "Student",
+        studentEmail: member.studentEmail || "",
+        submission: sub || null,
+        isSubmitted,
+        status,
+        fileUrl: sub?.fileUrl || null,
+        essayTitle: sub?.essayTitle || "",
+        grade: sub?.grade || "",
+        feedback: sub?.feedback || "",
+        submittedAt: sub?.createdAt || null,
+      };
+    });
+
+    for (const sub of assignmentSubmissions) {
+      if (!enrolledStudentIds.has(sub.studentId)) {
+        const isGraded = Boolean(sub.grade);
+        let status = "missing";
+        if (isGraded) {
+          status = "graded";
+        } else {
+          if (
+            selectedAssignment.dueDate &&
+            new Date(sub.createdAt) > new Date(selectedAssignment.dueDate)
+          ) {
+            status = "late";
+          } else {
+            status = "submitted";
+          }
+        }
+        roster.push({
+          studentId: sub.studentId,
+          studentName: sub.studentName || "Student",
+          studentEmail: "",
+          submission: sub,
+          isSubmitted: true,
+          status,
+          fileUrl: sub.fileUrl || null,
+          essayTitle: sub.essayTitle || "",
+          grade: sub.grade || "",
+          feedback: sub.feedback || "",
+          submittedAt: sub.createdAt || null,
+        });
+      }
+    }
+
+    return roster;
+  }, [selectedAssignment, classroomMembers, submissions]);
+
+  const filteredAssignmentRoster = useMemo(() => {
+    let list = assignmentRoster;
+
+    if (submissionRosterFilter === "submitted") {
+      list = list.filter((item) => item.isSubmitted);
+    } else if (submissionRosterFilter === "graded") {
+      list = list.filter((item) => Boolean(item.grade));
+    } else if (submissionRosterFilter === "missing") {
+      list = list.filter((item) => !item.isSubmitted);
+    }
+
+    const term = submissionRosterSearch.trim().toLowerCase();
+    if (term) {
+      list = list.filter(
+        (item) =>
+          item.studentName.toLowerCase().includes(term) ||
+          item.studentEmail.toLowerCase().includes(term) ||
+          item.essayTitle.toLowerCase().includes(term)
+      );
+    }
+
+    return list;
+  }, [assignmentRoster, submissionRosterFilter, submissionRosterSearch]);
+
+  const assignmentStats = useMemo(() => {
+    const total = assignmentRoster.length;
+    const submitted = assignmentRoster.filter((r) => r.isSubmitted).length;
+    const graded = assignmentRoster.filter((r) => Boolean(r.grade)).length;
+    const missing = total - submitted;
+
+    return {
+      total,
+      submitted,
+      graded,
+      missing,
+    };
+  }, [assignmentRoster]);
+
+  const filteredAssignments = useMemo(() => {
+    if (assignmentFilterClassroomId === "all") return assignments;
+    return assignments.filter((a) => a.classroomId === assignmentFilterClassroomId);
+  }, [assignments, assignmentFilterClassroomId]);
+
   const loadTeacherData = useCallback(async () => {
+    const teacherId = profile?.id;
+    if (!teacherId) return;
+
     setIsLoading(true);
     setErrorMessage("");
 
@@ -252,7 +403,7 @@ export default function TeacherDashboard({ profile }) {
       await supabase
         .from(CLASSROOM_TABLE)
         .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section")
-        .eq("teacher_id", profile.id)
+        .eq("teacher_id", teacherId)
         .order("created_at", { ascending: false });
 
     if (classroomError) {
@@ -273,7 +424,7 @@ export default function TeacherDashboard({ profile }) {
       const { data: members } =
         await supabase
           .from(MEMBER_TABLE)
-          .select("classroom_id")
+          .select("id, classroom_id, student_id")
           .in("classroom_id", classIds);
 
       memberRows =
@@ -284,7 +435,7 @@ export default function TeacherDashboard({ profile }) {
       await supabase
         .from(ASSIGNMENT_TABLE)
         .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date")
-        .eq("teacher_id", profile.id)
+        .eq("teacher_id", teacherId)
         .order("created_at", { ascending: false });
 
     if (assignmentError) {
@@ -315,20 +466,22 @@ export default function TeacherDashboard({ profile }) {
 
       submissionRows =
         submissionsData ?? [];
+    }
 
-      const studentIds =
-        [...new Set(submissionRows.map((submission) => submission.student_id).filter(Boolean))];
+    const studentIdsFromMembers = memberRows.map((member) => member.student_id).filter(Boolean);
+    const studentIdsFromSubmissions = submissionRows.map((submission) => submission.student_id).filter(Boolean);
+    const studentIds =
+      [...new Set([...studentIdsFromMembers, ...studentIdsFromSubmissions])];
 
-      if (studentIds.length > 0) {
-        const { data: users } =
-          await supabase
-            .from("userTable")
-            .select("id, full_name, email")
-            .in("id", studentIds);
+    if (studentIds.length > 0) {
+      const { data: users } =
+        await supabase
+          .from("userTable")
+          .select("id, full_name, email")
+          .in("id", studentIds);
 
-        studentRows =
-          users ?? [];
-      }
+      studentRows =
+        users ?? [];
     }
 
     const memberCountByClass =
@@ -425,9 +578,27 @@ export default function TeacherDashboard({ profile }) {
         };
       });
 
+    const usersById = new Map(studentRows.map((user) => [user.id, user]));
+    const nextClassroomMembers = memberRows.map((member) => {
+      const user = usersById.get(member.student_id);
+      return {
+        id: member.id,
+        classroomId: member.classroom_id,
+        studentId: member.student_id,
+        studentName: user?.full_name || user?.email || "Student",
+        studentEmail: user?.email || "",
+      };
+    });
+
+    setClassroomMembers(nextClassroomMembers);
     setClassrooms(nextClassrooms);
     setAssignments(nextAssignments);
     setSubmissions(nextSubmissions);
+    setSelectedAssignmentId((currentId) =>
+      currentId && nextAssignments.some((a) => a.id === currentId)
+        ? currentId
+        : null
+    );
     setSelectedClassroomId((currentId) =>
       nextClassrooms.some((classroom) => classroom.id === currentId)
         ? currentId
@@ -441,10 +612,24 @@ export default function TeacherDashboard({ profile }) {
           : nextClassrooms[0]?.id ?? "",
     }));
     setIsLoading(false);
-  }, [profile.id]);
+  }, [profile?.id]);
 
   useEffect(() => {
-    loadTeacherData();
+    if (profile?.id) {
+      loadTeacherData();
+    }
+  }, [profile?.id, loadTeacherData]);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.id) {
+        loadTeacherData();
+      }
+    });
+
+    return () => subscription?.unsubscribe?.();
   }, [loadTeacherData]);
 
   useEffect(() => {
@@ -563,6 +748,7 @@ export default function TeacherDashboard({ profile }) {
       ...emptyAssignmentForm,
       classroomId,
     });
+    setIsCreatingAssignment(false);
     setSuccessMessage("Assignment created.");
     setIsSavingAssignment(false);
     await loadTeacherData();
@@ -909,10 +1095,14 @@ export default function TeacherDashboard({ profile }) {
     setReviewImagePreviewUrl("");
     setIsImageExpanded(false);
 
-    // Calculate actual peer submissions for THIS assignment only
+    // Calculate actual peer submissions for THIS assignment and classroom/section only
     const currentAssignmentId = submission.assignmentId || submission.assignment_id;
+    const currentClassroomId = submission.classroomId || submission.classroom_id;
     const classmateCount = (submissions || []).filter(
-      (s) => (s.assignmentId || s.assignment_id) === currentAssignmentId && s.id !== submission.id
+      (s) =>
+        (s.assignmentId || s.assignment_id) === currentAssignmentId &&
+        (!currentClassroomId || (s.classroomId || s.classroom_id) === currentClassroomId) &&
+        s.id !== submission.id
     ).length;
 
     if (submission.scanResult) {
@@ -1074,11 +1264,13 @@ export default function TeacherDashboard({ profile }) {
       setReviewScanProgressText("Cross-checking with classroom submissions...");
       let peerResult = null;
       const currentAssignmentId = reviewingSubmission.assignmentId || reviewingSubmission.assignment_id;
+      const currentClassroomId = reviewingSubmission.classroomId || reviewingSubmission.classroom_id;
       try {
         const classmateSubmissions = (submissions || [])
           .filter(
             (s) =>
               (s.assignmentId || s.assignment_id) === currentAssignmentId &&
+              (!currentClassroomId || (s.classroomId || s.classroom_id) === currentClassroomId) &&
               s.id !== reviewingSubmission.id
           )
           .map((s) => ({
@@ -1327,8 +1519,372 @@ export default function TeacherDashboard({ profile }) {
       })
       .filter(Boolean);
 
+  const renderAssignmentDetailsAndSubmissions = (onBack) => {
+    if (!selectedAssignment) return null;
+
+    return (
+      <div className="space-y-6">
+        {/* Navigation Breadcrumb & Actions */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dadce0] pb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onBack || (() => setSelectedAssignmentId(null))}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-3.5 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333]"
+            >
+              <ArrowLeftIcon className="h-3.5 w-3.5" />
+              <span>Back to Classwork</span>
+            </button>
+            <span className="text-gray-300 font-bold">/</span>
+            <span className="text-sm font-medium text-[#202124]">
+              {selectedAssignment.classroomName}
+            </span>
+            <span className="inline-flex items-center rounded-md bg-[#f1f3f4] px-2 py-0.5 text-xs font-medium text-[#3c4043]">
+              Section {selectedAssignment.classroomSection || "Standard"}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleOpenEditAssignment(selectedAssignment)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-4 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333]"
+          >
+            <EditIcon className="h-3.5 w-3.5 text-[#5f6368]" />
+            <span>Edit assignment</span>
+          </button>
+        </div>
+
+        {/* Assignment Header Info */}
+        <div className="rounded-xl border border-[#dadce0] bg-white p-6 shadow-2xs">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-md bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-medium text-[#137333]">
+                  {selectedAssignment.classroomName}
+                </span>
+                <span className="inline-flex items-center rounded-md bg-[#f1f3f4] px-2.5 py-0.5 text-xs font-medium text-[#3c4043]">
+                  Section {selectedAssignment.classroomSection || "All"}
+                </span>
+                {selectedAssignment.classroomSubject && (
+                  <span className="inline-flex items-center rounded-md bg-[#f1f3f4] px-2.5 py-0.5 text-xs font-medium text-[#5f6368]">
+                    {selectedAssignment.classroomSubject}
+                  </span>
+                )}
+              </div>
+
+              <h1 className="mt-3 text-2xl font-medium text-[#202124] tracking-tight break-words">
+                {selectedAssignment.title}
+              </h1>
+
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[#5f6368]">
+                <span>
+                  Due: <strong className="text-[#202124] font-medium">{formatDateTime(selectedAssignment.dueDate)}</strong>
+                </span>
+                <span>•</span>
+                <span>100 points</span>
+                <span>•</span>
+                <span>
+                  Posted: {formatDateTime(selectedAssignment.createdAt)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Google Classroom Sub-tabs: Student work vs Instructions */}
+          <div className="mt-6 flex border-b border-[#dadce0] text-sm">
+            <button
+              type="button"
+              onClick={() => setAssignmentDetailTab("roster")}
+              className={`px-4 py-2.5 font-medium transition-colors ${
+                assignmentDetailTab === "roster"
+                  ? "border-b-2 border-[#137333] text-[#137333]"
+                  : "border-b-2 border-transparent text-[#5f6368] hover:text-[#202124]"
+              }`}
+            >
+              Student work ({assignmentStats.total})
+            </button>
+            <button
+              type="button"
+              onClick={() => setAssignmentDetailTab("instructions")}
+              className={`px-4 py-2.5 font-medium transition-colors ${
+                assignmentDetailTab === "instructions"
+                  ? "border-b-2 border-[#137333] text-[#137333]"
+                  : "border-b-2 border-transparent text-[#5f6368] hover:text-[#202124]"
+              }`}
+            >
+              Instructions
+            </button>
+          </div>
+
+          {assignmentDetailTab === "instructions" ? (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-lg border border-[#dadce0] bg-[#f8f9fa] p-5">
+                <h4 className="text-xs font-medium uppercase tracking-wider text-[#5f6368]">
+                  Assignment Instructions
+                </h4>
+                <p className="mt-3 text-sm text-[#202124] leading-relaxed whitespace-pre-wrap">
+                  {selectedAssignment.instructions || "No detailed instructions provided for this assignment."}
+                </p>
+              </div>
+
+              <div className="text-xs text-[#5f6368] space-y-1">
+                <p>Class: <strong className="text-[#202124]">{selectedAssignment.classroomName}</strong></p>
+                <p>Section: <strong className="text-[#202124]">{selectedAssignment.classroomSection || "Standard"}</strong></p>
+                <p>Class code: <strong className="font-mono text-[#202124]">{selectedAssignment.classroomCode}</strong></p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Google Classroom Student Work Metric Counters */}
+              <div className="mt-6 grid grid-cols-3 gap-4 border-b border-[#dadce0] pb-6">
+                <div className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-4 text-center">
+                  <span className="text-xs font-medium text-[#137333] uppercase">
+                    Turned in
+                  </span>
+                  <p className="mt-1 text-3xl font-medium text-[#137333]">
+                    {assignmentStats.submitted}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-4 text-center">
+                  <span className="text-xs font-medium text-[#5f6368] uppercase">
+                    Assigned / Missing
+                  </span>
+                  <p className="mt-1 text-3xl font-medium text-[#5f6368]">
+                    {assignmentStats.missing}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-4 text-center">
+                  <span className="text-xs font-medium text-[#1967d2] uppercase">
+                    Graded
+                  </span>
+                  <p className="mt-1 text-3xl font-medium text-[#1967d2]">
+                    {assignmentStats.graded}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {assignmentDetailTab === "roster" && (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-xl font-black text-gray-950">
+                Student Submissions ({assignmentRoster.length})
+              </h3>
+              <p className="mt-0.5 text-xs font-bold text-gray-500">
+                Students enrolled in <span className="text-emerald-700 font-extrabold">{selectedAssignment.classroomName} — Section: {selectedAssignment.classroomSection}</span>
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={submissionRosterSearch}
+                  onChange={(e) => setSubmissionRosterSearch(e.target.value)}
+                  placeholder="Filter student..."
+                  className="h-9 w-40 sm:w-52 rounded-lg border border-gray-200 bg-white pl-9 pr-3 text-xs font-semibold text-gray-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+                />
+              </div>
+
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 text-xs font-extrabold">
+                <button
+                  type="button"
+                  onClick={() => setSubmissionRosterFilter("all")}
+                  className={`rounded-md px-2.5 py-1 transition ${
+                    submissionRosterFilter === "all"
+                      ? "bg-emerald-700 text-white shadow-2xs"
+                      : "text-gray-600 hover:text-gray-950"
+                  }`}
+                >
+                  All ({assignmentStats.total})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubmissionRosterFilter("submitted")}
+                  className={`rounded-md px-2.5 py-1 transition ${
+                    submissionRosterFilter === "submitted"
+                      ? "bg-emerald-700 text-white shadow-2xs"
+                      : "text-gray-600 hover:text-gray-950"
+                  }`}
+                >
+                  Submitted ({assignmentStats.submitted})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubmissionRosterFilter("graded")}
+                  className={`rounded-md px-2.5 py-1 transition ${
+                    submissionRosterFilter === "graded"
+                      ? "bg-emerald-700 text-white shadow-2xs"
+                      : "text-gray-600 hover:text-gray-950"
+                  }`}
+                >
+                  Graded ({assignmentStats.graded})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubmissionRosterFilter("missing")}
+                  className={`rounded-md px-2.5 py-1 transition ${
+                    submissionRosterFilter === "missing"
+                      ? "bg-emerald-700 text-white shadow-2xs"
+                      : "text-gray-600 hover:text-gray-950"
+                  }`}
+                >
+                  Missing ({assignmentStats.missing})
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Submissions Roster Table */}
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xs">
+            <div className="grid grid-cols-[1.3fr_1fr_1.2fr_1.1fr_0.9fr] gap-4 border-b border-gray-200 bg-gray-50/75 px-5 py-3.5 text-xs font-extrabold uppercase tracking-wider text-gray-500">
+              <span>Student</span>
+              <span>Status</span>
+              <span>Submitted File</span>
+              <span>Grade & Feedback</span>
+              <span className="text-right">Action</span>
+            </div>
+
+            {filteredAssignmentRoster.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="text-sm font-bold text-gray-500">
+                  {assignmentRoster.length === 0
+                    ? "No students enrolled in this classroom section yet."
+                    : "No students match the current filter."}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {filteredAssignmentRoster.map((item) => (
+                  <div
+                    key={item.studentId}
+                    className="grid grid-cols-[1.3fr_1fr_1.2fr_1.1fr_0.9fr] items-center gap-4 px-5 py-4 text-sm transition hover:bg-gray-50/50"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-800">
+                        {item.studentName.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-black text-gray-950">
+                          {item.studentName}
+                        </p>
+                        {item.studentEmail && (
+                          <p className="truncate text-xs font-semibold text-gray-500">
+                            {item.studentEmail}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      {item.status === "graded" && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-800">
+                          <CheckIcon className="h-3.5 w-3.5" />
+                          Graded
+                        </span>
+                      )}
+                      {item.status === "late" && (
+                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-800">
+                          Late Submission
+                        </span>
+                      )}
+                      {item.status === "submitted" && (
+                        <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-800">
+                          Submitted
+                        </span>
+                      )}
+                      {item.status === "missing" && (
+                        <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-800">
+                          Missing
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      {item.fileUrl ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openSubmissionFile(item.fileUrl, setErrorMessage)}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900 hover:underline truncate"
+                            title="Open submitted file"
+                          >
+                            <FileIcon className="h-4 w-4 shrink-0 text-emerald-600" />
+                            <span className="truncate">{item.essayTitle || "View Submission"}</span>
+                            <ExternalLinkIcon className="h-3 w-3 shrink-0 text-gray-400" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => downloadSubmissionFileBlob(item.fileUrl, item.studentName)}
+                            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                            title="Download file"
+                          >
+                            <DownloadIcon className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-bold text-gray-400">
+                          No file submitted
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      {item.grade ? (
+                        <div>
+                          <span className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-900">
+                            {item.grade}
+                          </span>
+                          {item.feedback && (
+                            <p className="mt-1 truncate text-xs font-semibold text-gray-600" title={item.feedback}>
+                              "{item.feedback}"
+                            </p>
+                          )}
+                        </div>
+                      ) : item.isSubmitted ? (
+                        <span className="text-xs font-bold text-gray-400 italic">
+                          Not graded yet
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold text-gray-300">—</span>
+                      )}
+                    </div>
+
+                    <div className="text-right">
+                      {item.submission ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReview(item.submission)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-extrabold text-white transition hover:bg-emerald-800 shadow-2xs"
+                        >
+                          <FileSearchIcon className="h-3.5 w-3.5" />
+                          <span>{item.grade ? "Review" : "Check & Grade"}</span>
+                        </button>
+                      ) : (
+                        <span className="text-xs font-bold text-gray-300">
+                          No submission
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-[#f4f3ef] text-gray-950">
+    <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
       <Header
         workspace="Teacher workspace"
         pages={teacherPages}
@@ -1336,483 +1892,494 @@ export default function TeacherDashboard({ profile }) {
         onPageChange={setActivePage}
       />
 
-      <main
-        className={
-          activePage === "upload"
-            ? "mx-auto max-w-[1240px] px-6 py-8"
-            : "mx-auto grid max-w-[1240px] gap-8 px-6 py-8 lg:grid-cols-[280px_1fr]"
-        }
-      >
-        {activePage !== "upload" && (
-        <aside className="space-y-4">
-          <button
-            type="button"
-            onClick={() => {
-              setIsCreatingClassroom(true);
-              setActivePage("classrooms");
-            }}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-extrabold text-white transition hover:bg-emerald-800"
-          >
-            <PlusIcon className="h-4 w-4" />
-            Create classroom
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActivePage("assignments")}
-            disabled={classrooms.length === 0}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950 disabled:cursor-not-allowed disabled:text-gray-300"
-          >
-            <FileSearchIcon className="h-4 w-4" />
-            New assignment
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActivePage("upload")}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
-          >
-            <UploadIcon className="h-4 w-4" />
-            Upload station
-          </button>
-
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <p className="mb-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
-              Classrooms
-            </p>
-
-            <div className="space-y-1">
-              {isLoading && (
-                <p className="px-3 py-3 text-sm font-bold text-gray-500">
-                  Loading classrooms...
-                </p>
-              )}
-
-              {!isLoading && classrooms.length === 0 && (
-                <p className="px-3 py-3 text-sm font-bold text-gray-500">
-                  No classrooms yet.
-                </p>
-              )}
-
-              {classrooms.map((classroom) => {
-                const isActive =
-                  classroom.id === selectedClassroomId;
-
-                return (
-                  <button
-                    key={classroom.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedClassroomId(classroom.id);
-                      setActivePage("classrooms");
-                    }}
-                    className={
-                      isActive
-                        ? "flex w-full items-center gap-3 rounded-lg bg-gray-100 px-3 py-3 text-left text-gray-950"
-                        : "flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-gray-600 transition hover:bg-gray-50 hover:text-gray-950"
-                    }
-                  >
-                    <span className={`h-9 w-2 rounded-full ${classroom.accent}`} />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-extrabold">
-                        {classroom.name}
-                      </span>
-                      <span className="block truncate text-xs font-bold text-gray-500">
-                        {classroom.section}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </aside>
-        )}
-
-        <section className="space-y-8">
+      <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6">
           <StatusMessage
             error={errorMessage}
             message={successMessage}
           />
+        </div>
 
-          {activePage === "classrooms" && (
-            <>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <section className="space-y-6">
+
+        {/* Create Classroom Modal Dialog */}
+        {isCreatingClassroom && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="w-full max-w-lg rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="flex items-start justify-between pb-4 border-b border-[#dadce0]">
                 <div>
-                  <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-                    Classroom
-                  </p>
-                  <h2 className="mt-2 text-4xl font-black tracking-normal">
-                    {selectedClassroom.name}
-                  </h2>
-                  <p className="mt-2 text-base font-semibold text-gray-500">
-                    {[selectedClassroom.section, selectedClassroom.subject]
-                      .filter(Boolean)
-                      .join(" | ")}
-                  </p>
+                  <h3 className="text-xl font-medium text-[#202124]">Create class</h3>
+                  <p className="mt-0.5 text-xs text-[#5f6368]">Enter details for your new classroom section.</p>
                 </div>
-
                 <button
                   type="button"
-                  onClick={() => setActivePage("assignments")}
-                  disabled={classrooms.length === 0}
-                  className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                  onClick={() => {
+                    setIsCreatingClassroom(false);
+                    setClassroomForm(emptyClassroomForm);
+                  }}
+                  className="rounded-full p-1 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#202124]"
                 >
-                  <PlusIcon className="h-4 w-4" />
-                  Create assignment
+                  ✕
                 </button>
               </div>
 
-              {isCreatingClassroom && (
-                <form
-                  onSubmit={handleCreateClassroom}
-                  className="rounded-lg border border-gray-200 bg-white p-6"
-                >
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <label className="block">
-                      <span className="text-sm font-extrabold text-gray-800">
-                        Class name
-                      </span>
-                      <input
-                        type="text"
-                        value={classroomForm.name}
-                        onChange={(event) =>
-                          setClassroomForm((currentForm) => ({
-                            ...currentForm,
-                            name: event.target.value,
-                          }))
-                        }
-                        className="mt-2 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
-                        required
-                      />
-                    </label>
+              <form onSubmit={handleCreateClassroom} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="text-xs font-medium text-[#3c4043]">Class name (required)</span>
+                  <input
+                    type="text"
+                    value={classroomForm.name}
+                    onChange={(e) => setClassroomForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="e.g. English 10, Biology Honors"
+                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                    required
+                  />
+                </label>
 
-                    <label className="block">
-                      <span className="text-sm font-extrabold text-gray-800">
-                        Section
-                      </span>
-                      <input
-                        type="text"
-                        value={classroomForm.section}
-                        onChange={(event) =>
-                          setClassroomForm((currentForm) => ({
-                            ...currentForm,
-                            section: event.target.value,
-                          }))
-                        }
-                        className="mt-2 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
-                        required
-                      />
-                    </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-[#3c4043]">Section (required)</span>
+                  <input
+                    type="text"
+                    value={classroomForm.section}
+                    onChange={(e) => setClassroomForm((f) => ({ ...f, section: e.target.value }))}
+                    placeholder="e.g. Period 1, Section A"
+                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                    required
+                  />
+                </label>
 
-                    <label className="block">
-                      <span className="text-sm font-extrabold text-gray-800">
-                        Subject
-                      </span>
-                      <input
-                        type="text"
-                        value={classroomForm.subject}
-                        onChange={(event) =>
-                          setClassroomForm((currentForm) => ({
-                            ...currentForm,
-                            subject: event.target.value,
-                          }))
-                        }
-                        className="mt-2 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
-                        required
-                      />
-                    </label>
-                  </div>
+                <label className="block">
+                  <span className="text-xs font-medium text-[#3c4043]">Subject</span>
+                  <input
+                    type="text"
+                    value={classroomForm.subject}
+                    onChange={(e) => setClassroomForm((f) => ({ ...f, subject: e.target.value }))}
+                    placeholder="e.g. Literature, Science"
+                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                  />
+                </label>
 
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <button
-                      type="submit"
-                      disabled={isSavingClassroom}
-                      className="inline-flex h-11 items-center justify-center rounded-lg bg-emerald-700 px-4 text-sm font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                    >
-                      {isSavingClassroom ? "Creating..." : "Create"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCreatingClassroom(false);
-                        setClassroomForm(emptyClassroomForm);
-                      }}
-                      className="inline-flex h-11 items-center justify-center rounded-lg border border-gray-200 bg-white px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              <div className="grid gap-4 md:grid-cols-4">
-                <article className="rounded-lg border border-gray-200 bg-white p-5">
-                  <UsersIcon className="h-6 w-6 text-emerald-700" />
-                  <p className="mt-5 text-3xl font-black">
-                    {selectedClassroom.students}
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-gray-500">
-                    Students
-                  </p>
-                </article>
-
-                <article className="rounded-lg border border-gray-200 bg-white p-5">
-                  <FileSearchIcon className="h-6 w-6 text-sky-700" />
-                  <p className="mt-5 text-3xl font-black">
-                    {selectedClassroom.assignments}
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-gray-500">
-                    Assignments
-                  </p>
-                </article>
-
-                <article className="rounded-lg border border-gray-200 bg-white p-5">
-                  <UploadIcon className="h-6 w-6 text-amber-700" />
-                  <p className="mt-5 text-3xl font-black">
-                    {selectedClassroom.submissions}
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-gray-500">
-                    Submissions
-                  </p>
-                </article>
-
-                <article className="rounded-lg border border-gray-200 bg-white p-5">
-                  <DoorIcon className="h-6 w-6 text-violet-700" />
-                  <p className="mt-5 text-3xl font-black">
-                    {selectedClassroom.code}
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-gray-500">
-                    Class code
-                  </p>
-                </article>
-              </div>
-
-              <div className="grid gap-5 lg:grid-cols-3">
-                {classrooms.map((classroom) => (
-                  <article
-                    key={classroom.id}
-                    className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+                <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#dadce0]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreatingClassroom(false);
+                      setClassroomForm(emptyClassroomForm);
+                    }}
+                    className="rounded-full px-4 py-2 text-sm font-medium text-[#5f6368] hover:bg-[#f1f3f4]"
                   >
-                    <div className={`${classroom.accent} h-24 p-5 text-white`}>
-                      <h3 className="truncate text-xl font-black">
-                        {classroom.name}
-                      </h3>
-                      <p className="mt-1 text-sm font-bold text-white/80">
-                        {classroom.section}
-                      </p>
-                    </div>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingClassroom}
+                    className="rounded-full bg-[#137333] px-5 py-2 text-sm font-medium text-white hover:bg-[#0f5b28] disabled:bg-gray-300"
+                  >
+                    {isSavingClassroom ? "Creating..." : "Create"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
-                    <div className="p-5">
-                      <div className="grid grid-cols-3 gap-3 text-center">
-                        <div>
-                          <strong className="block text-xl font-black">
-                            {classroom.students}
-                          </strong>
-                          <span className="text-xs font-bold text-gray-500">
-                            Students
-                          </span>
-                        </div>
-                        <div>
-                          <strong className="block text-xl font-black">
-                            {classroom.assignments}
-                          </strong>
-                          <span className="text-xs font-bold text-gray-500">
-                            Work
-                          </span>
-                        </div>
-                        <div>
-                          <strong className="block text-xl font-black">
-                            {classroom.submissions}
-                          </strong>
-                          <span className="text-xs font-bold text-gray-500">
-                            Turned in
-                          </span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAssignmentForm((currentForm) => ({
-                            ...currentForm,
-                            classroomId: classroom.id,
-                          }));
-                          setActivePage("assignments");
-                        }}
-                        className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-lg border border-gray-200 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
-                      >
-                        Add assignment
-                      </button>
-                    </div>
-                  </article>
-                ))}
+        {/* Create Assignment Modal Dialog */}
+        {isCreatingAssignment && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="flex items-start justify-between pb-4 border-b border-[#dadce0]">
+                <div>
+                  <h3 className="text-xl font-medium text-[#202124]">Create assignment</h3>
+                  <p className="mt-0.5 text-xs text-[#5f6368]">Post instructions and due date for your classroom section.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingAssignment(false);
+                    setAssignmentForm(emptyAssignmentForm);
+                  }}
+                  className="rounded-full p-1 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#202124]"
+                >
+                  ✕
+                </button>
               </div>
-            </>
-          )}
 
-          {activePage === "assignments" && (
-            <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
-              <form
-                onSubmit={handleCreateAssignment}
-                className="h-fit rounded-lg border border-gray-200 bg-white p-6"
-              >
-                <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-                  Assignment bin
-                </p>
-                <h2 className="mt-2 text-3xl font-black tracking-normal">
-                  Create assignment
-                </h2>
-
-                <label className="mt-6 block">
-                  <span className="text-sm font-extrabold text-gray-800">
-                    Classroom
-                  </span>
+              <form onSubmit={handleCreateAssignment} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="text-xs font-medium text-[#3c4043]">Classroom & Section</span>
                   <select
-                    value={assignmentForm.classroomId}
-                    onChange={(event) =>
-                      setAssignmentForm((currentForm) => ({
-                        ...currentForm,
-                        classroomId: event.target.value,
-                      }))
-                    }
-                    disabled={classrooms.length === 0}
-                    className="mt-2 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                    value={assignmentForm.classroomId || selectedClassroom.id}
+                    onChange={(e) => setAssignmentForm((f) => ({ ...f, classroomId: e.target.value }))}
+                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] bg-white px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                     required
                   >
-                    {classrooms.length === 0 && (
-                      <option value="">
-                        Create a classroom first
-                      </option>
-                    )}
-                    {classrooms.map((classroom) => (
-                      <option key={classroom.id} value={classroom.id}>
-                        {classroom.name}
+                    {classrooms.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} — Section {c.section} {c.subject ? `(${c.subject})` : ""}
                       </option>
                     ))}
                   </select>
                 </label>
 
-                <label className="mt-5 block">
-                  <span className="text-sm font-extrabold text-gray-800">
-                    Title
-                  </span>
+                <label className="block">
+                  <span className="text-xs font-medium text-[#3c4043]">Title</span>
                   <input
                     type="text"
                     value={assignmentForm.title}
-                    onChange={(event) =>
-                      setAssignmentForm((currentForm) => ({
-                        ...currentForm,
-                        title: event.target.value,
-                      }))
-                    }
-                    className="mt-2 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                    onChange={(e) => setAssignmentForm((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="e.g. Narrative Essay Draft"
+                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                     required
                   />
                 </label>
 
-                <label className="mt-5 block">
-                  <span className="text-sm font-extrabold text-gray-800">
-                    Instructions
-                  </span>
+                <label className="block">
+                  <span className="text-xs font-medium text-[#3c4043]">Instructions (optional)</span>
                   <textarea
                     value={assignmentForm.instructions}
-                    onChange={(event) =>
-                      setAssignmentForm((currentForm) => ({
-                        ...currentForm,
-                        instructions: event.target.value,
-                      }))
-                    }
-                    rows="5"
-                    className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                    onChange={(e) => setAssignmentForm((f) => ({ ...f, instructions: e.target.value }))}
+                    placeholder="Add instructions, prompt details, and guidelines for students..."
+                    rows="4"
+                    className="mt-1.5 w-full rounded-md border border-[#dadce0] p-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                   />
                 </label>
 
-                <label className="mt-5 block">
-                  <span className="text-sm font-extrabold text-gray-800">
-                    Due date
-                  </span>
+                <label className="block">
+                  <span className="text-xs font-medium text-[#3c4043]">Due date</span>
                   <input
                     type="datetime-local"
                     value={assignmentForm.dueDate}
-                    onChange={(event) =>
-                      setAssignmentForm((currentForm) => ({
-                        ...currentForm,
-                        dueDate: event.target.value,
-                      }))
-                    }
-                    className="mt-2 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                    onChange={(e) => setAssignmentForm((f) => ({ ...f, dueDate: e.target.value }))}
+                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                   />
                 </label>
 
-                <button
-                  type="submit"
-                  disabled={isSavingAssignment || classrooms.length === 0}
-                  className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-base font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  <PlusIcon className="h-5 w-5" />
-                  {isSavingAssignment ? "Creating..." : "Create assignment"}
-                </button>
+                <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#dadce0]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreatingAssignment(false);
+                      setAssignmentForm(emptyAssignmentForm);
+                    }}
+                    className="rounded-full px-4 py-2 text-sm font-medium text-[#5f6368] hover:bg-[#f1f3f4]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingAssignment}
+                    className="rounded-full bg-[#137333] px-5 py-2 text-sm font-medium text-white hover:bg-[#0f5b28] disabled:bg-gray-300"
+                  >
+                    {isSavingAssignment ? "Assigning..." : "Assign"}
+                  </button>
+                </div>
               </form>
+            </div>
+          </div>
+        )}
 
+        {/* Classes Page */}
+        {activePage === "classrooms" && (
+          <div className="space-y-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#dadce0] pb-5">
               <div>
-                <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-                  Posted work
-                </p>
-                <h2 className="mt-2 text-4xl font-black tracking-normal">
-                  Assignments
+                <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
+                  Classes
                 </h2>
+                <p className="mt-1 text-sm text-[#5f6368]">
+                  Manage your classes, share student join codes, and oversee assignments.
+                </p>
+              </div>
 
-                <div className="mt-6 space-y-4">
-                  {assignments.length === 0 && (
-                    <div className="rounded-lg border border-gray-200 bg-white p-6">
-                      <p className="text-sm font-bold text-gray-500">
-                        No assignments yet.
-                      </p>
-                    </div>
-                  )}
+              <button
+                type="button"
+                onClick={() => {
+                  setClassroomForm(emptyClassroomForm);
+                  setIsCreatingClassroom(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-[#0f5b28] active:scale-[0.98]"
+              >
+                <PlusIcon className="h-4 w-4" />
+                <span>Create class</span>
+              </button>
+            </div>
 
-                  {assignments.map((assignment) => (
-                    <article
-                      key={assignment.id}
-                      className="rounded-lg border border-gray-200 bg-white p-5 transition hover:shadow-xs"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0 flex-1">
-                          <h3 className="text-xl font-black text-gray-950 break-words">
-                            {assignment.title}
-                          </h3>
-                          <p className="mt-1 text-sm font-bold text-gray-500">
-                            {assignment.classroomName} | {formatDateTime(assignment.dueDate)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
-                            {assignment.submissions} submitted
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditAssignment(assignment)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-extrabold text-gray-700 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 shadow-2xs"
-                            title="Edit this assignment"
+            {isLoading ? (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3].map((n) => (
+                  <div key={n} className="h-64 rounded-xl border border-[#dadce0] bg-white animate-pulse" />
+                ))}
+              </div>
+            ) : classrooms.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                  <DoorIcon className="h-7 w-7" />
+                </div>
+                <h3 className="mt-4 text-lg font-medium text-[#202124]">No classes yet</h3>
+                <p className="mt-1 text-sm text-[#5f6368]">
+                  Create a class to start posting assignments and tracking student submissions.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClassroomForm(emptyClassroomForm);
+                    setIsCreatingClassroom(true);
+                  }}
+                  className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#0f5b28]"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  <span>Create class</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {classrooms.map((classroom) => (
+                  <article
+                    key={classroom.id}
+                    className="group flex flex-col rounded-xl border border-[#dadce0] bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200"
+                  >
+                    <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 pr-14">
+                          <h3
+                            onClick={() => {
+                              setAssignmentFilterClassroomId(classroom.id);
+                              setSelectedAssignmentId(null);
+                              setActivePage("assignments");
+                            }}
+                            className="text-xl font-medium tracking-tight text-white hover:underline cursor-pointer truncate"
+                            title={classroom.name}
                           >
-                            <EditIcon className="h-3.5 w-3.5" />
-                            <span>Edit</span>
-                          </button>
+                            {classroom.name}
+                          </h3>
+                          <p className="text-xs font-normal text-white/90 truncate mt-0.5">
+                            Section {classroom.section} {classroom.subject ? `• ${classroom.subject}` : ""}
+                          </p>
                         </div>
                       </div>
 
-                      {assignment.instructions && (
-                        <p className="mt-4 text-sm font-semibold leading-6 text-gray-600 break-words whitespace-pre-wrap">
-                          {assignment.instructions}
+                      <div
+                        className="absolute -bottom-6 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#137333] text-lg font-bold shadow-sm ring-4 ring-white border border-gray-100"
+                        title={profile?.full_name || "Teacher"}
+                      >
+                        {(profile?.full_name || classroom.name || "T").slice(0, 2).toUpperCase()}
+                      </div>
+                    </div>
+
+                    <div className="p-4 pt-7 flex-1 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 rounded-md bg-[#f8f9fa] border border-[#dadce0] px-2.5 py-1 text-xs text-[#3c4043]">
+                            <span className="font-medium text-[#5f6368]">Code:</span>
+                            <span className="font-mono font-bold">{classroom.code}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(classroom.code);
+                                setSuccessMessage(`Class code ${classroom.code} copied!`);
+                              }}
+                              className="ml-1 text-[#5f6368] hover:text-[#137333]"
+                              title="Copy class code"
+                            >
+                              <CopyIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          <span className="text-xs text-[#5f6368]">
+                            {classroom.students} {classroom.students === 1 ? "student" : "students"}
+                          </span>
+                        </div>
+
+                        <p className="mt-3 text-xs text-[#5f6368]">
+                          {classroom.assignments} assignments posted • {classroom.submissions} turned in
                         </p>
-                      )}
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-[#e0e0e0] flex items-center justify-between text-xs font-medium">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAssignmentFilterClassroomId(classroom.id);
+                            setSelectedAssignmentId(null);
+                            setActivePage("assignments");
+                          }}
+                          className="inline-flex items-center gap-1 text-[#137333] hover:underline"
+                        >
+                          <ClipboardIcon className="h-3.5 w-3.5" />
+                          <span>Classwork</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSubmissionsClassroomId(classroom.id);
+                            setSelectedAssignmentId(null);
+                            setActivePage("submissions");
+                          }}
+                          className="inline-flex items-center gap-1 text-[#5f6368] hover:text-[#202124]"
+                        >
+                          <FileSearchIcon className="h-3.5 w-3.5" />
+                          <span>Gradebook</span>
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Classwork Page */}
+        {activePage === "assignments" && (
+          selectedAssignment ? (
+            renderAssignmentDetailsAndSubmissions(() => setSelectedAssignmentId(null))
+          ) : (
+            <div className="space-y-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#dadce0] pb-5">
+                <div>
+                  <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
+                    Classwork
+                  </h2>
+                  <p className="mt-1 text-sm text-[#5f6368]">
+                    Create and organize assignments, review student submissions, and grade work.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  {classrooms.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="section-filter" className="text-xs font-medium text-[#5f6368]">
+                        Section:
+                      </label>
+                      <select
+                        id="section-filter"
+                        value={assignmentFilterClassroomId}
+                        onChange={(e) => setAssignmentFilterClassroomId(e.target.value)}
+                        className="h-9 rounded-md border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                      >
+                        <option value="all">All sections</option>
+                        {classrooms.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} — Section {c.section}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAssignmentForm({
+                        ...emptyAssignmentForm,
+                        classroomId: classrooms[0]?.id || "",
+                      });
+                      setIsCreatingAssignment(true);
+                    }}
+                    disabled={classrooms.length === 0}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-[#0f5b28] disabled:cursor-not-allowed disabled:bg-gray-300 active:scale-[0.98]"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    <span>Create</span>
+                  </button>
+                </div>
+              </div>
+
+              {filteredAssignments.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                    <ClipboardIcon className="h-7 w-7" />
+                  </div>
+                  <h3 className="mt-4 text-lg font-medium text-[#202124]">No assignments yet</h3>
+                  <p className="mt-1 text-sm text-[#5f6368]">
+                    {classrooms.length === 0
+                      ? "Create a class first before creating assignments."
+                      : "Click + Create to post your first assignment for this section."}
+                  </p>
+                  {classrooms.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignmentForm({
+                          ...emptyAssignmentForm,
+                          classroomId: classrooms[0]?.id || "",
+                        });
+                        setIsCreatingAssignment(true);
+                      }}
+                      className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#0f5b28]"
+                    >
+                      <PlusIcon className="h-4 w-4" />
+                      <span>Create assignment</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredAssignments.map((assignment) => (
+                    <article
+                      key={assignment.id}
+                      onClick={() => setSelectedAssignmentId(assignment.id)}
+                      className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-xl border border-[#dadce0] bg-white p-4 transition-all hover:border-[#137333] hover:shadow-xs cursor-pointer"
+                    >
+                      <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                          <ClipboardIcon className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-base font-medium text-[#202124] group-hover:text-[#137333] group-hover:underline truncate">
+                              {assignment.title}
+                            </h3>
+                            <span className="rounded bg-[#f1f3f4] px-2 py-0.5 text-xs font-medium text-[#3c4043]">
+                              {assignment.classroomName} • Section {assignment.classroomSection}
+                            </span>
+                          </div>
+                          {assignment.instructions && (
+                            <p className="mt-0.5 text-xs text-[#5f6368] line-clamp-1 max-w-xl">
+                              {assignment.instructions}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div
+                        className="flex items-center gap-3 shrink-0 self-end sm:self-auto"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-xs text-[#5f6368]">
+                          Due {formatDateTime(assignment.dueDate)}
+                        </span>
+
+                        <span className="rounded-full bg-[#e6f4ea] px-3 py-1 text-xs font-medium text-[#137333]">
+                          {assignment.submissions} turned in
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditAssignment(assignment)}
+                          className="rounded-full p-1.5 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#202124]"
+                          title="Edit assignment"
+                        >
+                          <EditIcon className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAssignmentId(assignment.id)}
+                          className="inline-flex items-center gap-1 rounded-full border border-[#dadce0] px-3 py-1 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa] hover:border-[#137333]"
+                        >
+                          <span>Student work</span>
+                          <span aria-hidden="true">→</span>
+                        </button>
+                      </div>
                     </article>
                   ))}
                 </div>
-              </div>
+              )}
             </div>
-          )}
+          )
+        )}
 
           {activePage === "upload" && (
             <div>
@@ -2701,66 +3268,115 @@ export default function TeacherDashboard({ profile }) {
           )}
 
           {activePage === "submissions" && (
-            <div>
-              <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-                Student work
-              </p>
-              <h2 className="mt-2 text-4xl font-black tracking-normal">
-                Submissions
-              </h2>
-
-              <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
-                <div className="grid grid-cols-[1.1fr_1fr_1fr_0.8fr_0.8fr] gap-4 border-b border-gray-200 px-5 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
-                  <span>Student</span>
-                  <span>Assignment</span>
-                  <span>Essay</span>
-                  <span>Grade</span>
-                  <span>Action</span>
-                </div>
-
-                {submissions.length === 0 && (
-                  <p className="px-5 py-5 text-sm font-bold text-gray-500">
-                    No submissions yet.
-                  </p>
-                )}
-
-                {submissions.map((submission) => (
-                  <div
-                    key={submission.id}
-                    className="grid grid-cols-[1.1fr_1fr_1fr_0.8fr_0.8fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0"
-                  >
-                    <span className="font-extrabold text-gray-950">
-                      {submission.studentName}
+            selectedAssignment ? (
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between shadow-2xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-extrabold uppercase text-gray-500">
+                      Viewing Section:
                     </span>
-                    <span className="font-semibold text-gray-600">
-                      {submission.assignmentTitle}
+                    <span className="inline-flex items-center rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800">
+                      {selectedAssignment.classroomName} — Section: {selectedAssignment.classroomSection || "Standard"}
                     </span>
-                    <span className="font-semibold text-gray-600">
-                      {submission.essayTitle}
-                    </span>
-                    <div>
-                      {submission.grade ? (
-                        <span className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800">
-                          {submission.grade}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-lg bg-gray-100 px-3 py-1 text-xs font-bold text-gray-400">
-                          Not graded
-                        </span>
-                      )}
-                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-gray-700">
+                      <span>Switch Assignment:</span>
+                      <select
+                        value={selectedAssignment.id}
+                        onChange={(e) => setSelectedAssignmentId(e.target.value)}
+                        className="h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold outline-none transition focus:border-emerald-600"
+                      >
+                        {assignments.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.classroomName} ({a.classroomSection || "Standard"}) — {a.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
                     <button
                       type="button"
-                      onClick={() => handleOpenReview(submission)}
-                      className="inline-flex h-9 w-fit items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-4 text-xs font-extrabold text-white transition hover:bg-emerald-800 shadow-sm"
+                      onClick={() => setSelectedAssignmentId(null)}
+                      className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-bold text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                     >
-                      <FileSearchIcon className="h-4 w-4" />
-                      <span>Check</span>
+                      All Assignments
                     </button>
                   </div>
-                ))}
+                </div>
+
+                {renderAssignmentDetailsAndSubmissions(() => setSelectedAssignmentId(null))}
               </div>
-            </div>
+            ) : (
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
+                    Student work
+                  </p>
+                  <h2 className="mt-2 text-4xl font-black tracking-normal">
+                    Submissions Hub
+                  </h2>
+                  <p className="mt-1 text-sm font-semibold text-gray-500">
+                    Select an assignment to view its section-isolated student submissions and grades.
+                  </p>
+                </div>
+
+                {assignments.length === 0 ? (
+                  <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+                    <p className="text-base font-bold text-gray-500">
+                      No assignments found. Create an assignment to start receiving submissions.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActivePage("assignments")}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-extrabold text-white hover:bg-emerald-800 transition"
+                    >
+                      <PlusIcon className="h-4 w-4" />
+                      <span>Create assignment</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {assignments.map((assignment) => (
+                      <article
+                        key={assignment.id}
+                        className="group flex flex-col justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-xs transition hover:border-emerald-400 hover:shadow-md cursor-pointer"
+                        onClick={() => setSelectedAssignmentId(assignment.id)}
+                      >
+                        <div>
+                          <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+                            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800 border border-emerald-200">
+                              {assignment.classroomName}
+                            </span>
+                            <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-black text-sky-800 border border-sky-200">
+                              Section: {assignment.classroomSection || "Standard"}
+                            </span>
+                          </div>
+
+                          <h3 className="text-lg font-black text-gray-950 group-hover:text-emerald-800 transition line-clamp-2">
+                            {assignment.title}
+                          </h3>
+                          <p className="mt-1.5 text-xs font-semibold text-gray-500">
+                            Due: {formatDateTime(assignment.dueDate)}
+                          </p>
+                        </div>
+
+                        <div className="mt-5 flex items-center justify-between border-t border-gray-100 pt-3">
+                          <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 border border-emerald-200">
+                            {assignment.submissions} turned in
+                          </span>
+                          <span className="text-xs font-extrabold text-emerald-700 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+                            <span>Open Roster</span>
+                            <span aria-hidden="true">→</span>
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
           )}
 
           {/* Edit Assignment Modal Dialog */}
