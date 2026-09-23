@@ -131,6 +131,22 @@ export default function StudentDashboard({ profile }) {
   const [successMessage, setSuccessMessage] =
     useState("");
 
+  useEffect(() => {
+    if (!successMessage && !errorMessage) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setSuccessMessage("");
+      setErrorMessage("");
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [successMessage, errorMessage]);
+
+  useEffect(() => {
+    setSuccessMessage("");
+    setErrorMessage("");
+  }, [activePage]);
+
   const [viewingSubmission, setViewingSubmission] =
     useState(null);
 
@@ -675,7 +691,11 @@ export default function StudentDashboard({ profile }) {
         workspace="Student workspace"
         pages={studentPages}
         activePage={activePage}
-        onPageChange={setActivePage}
+        onPageChange={(page) => {
+          setSuccessMessage("");
+          setErrorMessage("");
+          setActivePage(page);
+        }}
       />
 
       <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-8">
@@ -919,26 +939,30 @@ export default function StudentDashboard({ profile }) {
                   Nothing is due in the next 7 days.
                 </p>
               ) : (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="space-y-3">
                   {dueSoonAssignments.map((assignment) => (
                     <button
                       key={assignment.id}
                       type="button"
                       onClick={() => handleOpenSubmissionDraft(assignment)}
-                      className="group rounded-xl border border-[#dadce0] bg-white p-4 text-left shadow-2xs transition hover:border-[#137333] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#137333]"
+                      className="group flex w-full flex-col gap-3 rounded-xl border border-[#dadce0] bg-white p-4 text-left shadow-2xs transition hover:border-[#137333] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#137333] sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="min-w-0 text-sm font-medium text-[#202124] group-hover:text-[#137333]">
-                          {assignment.title}
-                        </span>
-                        <CalendarIcon className="h-4 w-4 shrink-0 text-[#b06000]" />
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fef7e0] text-[#b06000]">
+                          <CalendarIcon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="block truncate text-sm font-medium text-[#202124] group-hover:text-[#137333]">
+                            {assignment.title}
+                          </span>
+                          <p className="mt-1 truncate text-xs text-[#5f6368]">
+                            {assignment.classroomName}{assignment.classroomSubject ? ` · ${assignment.classroomSubject}` : assignment.classroomSection ? ` · ${assignment.classroomSection}` : ""}
+                          </p>
+                        </div>
                       </div>
-                      <p className="mt-1 truncate text-xs text-[#5f6368]">
-                        {assignment.classroomName}{assignment.classroomSubject ? ` · ${assignment.classroomSubject}` : assignment.classroomSection ? ` · ${assignment.classroomSection}` : ""}
-                      </p>
-                      <p className="mt-3 text-xs font-medium text-[#b06000]">
+                      <span className="shrink-0 text-xs font-medium text-[#b06000] sm:text-right">
                         Due {formatDateTime(assignment.dueDate)}
-                      </p>
+                      </span>
                     </button>
                   ))}
                 </div>

@@ -261,6 +261,22 @@ export default function TeacherDashboard({ profile }) {
     useState("");
 
   useEffect(() => {
+    if (!successMessage && !errorMessage) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setSuccessMessage("");
+      setErrorMessage("");
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [successMessage, errorMessage]);
+
+  useEffect(() => {
+    setSuccessMessage("");
+    setErrorMessage("");
+  }, [activePage]);
+
+  useEffect(() => {
     if (!profile?.id || typeof window === "undefined") return;
 
     window.sessionStorage.setItem(
@@ -2110,7 +2126,11 @@ export default function TeacherDashboard({ profile }) {
         workspace="Teacher workspace"
         pages={teacherPages}
         activePage={activePage}
-        onPageChange={setActivePage}
+        onPageChange={(page) => {
+          setSuccessMessage("");
+          setErrorMessage("");
+          setActivePage(page);
+        }}
       />
 
       <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-8">
