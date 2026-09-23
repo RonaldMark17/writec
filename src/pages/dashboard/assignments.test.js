@@ -1,4 +1,9 @@
-import { normalizeAssignment, normalizeClassroom } from './shared';
+import {
+  normalizeAssignment,
+  normalizeClassroom,
+  getAssignmentDueInfo,
+  filterAndSortTodoAssignments,
+} from './shared';
 
 describe('Assignments and Section Isolation', () => {
   const classrooms = [
@@ -144,3 +149,103 @@ describe('Assignments and Section Isolation', () => {
     expect(bob.fileUrl).toBeNull();
   });
 });
+
+describe('Student To Do and Due Soon Feature', () => {
+  const refDate = new Date('2026-09-20T12:00:00.000Z');
+
+  test('getAssignmentDueInfo correctly classifies overdue, due soon, upcoming, and submitted', () => {
+    // 1. Overdue: due yesterday
+    const overdue = getAssignmentDueInfo('2026-09-19T12:00:00.000Z', false, refDate);
+    expect(overdue.isOverdue).toBe(true);
+    expect(overdue.isDueSoon).toBe(false);
+    expect(overdue.status).toBe('overdue');
+    expect(overdue.label).toBe('Overdue');
+
+    // 2. Due soon: due tomorrow
+    const dueSoon = getAssignmentDueInfo('2026-09-21T12:00:00.000Z', false, refDate);
+    expect(dueSoon.isOverdue).toBe(false);
+    expect(dueSoon.isDueSoon).toBe(true);
+    expect(dueSoon.status).toBe('due_soon');
+    expect(dueSoon.relativeText).toBe('Due tomorrow');
+
+    // 3. Upcoming (> 7 days): due in 10 days
+    const upcoming = getAssignmentDueInfo('2026-09-30T12:00:00.000Z', false, refDate);
+    expect(upcoming.isOverdue).toBe(false);
+    expect(upcoming.isDueSoon).toBe(false);
+    expect(upcoming.status).toBe('upcoming');
+
+    // 4. No due date
+    const noDue = getAssignmentDueInfo(null, false, refDate);
+    expect(noDue.status).toBe('no_due_date');
+    expect(noDue.isOverdue).toBe(false);
+
+    // 5. Submitted assignment
+    const submitted = getAssignmentDueInfo('2026-09-19T12:00:00.000Z', true, refDate);
+    expect(submitted.status).toBe('submitted');
+    expect(submitted.isOverdue).toBe(false);
+    expect(submitted.label).toBe('Turned in');
+  });
+
+  test('filterAndSortTodoAssignments separates todo, due soon, and completed, sorting due soon by nearest date', () => {
+    const assignments = [
+      {
+        id: 'a1',
+        title: 'Essay 1 - Due Next Month',
+        classroomId: 'c1',
+        dueDate: '2026-10-25T12:00:00.000Z',
+        submitted: false,
+      },
+      {
+        id: 'a2',
+        title: 'Quiz - Due Tomorrow',
+        classroomId: 'c1',
+        dueDate: '2026-09-21T12:00:00.000Z',
+        submitted: false,
+      },
+      {
+        id: 'a3',
+        title: 'Project - Due in 3 days',
+        classroomId: 'c2',
+        dueDate: '2026-09-23T12:00:00.000Z',
+        submitted: false,
+      },
+      {
+        id: 'a4',
+        title: 'Homework - Overdue',
+        classroomId: 'c1',
+        dueDate: '2026-09-18T12:00:00.000Z',
+        submitted: false,
+      },
+      {
+        id: 'a5',
+        title: 'Lab Report - Completed',
+        classroomId: 'c1',
+        dueDate: '2026-09-19T12:00:00.000Z',
+        submitted: true,
+      },
+    ];
+
+    const result = filterAndSortTodoAssignments(assignments, '', refDate);
+
+    // a5 is submitted, so it must be removed from todo and placed in completed
+    expect(result.todoList.map((a) => a.id)).not.toContain('a5');
+    expect(result.dueSoonList.map((a) => a.id)).not.toContain('a5');
+    expect(result.completedList.map((a) => a.id)).toContain('a5');
+
+    // Due soon list must be sorted by nearest due date first: Quiz (Sep 21) then Project (Sep 23) then Essay 1 (Oct 25)
+    expect(result.dueSoonList[0].id).toBe('a2');
+    expect(result.dueSoonList[1].id).toBe('a3');
+    expect(result.dueSoonList[2].id).toBe('a1');
+
+    // a4 is overdue
+    expect(result.overdueList.map((a) => a.id)).toContain('a4');
+    const overdueItem = result.todoList.find((a) => a.id === 'a4');
+    expect(overdueItem.dueInfo.isOverdue).toBe(true);
+
+    // Classroom isolation: filter by 'c1' should not show 'c2' assignments
+    const c1Result = filterAndSortTodoAssignments(assignments, 'c1', refDate);
+    expect(c1Result.todoList.map((a) => a.id)).not.toContain('a3');
+    expect(c1Result.dueSoonList.map((a) => a.id)).not.toContain('a3');
+  });
+});
+

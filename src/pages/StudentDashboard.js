@@ -7,6 +7,7 @@ import {
   CheckIcon,
   ClipboardIcon,
   CopyIcon,
+  CalendarIcon,
   ESSAY_BUCKET,
   FileIcon,
   FileSearchIcon,
@@ -17,6 +18,9 @@ import {
   PlusIcon,
   StatusMessage,
   UploadIcon,
+  AlertCircleIcon,
+  ClockIcon,
+  filterAndSortTodoAssignments,
   formatDateTime,
   normalizeAssignment,
   normalizeClassroom,
@@ -147,10 +151,15 @@ export default function StudentDashboard({ profile }) {
     classrooms.find((classroom) => classroom.id === selectedClassroomId) ??
     null;
 
-  const visibleAssignments =
+  const assignmentGroups = filterAndSortTodoAssignments(
+    assignments,
     selectedClassroomId
-      ? assignments.filter((assignment) => assignment.classroomId === selectedClassroomId)
-      : assignments;
+  );
+
+  const todoAssignments = assignmentGroups.todoList;
+  const dueSoonAssignments = assignmentGroups.dueSoonList.filter(
+    (assignment) => assignment.dueInfo.isDueSoon
+  );
 
   const resetSubmissionDraft = useCallback(() => {
     setSubmissionDraft(emptySubmissionDraft);
@@ -340,9 +349,9 @@ export default function StudentDashboard({ profile }) {
     setAssignments(nextAssignments);
     setSubmissions(nextSubmissions);
     setSelectedClassroomId((currentId) =>
-      nextClassrooms.some((classroom) => classroom.id === currentId)
+      currentId && nextClassrooms.some((classroom) => classroom.id === currentId)
         ? currentId
-        : nextClassrooms[0]?.id ?? ""
+        : ""
     );
     setSubmissionDraft((currentDraft) => ({
       ...currentDraft,
@@ -881,8 +890,9 @@ export default function StudentDashboard({ profile }) {
                       setSelectedClassroomId(event.target.value);
                       resetSubmissionDraft();
                     }}
-                    className="mt-1.5 h-10 w-full rounded-md border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                  className="mt-1.5 h-10 w-full rounded-md border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                   >
+                    <option value="">All classes</option>
                     {classrooms.map((classroom) => (
                       <option
                         key={classroom.id}
@@ -896,8 +906,55 @@ export default function StudentDashboard({ profile }) {
               )}
             </div>
 
+            <section className="mt-6">
+              <div className="mb-3 flex items-center gap-2">
+                <ClockIcon className="h-5 w-5 text-[#b06000]" />
+                <h3 className="text-lg font-medium text-[#202124]">Due soon</h3>
+                <span className="rounded-full bg-[#fef7e0] px-2 py-0.5 text-xs font-medium text-[#b06000]">
+                  {dueSoonAssignments.length}
+                </span>
+              </div>
+              {dueSoonAssignments.length === 0 ? (
+                <p className="rounded-lg border border-[#dadce0] bg-white px-4 py-3 text-sm text-[#5f6368]">
+                  Nothing is due in the next 7 days.
+                </p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {dueSoonAssignments.map((assignment) => (
+                    <button
+                      key={assignment.id}
+                      type="button"
+                      onClick={() => handleOpenSubmissionDraft(assignment)}
+                      className="group rounded-xl border border-[#dadce0] bg-white p-4 text-left shadow-2xs transition hover:border-[#137333] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#137333]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="min-w-0 text-sm font-medium text-[#202124] group-hover:text-[#137333]">
+                          {assignment.title}
+                        </span>
+                        <CalendarIcon className="h-4 w-4 shrink-0 text-[#b06000]" />
+                      </div>
+                      <p className="mt-1 truncate text-xs text-[#5f6368]">
+                        {assignment.classroomName}{assignment.classroomSubject ? ` · ${assignment.classroomSubject}` : assignment.classroomSection ? ` · ${assignment.classroomSection}` : ""}
+                      </p>
+                      <p className="mt-3 text-xs font-medium text-[#b06000]">
+                        Due {formatDateTime(assignment.dueDate)}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="mt-8">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardIcon className="h-5 w-5 text-[#137333]" />
+                <h3 className="text-lg font-medium text-[#202124]">To do</h3>
+                <span className="rounded-full bg-[#e6f4ea] px-2 py-0.5 text-xs font-medium text-[#137333]">
+                  {todoAssignments.length}
+                </span>
+              </div>
               <div className="mt-6 space-y-4">
-                {visibleAssignments.length === 0 && (
+                {todoAssignments.length === 0 && (
                   <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
                       <ClipboardIcon className="h-7 w-7" />
@@ -909,7 +966,7 @@ export default function StudentDashboard({ profile }) {
                   </div>
                 )}
 
-                {visibleAssignments.map((assignment) => {
+                {todoAssignments.map((assignment) => {
                   const isDraftOpen =
                     submissionDraft.assignmentId === assignment.id;
 
@@ -935,19 +992,20 @@ export default function StudentDashboard({ profile }) {
                             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#5f6368]">
                               <span className="font-medium text-[#202124]">{assignment.classroomName}</span>
                               <span>•</span>
-                              <span>Due {formatDateTime(assignment.dueDate)}</span>
+                              <span>{assignment.classroomSubject || assignment.classroomSection}</span>
+                              <span>•</span>
+                              <span className={assignment.dueInfo.isOverdue ? "font-medium text-[#c5221f]" : ""}>
+                                Due {formatDateTime(assignment.dueDate)}
+                              </span>
                             </div>
                           </div>
                         </div>
 
                         <span
-                          className={
-                            assignment.submitted
-                              ? "rounded-full bg-[#e6f4ea] px-3 py-1 text-xs font-medium text-[#137333]"
-                              : "rounded-full bg-[#f1f3f4] px-3 py-1 text-xs font-medium text-[#3c4043]"
-                          }
+                          className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${assignment.dueInfo.badgeColor}`}
                         >
-                          {assignment.submitted ? "Turned in" : "Assigned"}
+                          {assignment.dueInfo.isOverdue && <AlertCircleIcon className="h-3.5 w-3.5" />}
+                          {assignment.dueInfo.label}
                         </span>
                       </div>
 
@@ -1162,6 +1220,7 @@ export default function StudentDashboard({ profile }) {
                 );
               })}
             </div>
+            </section>
           </div>
         )}
 

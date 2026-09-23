@@ -311,6 +311,63 @@ export function ChevronDownIcon({ className = "h-5 w-5" }) {
   );
 }
 
+export function ClockIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+export function AlertCircleIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  );
+}
+
+export function CalendarIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+}
+
 function LogOutIcon({ className = "h-5 w-5" }) {
   return (
     <svg
@@ -445,6 +502,137 @@ export function normalizeAssignment(row, classroomsById = new Map(), extra = {})
     submissions: extra.submissions ?? 0,
     submitted: extra.submitted ?? false,
     submission: extra.submission ?? null,
+  };
+}
+
+/**
+ * Calculates due status, relative time, overdue flag, and approaching flag for an assignment.
+ */
+export function getAssignmentDueInfo(dueDate, submitted = false, referenceDate = new Date()) {
+  if (submitted) {
+    return {
+      status: "submitted",
+      label: "Turned in",
+      isOverdue: false,
+      isDueSoon: false,
+      badgeColor: "bg-[#e6f4ea] text-[#137333] border-[#ceead6]",
+      relativeText: "Submitted",
+    };
+  }
+
+  if (!dueDate) {
+    return {
+      status: "no_due_date",
+      label: "No due date",
+      isOverdue: false,
+      isDueSoon: false,
+      badgeColor: "bg-[#f1f3f4] text-[#5f6368] border-[#dadce0]",
+      relativeText: "No deadline",
+    };
+  }
+
+  const due = new Date(dueDate);
+  const now = new Date(referenceDate);
+  const diffMs = due.getTime() - now.getTime();
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+  // Overdue check
+  if (diffMs < 0) {
+    const overdueDays = Math.max(1, Math.floor(Math.abs(diffDays)));
+    const overdueText = overdueDays === 1 ? "Overdue (1 day ago)" : `Overdue (${overdueDays} days ago)`;
+    return {
+      status: "overdue",
+      label: "Overdue",
+      isOverdue: true,
+      isDueSoon: false,
+      badgeColor: "bg-red-50 text-red-700 border-red-200",
+      relativeText: overdueText,
+      diffMs,
+    };
+  }
+
+  // Approaching deadline (Due Soon: within 7 days)
+  const isDueSoon = diffDays <= 7;
+  let relativeText = "";
+  if (diffHours <= 1) {
+    relativeText = "Due in less than an hour";
+  } else if (diffHours < 24) {
+    const hours = Math.round(diffHours);
+    relativeText = `Due in ${hours} hour${hours === 1 ? "" : "s"}`;
+  } else if (diffDays <= 1.5) {
+    relativeText = "Due tomorrow";
+  } else {
+    const days = Math.round(diffDays);
+    relativeText = `Due in ${days} days`;
+  }
+
+  return {
+    status: isDueSoon ? "due_soon" : "upcoming",
+    label: isDueSoon ? "Due soon" : "Assigned",
+    isOverdue: false,
+    isDueSoon,
+    badgeColor: isDueSoon
+      ? "bg-amber-50 text-amber-800 border-amber-200"
+      : "bg-[#e8f0fe] text-[#1967d2] border-[#d2e3fc]",
+    relativeText,
+    diffMs,
+  };
+}
+
+/**
+ * Partitions and sorts assignments into Due Soon, To Do (unsubmitted), and Completed.
+ * Strictly respects classroom/section filtering and sorts Due Soon by nearest deadline.
+ */
+export function filterAndSortTodoAssignments(
+  assignments = [],
+  selectedClassroomId = "",
+  referenceDate = new Date()
+) {
+  const filtered = selectedClassroomId
+    ? assignments.filter((a) => a.classroomId === selectedClassroomId)
+    : assignments;
+
+  // Unsubmitted assignments
+  const todoList = filtered.filter((a) => !a.submitted);
+
+  // Completed assignments
+  const completedList = filtered.filter((a) => a.submitted);
+
+  // Enrich with due info
+  const enrichedTodo = todoList.map((a) => ({
+    ...a,
+    dueInfo: getAssignmentDueInfo(a.dueDate, false, referenceDate),
+  }));
+
+  // Due Soon: Unsubmitted assignments with a valid due date that is not past due, within approaching window (or all upcoming with due dates sorted nearest first)
+  const dueSoonList = enrichedTodo
+    .filter((a) => a.dueDate && !a.dueInfo.isOverdue)
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  // Overdue list
+  const overdueList = enrichedTodo
+    .filter((a) => a.dueInfo.isOverdue)
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  // General To Do: All unsubmitted assignments (sorted: overdue first, then nearest due date, then no due date)
+  const sortedTodoList = [...enrichedTodo].sort((a, b) => {
+    if (a.dueInfo.isOverdue && !b.dueInfo.isOverdue) return -1;
+    if (!a.dueInfo.isOverdue && b.dueInfo.isOverdue) return 1;
+    if (a.dueDate && b.dueDate) {
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    }
+    if (a.dueDate && !b.dueDate) return -1;
+    if (!a.dueDate && b.dueDate) return 1;
+    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+  });
+
+  return {
+    allCount: filtered.length,
+    todoList: sortedTodoList,
+    dueSoonList,
+    overdueList,
+    completedList,
   };
 }
 

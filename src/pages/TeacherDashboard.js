@@ -73,9 +73,21 @@ const uploadModes = [
   },
 ];
 
+function getTeacherActivePage(profileId) {
+  if (!profileId || typeof window === "undefined") return "classrooms";
+
+  const savedPage = window.sessionStorage.getItem(
+    `writecheck-teacher-active-page-${profileId}`
+  );
+
+  return teacherPages.some((page) => page.id === savedPage)
+    ? savedPage
+    : "classrooms";
+}
+
 export default function TeacherDashboard({ profile }) {
   const [activePage, setActivePage] =
-    useState("classrooms");
+    useState(() => getTeacherActivePage(profile?.id));
 
   const [classrooms, setClassrooms] =
     useState([]);
@@ -107,6 +119,10 @@ export default function TeacherDashboard({ profile }) {
   const [submissionRosterSearch, setSubmissionRosterSearch] = useState("");
   const [selectedSubmissionsClassroomId, setSelectedSubmissionsClassroomId] = useState("all");
   const [selectedSubmissionsAssignmentId, setSelectedSubmissionsAssignmentId] = useState("all");
+  const [submissionHubSearch, setSubmissionHubSearch] = useState("");
+  const [submissionHubClassroomId, setSubmissionHubClassroomId] = useState("all");
+  const [submissionHubFilter, setSubmissionHubFilter] = useState("all");
+  const [submissionHubSort, setSubmissionHubSort] = useState("newest");
 
   const [uploadMode, setUploadMode] =
     useState("");
@@ -242,6 +258,15 @@ export default function TeacherDashboard({ profile }) {
 
   const [successMessage, setSuccessMessage] =
     useState("");
+
+  useEffect(() => {
+    if (!profile?.id || typeof window === "undefined") return;
+
+    window.sessionStorage.setItem(
+      `writecheck-teacher-active-page-${profile.id}`,
+      activePage
+    );
+  }, [activePage, profile?.id]);
 
   const selectedClassroom =
     classrooms.find((classroom) => classroom.id === selectedClassroomId) ??
@@ -391,6 +416,101 @@ export default function TeacherDashboard({ profile }) {
     if (assignmentFilterClassroomId === "all") return assignments;
     return assignments.filter((a) => a.classroomId === assignmentFilterClassroomId);
   }, [assignments, assignmentFilterClassroomId]);
+
+  const submissionHubGroups = useMemo(() => {
+    const term = submissionHubSearch.trim().toLowerCase();
+    const now = new Date();
+    const dueSoonLimit = new Date(now);
+    dueSoonLimit.setDate(dueSoonLimit.getDate() + 7);
+
+    const enriched = assignments
+      .map((assignment) => {
+        // Counts are intentionally computed from this assignment's own classroom.
+        // This keeps submissions and missing students isolated by section.
+        const enrolledStudentIds = new Set(
+          classroomMembers
+            .filter((member) => member.classroomId === assignment.classroomId)
+            .map((member) => member.studentId)
+        );
+        const assignmentSubmissions = submissions.filter(
+          (submission) =>
+            submission.assignmentId === assignment.id &&
+            submission.classroomId === assignment.classroomId &&
+            enrolledStudentIds.has(submission.studentId)
+        );
+        const submittedStudentIds = new Set(
+          assignmentSubmissions.map((submission) => submission.studentId)
+        );
+        const latestSubmissionAt = assignmentSubmissions.reduce((latest, submission) => {
+          const submittedAt = new Date(submission.createdAt || 0).getTime();
+          return Math.max(latest, Number.isNaN(submittedAt) ? 0 : submittedAt);
+        }, 0);
+
+        return {
+          ...assignment,
+          submissionStats: {
+            submitted: submittedStudentIds.size,
+            missing: Math.max(0, enrolledStudentIds.size - submittedStudentIds.size),
+            latestSubmissionAt,
+          },
+        };
+      })
+      .filter((assignment) => {
+        const searchable = [
+          assignment.title,
+          assignment.classroomName,
+          assignment.classroomSubject,
+          assignment.classroomSection,
+        ].join(" ").toLowerCase();
+        if (term && !searchable.includes(term)) return false;
+        if (submissionHubClassroomId !== "all" && assignment.classroomId !== submissionHubClassroomId) return false;
+
+        if (submissionHubFilter === "dueSoon") {
+          if (!assignment.dueDate) return false;
+          const due = new Date(assignment.dueDate);
+          return due >= now && due <= dueSoonLimit;
+        }
+        if (submissionHubFilter === "noDueDate") return !assignment.dueDate;
+        if (submissionHubFilter === "submitted") return assignment.submissionStats.submitted > 0;
+        if (submissionHubFilter === "notSubmitted") return assignment.submissionStats.submitted === 0;
+        return true;
+      })
+      .sort((a, b) => {
+        if (submissionHubSort === "oldest") {
+          return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+        }
+        if (submissionHubSort === "dueDate") {
+          const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+          const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+          return aDue - bDue;
+        }
+        if (submissionHubSort === "recentSubmissions") {
+          return b.submissionStats.latestSubmissionAt - a.submissionStats.latestSubmissionAt;
+        }
+        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      });
+
+    return enriched.reduce((groups, assignment) => {
+      const group = groups.get(assignment.classroomId) || {
+        id: assignment.classroomId,
+        name: assignment.classroomName,
+        section: assignment.classroomSection,
+        subject: assignment.classroomSubject,
+        assignments: [],
+      };
+      group.assignments.push(assignment);
+      groups.set(assignment.classroomId, group);
+      return groups;
+    }, new Map());
+  }, [
+    assignments,
+    classroomMembers,
+    submissions,
+    submissionHubClassroomId,
+    submissionHubFilter,
+    submissionHubSearch,
+    submissionHubSort,
+  ]);
 
   const loadTeacherData = useCallback(async () => {
     const teacherId = profile?.id;
@@ -777,12 +897,12 @@ export default function TeacherDashboard({ profile }) {
     setSuccessMessage("");
     setIsUpdatingAssignment(true);
 
-    const dueDate = editingAssignment.dueDate
-      ? new Date(editingAssignment.dueDate).toISOString()
-      : null;
-
     try {
-      const { error } = await supabase
+      const dueDate = editingAssignment.dueDate
+        ? new Date(editingAssignment.dueDate).toISOString()
+        : null;
+
+      const { error: updateError } = await supabase
         .from(ASSIGNMENT_TABLE)
         .update({
           classroom_id: editingAssignment.classroomId,
@@ -790,17 +910,38 @@ export default function TeacherDashboard({ profile }) {
           instructions: editingAssignment.instructions?.trim() || null,
           due_date: dueDate,
         })
-        .eq("id", editingAssignment.id);
+        .eq("id", editingAssignment.id)
+        .eq("teacher_id", profile.id);
 
-      if (error) {
-        setErrorMessage(error.message || "Failed to update assignment.");
-        setIsUpdatingAssignment(false);
+      if (updateError) {
+        setErrorMessage(updateError.message || "Failed to update assignment.");
         return;
       }
 
-      setSuccessMessage("Assignment updated successfully.");
-      setEditingAssignment(null);
+      // Verify the persisted row separately. Update responses may omit rows when
+      // the project's Supabase policies do not allow returning representations.
+      const { data: updatedAssignment, error: verifyError } = await supabase
+        .from(ASSIGNMENT_TABLE)
+        .select("id")
+        .eq("id", editingAssignment.id)
+        .eq("teacher_id", profile.id)
+        .maybeSingle();
+
+      if (verifyError) {
+        setErrorMessage(verifyError.message || "Could not verify the assignment update.");
+        return;
+      }
+
+      if (!updatedAssignment) {
+        setErrorMessage(
+          "The assignment was not updated. It may have been removed or you no longer have permission to edit it."
+        );
+        return;
+      }
+
       await loadTeacherData();
+      setEditingAssignment(null);
+      setSuccessMessage("Assignment updated successfully.");
     } catch (err) {
       setErrorMessage(err.message || "Could not update assignment.");
     } finally {
@@ -1742,6 +1883,14 @@ export default function TeacherDashboard({ profile }) {
           </div>
 
           {/* Submissions Roster Table */}
+          {assignmentStats.total > 0 && assignmentStats.submitted === 0 && (
+            <div className="rounded-xl border border-dashed border-[#dadce0] bg-white px-5 py-6 text-center">
+              <p className="text-sm font-medium text-[#202124]">No submissions yet</p>
+              <p className="mt-1 text-xs text-[#5f6368]">
+                Students who submit this assignment will appear here.
+              </p>
+            </div>
+          )}
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xs">
             <div className="grid grid-cols-[1.3fr_1fr_1.2fr_1.1fr_0.9fr] gap-4 border-b border-gray-200 bg-gray-50/75 px-5 py-3.5 text-xs font-extrabold uppercase tracking-wider text-gray-500">
               <span>Student</span>
@@ -2394,6 +2543,26 @@ export default function TeacherDashboard({ profile }) {
                   <p className="mt-2 max-w-[680px] text-base font-semibold leading-7 text-gray-500">
                     Review student work from a photo, document, readable file, or pasted text.
                   </p>
+                </div>
+
+                <div className="rounded-xl border border-[#dadce0] bg-white p-4 shadow-2xs">
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_repeat(3,minmax(150px,0.45fr))]">
+                    <label className="relative block">
+                      <span className="sr-only">Search assignments</span>
+                      <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
+                      <input type="search" value={submissionHubSearch} onChange={(event) => setSubmissionHubSearch(event.target.value)} placeholder="Search assignment, subject, or class" className="h-10 w-full rounded-lg border border-[#dadce0] bg-white pl-9 pr-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]" />
+                    </label>
+                    <select value={submissionHubClassroomId} onChange={(event) => setSubmissionHubClassroomId(event.target.value)} aria-label="Filter by class and section" className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none focus:border-[#137333]">
+                      <option value="all">All classes</option>
+                      {classrooms.map((classroom) => <option key={classroom.id} value={classroom.id}>{classroom.name} — {classroom.section || "Standard"}</option>)}
+                    </select>
+                    <select value={submissionHubFilter} onChange={(event) => setSubmissionHubFilter(event.target.value)} aria-label="Filter assignments" className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none focus:border-[#137333]">
+                      <option value="all">All assignments</option><option value="dueSoon">Due soon</option><option value="noDueDate">No due date</option><option value="submitted">Submitted</option><option value="notSubmitted">Not submitted</option>
+                    </select>
+                    <select value={submissionHubSort} onChange={(event) => setSubmissionHubSort(event.target.value)} aria-label="Sort assignments" className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none focus:border-[#137333]">
+                      <option value="newest">Newest</option><option value="oldest">Oldest</option><option value="dueDate">Due date</option><option value="recentSubmissions">Most recent submissions</option>
+                    </select>
+                  </div>
                 </div>
 
                 <button
@@ -3337,15 +3506,28 @@ export default function TeacherDashboard({ profile }) {
                     </button>
                   </div>
                 ) : (
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {assignments.map((assignment) => (
+                  submissionHubGroups.size === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-10 text-center">
+                      <p className="text-sm font-medium text-[#202124]">No assignments match these filters.</p>
+                      <p className="mt-1 text-xs text-[#5f6368]">Try another class, status filter, or search term.</p>
+                    </div>
+                  ) : (
+                  <div className="space-y-6">
+                    {Array.from(submissionHubGroups.values()).map((group) => (
+                      <section key={group.id} className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-4 sm:p-5">
+                        <div className="mb-4 border-b border-[#dadce0] pb-3">
+                          <h3 className="text-lg font-medium text-[#202124]">{group.name}</h3>
+                          <p className="mt-0.5 text-xs text-[#5f6368]">Section: {group.section || "Standard"}{group.subject ? ` · ${group.subject}` : ""}</p>
+                        </div>
+                        <div className="space-y-2">
+                    {group.assignments.map((assignment) => (
                       <article
                         key={assignment.id}
-                        className="group flex flex-col justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-xs transition hover:border-emerald-400 hover:shadow-md cursor-pointer"
+                        className="group flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-xs transition hover:border-emerald-400 hover:shadow-md cursor-pointer md:flex-row md:items-center md:justify-between"
                         onClick={() => setSelectedAssignmentId(assignment.id)}
                       >
-                        <div>
-                          <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+                        <div className="min-w-0">
+                          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                             <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800 border border-emerald-200">
                               {assignment.classroomName}
                             </span>
@@ -3354,26 +3536,44 @@ export default function TeacherDashboard({ profile }) {
                             </span>
                           </div>
 
-                          <h3 className="text-lg font-black text-gray-950 group-hover:text-emerald-800 transition line-clamp-2">
+                          <h3 className="truncate text-base font-black text-gray-950 group-hover:text-emerald-800 transition">
                             {assignment.title}
                           </h3>
-                          <p className="mt-1.5 text-xs font-semibold text-gray-500">
+                          <p className="mt-1 text-xs font-semibold text-gray-500">
                             Due: {formatDateTime(assignment.dueDate)}
                           </p>
                         </div>
 
-                        <div className="mt-5 flex items-center justify-between border-t border-gray-100 pt-3">
+                        <div
+                          className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-3 md:border-t-0 md:pt-0"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setAssignmentDetailTab("roster");
+                              setSelectedAssignmentId(assignment.id);
+                            }}
+                            className="text-xs font-extrabold text-emerald-700 hover:underline"
+                          >
+                            Open Submissions →
+                          </button>
                           <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 border border-emerald-200">
-                            {assignment.submissions} turned in
+                            {assignment.submissionStats.submitted} turned in
                           </span>
                           <span className="text-xs font-extrabold text-emerald-700 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
-                            <span>Open Roster</span>
+                            <span>{assignment.submissionStats.missing} not submitted</span>
                             <span aria-hidden="true">→</span>
                           </span>
                         </div>
                       </article>
                     ))}
+                        </div>
+                      </section>
+                    ))}
                   </div>
+                  )
                 )}
               </div>
             )

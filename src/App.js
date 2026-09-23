@@ -56,6 +56,27 @@ function AuthLoginRoute({ session, isAuthLoading }) {
   return <Login />;
 }
 
+function HomeRoute({ session, isAuthLoading }) {
+  if (isAuthLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#137333] border-t-transparent" />
+          <span className="text-sm font-medium text-[#5f6368]">Loading WriteCheck...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // A valid Supabase session should always return to its dashboard, including
+  // when someone manually removes /dashboard from the address bar.
+  if (session && !isSessionExpired(session)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Startup />;
+}
+
 function App() {
   const [session, setSession] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -140,7 +161,7 @@ function App() {
       <Routes>
         <Route
           path="/"
-          element={<Startup />}
+          element={<HomeRoute session={session} isAuthLoading={isAuthLoading} />}
         />
 
         <Route
