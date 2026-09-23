@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { supabase } from "../supabaseClient";
 import {
@@ -111,6 +111,7 @@ export default function TeacherDashboard({ profile }) {
   const [isUpdatingAssignment, setIsUpdatingAssignment] = useState(false);
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [assignmentDetailTab, setAssignmentDetailTab] = useState("roster");
+  const teacherDataRequestRef = useRef(0);
 
   const [classroomMembers, setClassroomMembers] = useState([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(null);
@@ -514,8 +515,10 @@ export default function TeacherDashboard({ profile }) {
 
   const loadTeacherData = useCallback(async () => {
     const teacherId = profile?.id;
-    if (!teacherId) return;
+    if (!teacherId) return false;
 
+    const requestId = teacherDataRequestRef.current + 1;
+    teacherDataRequestRef.current = requestId;
     setIsLoading(true);
     setErrorMessage("");
 
@@ -529,7 +532,7 @@ export default function TeacherDashboard({ profile }) {
     if (classroomError) {
       setErrorMessage(classroomError.message);
       setIsLoading(false);
-      return;
+      return false;
     }
 
     const classIds =
@@ -561,7 +564,7 @@ export default function TeacherDashboard({ profile }) {
     if (assignmentError) {
       setErrorMessage(assignmentError.message);
       setIsLoading(false);
-      return;
+      return false;
     }
 
     assignmentRows =
@@ -581,7 +584,7 @@ export default function TeacherDashboard({ profile }) {
       if (submissionError) {
         setErrorMessage(submissionError.message);
         setIsLoading(false);
-        return;
+        return false;
       }
 
       submissionRows =
@@ -710,6 +713,10 @@ export default function TeacherDashboard({ profile }) {
       };
     });
 
+    if (requestId !== teacherDataRequestRef.current) {
+      return false;
+    }
+
     setClassroomMembers(nextClassroomMembers);
     setClassrooms(nextClassrooms);
     setAssignments(nextAssignments);
@@ -732,6 +739,7 @@ export default function TeacherDashboard({ profile }) {
           : nextClassrooms[0]?.id ?? "",
     }));
     setIsLoading(false);
+    return true;
   }, [profile?.id]);
 
   useEffect(() => {
@@ -914,35 +922,99 @@ export default function TeacherDashboard({ profile }) {
         .eq("teacher_id", profile.id);
 
       if (updateError) {
+        if (process.env.NODE_ENV === "development") {
+          console.error("Assignment update failed:", {
+            assignmentId: editingAssignment.id,
+            error: updateError,
+          });
+        }
         setErrorMessage(updateError.message || "Failed to update assignment.");
         return;
       }
 
-      // Verify the persisted row separately. Update responses may omit rows when
-      // the project's Supabase policies do not allow returning representations.
+      // Verify the persisted values separately. Update responses may omit rows
+      // when the project's Supabase policies do not allow returning rows.
       const { data: updatedAssignment, error: verifyError } = await supabase
         .from(ASSIGNMENT_TABLE)
-        .select("id")
+        .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date")
         .eq("id", editingAssignment.id)
         .eq("teacher_id", profile.id)
         .maybeSingle();
 
       if (verifyError) {
+        if (process.env.NODE_ENV === "development") {
+          console.error("Assignment update verification failed:", {
+            assignmentId: editingAssignment.id,
+            error: verifyError,
+          });
+        }
         setErrorMessage(verifyError.message || "Could not verify the assignment update.");
         return;
       }
 
-      if (!updatedAssignment) {
+      const savedValuesMatch =
+        updatedAssignment &&
+        updatedAssignment.classroom_id === editingAssignment.classroomId &&
+        updatedAssignment.title === editingAssignment.title.trim() &&
+        (updatedAssignment.instructions || null) ===
+          (editingAssignment.instructions?.trim() || null) &&
+        (updatedAssignment.due_date
+          ? new Date(updatedAssignment.due_date).getTime()
+          : null) === (dueDate ? new Date(dueDate).getTime() : null);
+
+      if (!savedValuesMatch) {
+        if (process.env.NODE_ENV === "development") {
+          console.error("Assignment update values did not persist:", {
+            assignmentId: editingAssignment.id,
+            expected: {
+              classroomId: editingAssignment.classroomId,
+              title: editingAssignment.title.trim(),
+              instructions: editingAssignment.instructions?.trim() || null,
+              dueDate,
+            },
+            actual: updatedAssignment,
+          });
+        }
         setErrorMessage(
           "The assignment was not updated. It may have been removed or you no longer have permission to edit it."
         );
         return;
       }
 
-      await loadTeacherData();
+      const classroomsById = new Map(
+        classrooms.map((classroom) => [classroom.id, classroom])
+      );
+      const currentAssignment = assignments.find(
+        (assignment) => assignment.id === updatedAssignment.id
+      );
+
+      setAssignments((currentAssignments) =>
+        currentAssignments.map((assignment) =>
+          assignment.id === updatedAssignment.id
+            ? normalizeAssignment(updatedAssignment, classroomsById, {
+                submissions: currentAssignment?.submissions ?? assignment.submissions,
+              })
+            : assignment
+        )
+      );
+
+      const didRefresh = await loadTeacherData();
+      if (!didRefresh) {
+        if (process.env.NODE_ENV === "development") {
+          console.error("Assignment saved but dashboard refresh failed:", {
+            assignmentId: updatedAssignment.id,
+          });
+        }
+        setErrorMessage("The assignment was saved, but the dashboard could not refresh its data.");
+        return;
+      }
+
       setEditingAssignment(null);
       setSuccessMessage("Assignment updated successfully.");
     } catch (err) {
+      if (process.env.NODE_ENV === "development") {
+        console.error("Assignment update request failed:", err);
+      }
       setErrorMessage(err.message || "Could not update assignment.");
     } finally {
       setIsUpdatingAssignment(false);

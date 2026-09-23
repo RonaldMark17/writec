@@ -65,3 +65,19 @@ CREATE POLICY "Enable all operations for submission_grades"
 GRANT ALL ON TABLE public.plagiarism_scans TO anon, authenticated, service_role;
 GRANT ALL ON TABLE public.submission_grades TO anon, authenticated, service_role;
 GRANT ALL ON TABLE public."submissionTable" TO anon, authenticated, service_role;
+
+-- 5. Allow teachers to update their own assignments
+-- The frontend uses Supabase directly for assignment edits. Without an UPDATE
+-- policy, Supabase can return no error while changing zero rows.
+ALTER TABLE IF EXISTS public."assignmentTable" ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Teachers can update their own assignments"
+  ON public."assignmentTable";
+CREATE POLICY "Teachers can update their own assignments"
+  ON public."assignmentTable"
+  FOR UPDATE
+  TO authenticated
+  USING (teacher_id = auth.uid())
+  WITH CHECK (teacher_id = auth.uid());
+
+GRANT UPDATE ON TABLE public."assignmentTable" TO authenticated;
