@@ -7,7 +7,6 @@ import {
   ASSIGNMENT_TABLE,
   CLASSROOM_TABLE,
   ClipboardIcon,
-  MEMBER_TABLE,
   SUBMISSION_TABLE,
   ESSAY_BUCKET,
   resolveStorageImageUrl,
@@ -270,7 +269,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
     const timeoutId = window.setTimeout(() => {
       setSuccessMessage("");
-      setErrorMessage("");
     }, 4000);
 
     return () => window.clearTimeout(timeoutId);
@@ -581,16 +579,30 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     let assignmentRows = [];
     let submissionRows = [];
     let studentRows = [];
+    const rosterNames = new Map();
 
     if (classIds.length > 0) {
-      const { data: members } =
-        await supabase
-          .from(MEMBER_TABLE)
-          .select("id, classroom_id, student_id")
-          .in("classroom_id", classIds);
-
-      memberRows =
-        members ?? [];
+      const rosters = await Promise.all(classIds.map(async (classroomId) => {
+        const { data, error } = await supabase.rpc("get_classroom_roster", {
+          requested_classroom_id: String(classroomId),
+        });
+        return { classroomId, data, error };
+      }));
+      if (requestId !== teacherDataRequestRef.current) return false;
+      const rosterError = rosters.find((roster) => roster.error)?.error;
+      if (rosterError) {
+        setErrorMessage(`Could not load enrolled student names: ${rosterError.message}`);
+        setIsLoading(false);
+        return false;
+      }
+      memberRows = rosters.flatMap(({ classroomId, data }) => (data ?? []).map((student) => {
+        rosterNames.set(student.student_id, student.student_name);
+        return {
+          id: `${classroomId}:${student.student_id}`,
+          classroom_id: classroomId,
+          student_id: student.student_id,
+        };
+      }));
     }
 
     const { data: assignmentsData, error: assignmentError } =
@@ -701,6 +713,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         ])
       );
 
+    rosterNames.forEach((name, studentId) => {
+      studentsById.set(studentId, name);
+    });
+
     const assignmentsById =
       new Map(nextAssignments.map((assignment) => [assignment.id, assignment]));
 
@@ -727,16 +743,17 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           assignmentId: submission.assignment_id,
           classroomId: submission.classroom_id,
           studentId: submission.student_id,
+          returnedAt: submission.returned_at,
           studentName: studentsById.get(submission.student_id) || "Student",
           assignmentTitle: assignment?.title || "Assignment",
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
           fileUrl: submission.file_url,
           status: submission.status || gradeInfo.status || "submitted",
-          grade: submission.grade || gradeInfo.grade || "",
-          feedback: submission.feedback || gradeInfo.feedback || "",
-          transcribedText: submission.transcribed_text || gradeInfo.transcribed_text || "",
-          scanResult: submission.scan_result || gradeInfo.scan_result || null,
+          grade: submission.grade ?? gradeInfo.grade ?? "",
+          feedback: submission.feedback ?? gradeInfo.feedback ?? "",
+          transcribedText: submission.transcribed_text ?? gradeInfo.transcribed_text ?? "",
+          scanResult: submission.scan_result ?? gradeInfo.scan_result ?? null,
         };
       });
 
@@ -747,7 +764,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         id: member.id,
         classroomId: member.classroom_id,
         studentId: member.student_id,
-        studentName: user?.full_name || user?.email || "Student",
+        studentName: studentsById.get(member.student_id) || "Student",
         studentEmail: user?.email || "",
       };
     });
@@ -1347,8 +1364,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
   const handleOpenReview = (submission) => {
     setReviewingSubmission(submission);
-    setGradeInput(submission.grade || "");
-    setFeedbackInput(submission.feedback || "");
+    setGradeInput(String(submission.grade ?? ""));
+    setFeedbackInput(String(submission.feedback ?? ""));
     setReviewCopySuccess(false);
     setReviewImagePreviewUrl("");
     setIsImageExpanded(false);
@@ -1416,6 +1433,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   };
 
   const handleCloseReview = () => {
+    if (isSavingGrade || isReviewScanning) return;
     setReviewingSubmission(null);
     setGradeInput("");
     setFeedbackInput("");
@@ -1600,33 +1618,22 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
       setReviewScanResult(finalDetectionResult);
 
-      // 1. Primary: Save status update to Supabase submissionTable
-      try {
-        await supabase
-          .from(SUBMISSION_TABLE)
-          .update({
-            status: reviewingSubmission.grade ? "graded" : "scanned",
-          })
-          .eq("id", reviewingSubmission.id);
-      } catch (sbErr) {
-        console.warn("Supabase scan update warning:", sbErr);
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const saveResponse = await apiFetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcribed_text: extractedText, scan_result: finalDetectionResult,
+          assignment_id: currentAssignmentId }),
+      });
+      const savedScan = await saveResponse.json();
+      if (!saveResponse.ok || !savedScan.success) {
+        throw new Error(savedScan.detail || "Scan results could not be saved. Use Save grade to retry saving your results.");
       }
-
-      // 2. Backup: Save to local backend SQLite
-      try {
-        const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-        await apiFetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/scan`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcribed_text: extractedText,
-            scan_result: finalDetectionResult,
-            assignment_id: currentAssignmentId,
-          }),
-        });
-      } catch (backupErr) {
-        console.warn("Backend backup scan save notice:", backupErr);
-      }
+      setReviewScanResult(savedScan.scan_record.scan_result);
+      setReviewingSubmission((current) => ({ ...current,
+        returnedAt: savedScan.scan_record.returned_at,
+        scanResult: savedScan.scan_record.scan_result,
+        transcribedText: savedScan.scan_record.transcribed_text }));
 
       setSubmissions((prev) =>
         prev.map((s) =>
@@ -1634,7 +1641,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             ? {
                 ...s,
                 transcribedText: extractedText,
-                scanResult: finalDetectionResult,
+                scanResult: savedScan.scan_record.scan_result,
+                returnedAt: savedScan.scan_record.returned_at,
               }
             : s
         )
@@ -1649,65 +1657,73 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
   const handleSaveGrade = async (event) => {
     if (event) event.preventDefault();
-    if (!reviewingSubmission) return;
+    if (!reviewingSubmission || isSavingGrade) return;
 
     setIsSavingGrade(true);
-    const gradeVal = gradeInput.trim();
-    const feedbackVal = feedbackInput.trim();
-    const subId = reviewingSubmission.id;
-
-    // 1. Try Supabase update (if grade column exists)
+    setErrorMessage("");
+    setSuccessMessage("");
     try {
-      await supabase
-        .from(SUBMISSION_TABLE)
-        .update({
-          grade: gradeVal,
-          feedback: feedbackVal,
-          status: gradeVal ? "graded" : reviewingSubmission.status,
-        })
-        .eq("id", subId);
-    } catch (err) {
-      console.warn("Supabase grade update notice:", err);
-    }
-
-    // 2. Always persist to backend SQLite grades table
-    try {
+      const gradeVal = String(gradeInput ?? "").trim();
+      const feedbackVal = String(feedbackInput ?? "").trim();
+      const subId = reviewingSubmission.id;
       const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-      await apiFetch(`${backendUrl}/api/submissions/${subId}/grade`, {
+      const response = await apiFetch(`${backendUrl}/api/submissions/${subId}/grade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          grade: gradeVal,
-          feedback: feedbackVal,
-          status: gradeVal ? "graded" : reviewingSubmission.status,
+          grade: gradeVal, feedback: feedbackVal,
+          status: gradeVal ? "graded" : "submitted",
           transcribed_text: reviewTranscribedText,
           scan_result: reviewScanResult,
           assignment_id: reviewingSubmission.assignmentId || reviewingSubmission.assignment_id,
         }),
       });
-    } catch (err) {
-      console.warn("Backend grade save notice:", err);
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.grade_record) {
+        throw new Error(typeof result.detail === "string" ? result.detail : "Grade was not saved. Please try again.");
+      }
+      const saved = result.grade_record;
+      setSubmissions((prev) => prev.map((submission) => submission.id === subId
+        ? { ...submission, grade: saved.grade ?? "", feedback: saved.feedback ?? "",
+            returnedAt: saved.returned_at, status: saved.status, transcribedText: saved.transcribed_text ?? "",
+            scanResult: saved.scan_result ?? null }
+        : submission));
+      setSuccessMessage(`Grade saved for ${reviewingSubmission.studentName}.`);
+      setReviewingSubmission((current) => ({ ...current, grade: saved.grade ?? "",
+        feedback: saved.feedback ?? "", returnedAt: saved.returned_at,
+        transcribedText: saved.transcribed_text ?? "", scanResult: saved.scan_result ?? null }));
+    } catch (error) {
+      setErrorMessage(error.message || "Could not save. Your changes are still here; please retry.");
+    } finally {
+      setIsSavingGrade(false);
     }
+  };
 
-    // 3. Update React state immediately
-    setSubmissions((prev) =>
-      prev.map((s) =>
-        s.id === subId
-          ? {
-              ...s,
-              grade: gradeVal,
-              feedback: feedbackVal,
-              status: gradeVal ? "graded" : s.status,
-              transcribedText: reviewTranscribedText || s.transcribedText,
-              scanResult: reviewScanResult || s.scanResult,
-            }
-          : s
-      )
-    );
-
-    setSuccessMessage(`Grade saved for ${reviewingSubmission.studentName}.`);
-    setIsSavingGrade(false);
-    setReviewingSubmission(null);
+  const handleReturnWork = async () => {
+    if (!reviewingSubmission || isSavingGrade || isReviewScanning) return;
+    setErrorMessage("");
+    setSuccessMessage("");
+    if (String(gradeInput ?? "").trim() !== String(reviewingSubmission.grade ?? "").trim()
+      || feedbackInput.trim() !== String(reviewingSubmission.feedback ?? "").trim()) {
+      setErrorMessage("Save your grade and feedback before returning work.");
+      return;
+    }
+    setIsSavingGrade(true);
+    try {
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const response = await apiFetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/return`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok || !result.submission?.returned_at) throw new Error(
+        typeof result.detail === "string" ? result.detail : "Could not return work. Save a grade first, then retry.");
+      setSubmissions((rows) => rows.map((row) => row.id === reviewingSubmission.id
+        ? { ...row, returnedAt: result.submission.returned_at } : row));
+      setReviewingSubmission((row) => ({ ...row, returnedAt: result.submission.returned_at }));
+      setSuccessMessage("Work returned. The student can now see the saved results.");
+    } catch (error) {
+      setErrorMessage(error.message || "Could not return work. Please retry.");
+    } finally {
+      setIsSavingGrade(false);
+    }
   };
 
   const manualResultBadgeClass =
@@ -3759,7 +3775,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           {editingAssignment && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm animate-in fade-in duration-150">
               <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
-                <div className="flex items-start justify-between border-b border-gray-100 pb-4">
+                <div className="sticky -top-6 z-10 flex items-start justify-between gap-4 border-b border-gray-100 bg-white py-4">
                   <div>
                     <span className="inline-block rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
                       Edit Assignment
@@ -3892,9 +3908,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   <button
                     type="button"
                     onClick={handleCloseReview}
-                    className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 text-lg font-bold"
+                    disabled={isSavingGrade || isReviewScanning}
+                    aria-label="Close submission review"
+                    className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                   >
-                    ✕
+                    Close ✕
                   </button>
                 </div>
 
@@ -4259,13 +4277,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
                   )}
 
+                  <StatusMessage error={errorMessage} message={successMessage} />
                   {/* Grading Form */}
                   <form onSubmit={handleSaveGrade} className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-5">
                     <h4 className="text-base font-black text-emerald-950">
                       Grade Submission
                     </h4>
                     <p className="mt-1 text-xs font-semibold text-emerald-800">
-                      Assign a score and leave feedback for {reviewingSubmission.studentName}.
+                      Assign a score and leave feedback for {reviewingSubmission.studentName}. Results stay private until returned. Editing saved results makes them private again.
                     </p>
 
                     <div className="mt-4">
@@ -4312,13 +4331,22 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       />
                     </div>
 
-                    <div className="mt-5 flex justify-end gap-3">
+                    <p className="mt-3 text-sm font-medium text-emerald-800">
+                      {reviewingSubmission.returnedAt ? "Returned to student" : "Draft ? visible only to the teacher"}
+                    </p>
+                    <div className="mt-5 flex flex-wrap justify-end gap-3">
+                      <button type="button" onClick={handleReturnWork}
+                        disabled={isSavingGrade || isReviewScanning || !String(reviewingSubmission.grade ?? "").trim()}
+                        className="rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-blue-800 disabled:opacity-50">
+                        Return work
+                      </button>
                       <button
                         type="button"
                         onClick={handleCloseReview}
+                        disabled={isSavingGrade || isReviewScanning}
                         className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-xs font-extrabold text-gray-700 transition hover:bg-gray-50"
                       >
-                        Cancel
+                        Close
                       </button>
                       <button
                         type="submit"

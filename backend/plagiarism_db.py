@@ -130,19 +130,7 @@ def save_submission_grade(
         "updated_at": now_iso,
     }
 
-    try:
-        from supabase_sync import sync_submission_grade
-        sync_submission_grade(
-            submission_id=submission_id,
-            grade=grade,
-            feedback=feedback,
-            status=status,
-            transcribed_text=transcribed_text or "",
-            scan_result=scan_result,
-            updated_at=now_iso,
-        )
-    except Exception as e:
-        print(f"[save_submission_grade] supabase sync notice: {e}", flush=True)
+    # Local historical storage only. Cloud results are saved via submission_persistence.
 
     return saved_grade
 
@@ -184,16 +172,7 @@ def save_submission_scan(
         "updated_at": now_iso,
     }
 
-    try:
-        from supabase_sync import sync_submission_grade
-        sync_submission_grade(
-            submission_id=submission_id,
-            transcribed_text=transcribed_text or "",
-            scan_result=scan_result,
-            updated_at=now_iso,
-        )
-    except Exception as e:
-        print(f"[save_submission_scan] supabase sync notice: {e}", flush=True)
+    # Local historical storage only. Cloud results are saved via submission_persistence.
 
     return saved_scan
 

@@ -253,12 +253,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
     if (assignmentIds.length > 0) {
       const { data: submissionsData, error: submissionError } =
-        await supabase
-          .from(SUBMISSION_TABLE)
-          .select("*")
-          .eq("student_id", studentId)
-          .in("assignment_id", assignmentIds)
-          .order("created_at", { ascending: false });
+        await supabase.rpc("list_submission_results");
 
       if (submissionError) {
         setErrorMessage(submissionError.message);
@@ -358,11 +353,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
           fileUrl: submission.file_url,
-          status: submission.status || gradeInfo.status || "submitted",
-          grade: submission.grade || gradeInfo.grade || "",
-          feedback: submission.feedback || gradeInfo.feedback || "",
-          transcribedText: submission.transcribed_text || gradeInfo.transcribed_text || "",
-          scanResult: submission.scan_result || gradeInfo.scan_result || null,
+          returnedAt: submission.returned_at,
+          status: submission.status || "submitted",
+          grade: submission.grade ?? gradeInfo.grade ?? "",
+          feedback: submission.feedback ?? gradeInfo.feedback ?? "",
+          transcribedText: submission.transcribed_text ?? gradeInfo.transcribed_text ?? "",
+          scanResult: submission.scan_result ?? gradeInfo.scan_result ?? null,
         };
       });
 
@@ -617,6 +613,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         try {
           const formData = new FormData();
           formData.append("file", uploadFile);
+          formData.append("assignment_id", selectedAssignment.id);
 
           const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
           const res = await apiFetch(`${backendUrl}/api/submissions/upload`, {
@@ -878,9 +875,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       <div>
                         <div className="flex items-center justify-between text-xs text-[#5f6368]">
                           <span>{classroom.assignments} assignments</span>
-                          <span className="font-medium text-[#137333]">
-                            {classroom.submissions} turned in
-                          </span>
                         </div>
                       </div>
 
@@ -907,23 +901,33 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         )}
 
         {activePage === "assignments" && (
-          <div>
+          <div className={selectedAssignment ? "mx-auto w-full max-w-3xl" : ""}>
+            {selectedAssignment && (
+              <button
+                type="button"
+                onClick={resetSubmissionDraft}
+                disabled={isSubmittingEssay}
+                className="mb-5 rounded-lg px-3 py-2 text-sm font-medium text-[#137333] hover:bg-[#e6f4ea] focus:outline-none focus:ring-2 focus:ring-[#137333] disabled:opacity-50"
+              >
+                ← Back to To do
+              </button>
+            )}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-[#dadce0] pb-5">
               <div>
                 <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
-                  To-do
+                  {selectedAssignment ? "Submit assignment" : "To-do"}
                 </h2>
                 <p className="mt-1 text-sm text-[#5f6368]">
-                  Work assigned to you across your enrolled classes.
+                  {selectedAssignment ? "Review the instructions below and add your work." : "Work assigned to you across your enrolled classes."}
                 </p>
-                {selectedClassroom && (
+                {selectedClassroom && !selectedAssignment && (
                   <p className="mt-1 text-xs text-[#137333] font-medium">
                     Filtering: {selectedClassroom.name} — Section {selectedClassroom.section}
                   </p>
                 )}
               </div>
 
-              {classrooms.length > 1 && (
+              {classrooms.length > 1 && !selectedAssignment && (
                 <label className="block w-full sm:w-[280px]">
                   <span className="text-xs font-medium text-[#3c4043]">
                     Classroom filter
@@ -950,7 +954,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
               )}
             </div>
 
-            <section className="mt-6">
+            {!selectedAssignment && <section className="mt-6">
               <div className="mb-3 flex items-center gap-2">
                 <ClockIcon className="h-5 w-5 text-[#b06000]" />
                 <h3 className="text-lg font-medium text-[#202124]">Due soon</h3>
@@ -991,16 +995,16 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   ))}
                 </div>
               )}
-            </section>
+            </section>}
 
             <section className="mt-8">
-              <div className="mb-3 flex items-center gap-2">
+              {!selectedAssignment && <div className="mb-3 flex items-center gap-2">
                 <ClipboardIcon className="h-5 w-5 text-[#137333]" />
                 <h3 className="text-lg font-medium text-[#202124]">To do</h3>
                 <span className="rounded-full bg-[#e6f4ea] px-2 py-0.5 text-xs font-medium text-[#137333]">
                   {todoAssignments.length}
                 </span>
-              </div>
+              </div>}
               <div className="mt-6 space-y-4">
                 {todoAssignments.length === 0 && (
                   <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
@@ -1014,7 +1018,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   </div>
                 )}
 
-                {todoAssignments.map((assignment) => {
+                {todoAssignments.filter((assignment) => !selectedAssignment || assignment.id === selectedAssignment.id).map((assignment) => {
                   const isDraftOpen =
                     submissionDraft.assignmentId === assignment.id;
 
@@ -1028,7 +1032,15 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       key={assignment.id}
                       className="rounded-xl border border-[#dadce0] bg-white p-5 shadow-2xs hover:shadow-xs transition duration-150"
                     >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <button
+                        type="button"
+                        aria-expanded={isDraftOpen}
+                        aria-controls={`assignment-draft-${assignment.id}`}
+                        onClick={() => {
+                          if (!isDraftOpen) handleOpenSubmissionDraft(assignment);
+                        }}
+                        className="flex w-full flex-col gap-3 rounded-lg text-left transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-[#137333] sm:flex-row sm:items-start sm:justify-between"
+                      >
                         <div className="flex items-start gap-3.5 min-w-0">
                           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
                             <ClipboardIcon className="h-5 w-5" />
@@ -1055,7 +1067,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           {assignment.dueInfo.isOverdue && <AlertCircleIcon className="h-3.5 w-3.5" />}
                           {assignment.dueInfo.label}
                         </span>
-                      </div>
+                      </button>
 
                       {assignment.instructions && (
                         <p className="mt-3 text-xs text-[#5f6368] leading-relaxed pl-14">
@@ -1063,7 +1075,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         </p>
                       )}
 
-                      <div className="mt-4 flex flex-wrap gap-3 pl-14">
+                      {!isDraftOpen && <div className="mt-4 flex flex-wrap gap-3 pl-14">
                         {assignment.submitted ? (
                           <button
                             type="button"
@@ -1095,10 +1107,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                             {isDraftOpen ? "Cancel" : "Add or create"}
                           </button>
                         )}
-                      </div>
+                      </div>}
 
                     {isDraftOpen && !assignment.submitted && (
                       <form
+                        id={`assignment-draft-${assignment.id}`}
                         onSubmit={handleSubmitAssignment}
                         className="mt-5 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:p-5"
                       >
@@ -1319,7 +1332,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         </span>
                       ) : (
                         <span className="text-xs text-[#5f6368] italic">
-                          Not graded yet
+                          Awaiting review
                         </span>
                       )}
                     </div>
@@ -1328,7 +1341,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         submission.status === "graded" ? "bg-[#e6f4ea] text-[#137333]" :
                         submission.status === "submitted" ? "bg-[#e8f0fe] text-[#1967d2]" : "bg-[#f1f3f4] text-[#3c4043]"
                       }`}>
-                        {submission.status === "graded" ? "Graded" : "Turned in"}
+                        {submission.returnedAt ? "Returned" : "Awaiting review"}
                       </span>
                     </div>
                     <div className="text-right">
@@ -1454,7 +1467,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       {viewingSubmission.grade ? (
                         <p className="mt-1 text-3xl font-black text-emerald-700">{viewingSubmission.grade}</p>
                       ) : (
-                        <p className="mt-1 text-lg font-extrabold text-gray-400">Not graded yet</p>
+                        <p className="mt-1 text-lg font-extrabold text-gray-400">Awaiting review</p>
                       )}
                     </div>
                     <div className="flex-1">
@@ -1462,7 +1475,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       <p className={`mt-1 text-lg font-extrabold capitalize ${
                         viewingSubmission.status === "graded" ? "text-emerald-700" :
                         viewingSubmission.status === "submitted" ? "text-blue-600" : "text-gray-500"
-                      }`}>{viewingSubmission.status}</p>
+                      }`}>{viewingSubmission.returnedAt ? "Returned" : "Awaiting review"}</p>
                     </div>
                     <button
                       type="button"

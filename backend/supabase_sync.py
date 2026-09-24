@@ -1,7 +1,7 @@
 """
 Supabase Synchronization Engine for WriteCheck
-Automatically synchronizes all plagiarism scans, handwriting transcriptions,
-and submission grades from plagiarism.db directly to Supabase in real-time.
+Synchronizes standalone plagiarism scan history from plagiarism.db.
+Submission results are saved directly through submission_persistence instead.
 """
 
 import json
@@ -121,112 +121,9 @@ def sync_plagiarism_scan(scan_record: Dict[str, Any], async_mode: bool = True) -
         _task()
 
 
-def sync_submission_grade(
-    submission_id: str,
-    grade: str = "",
-    feedback: str = "",
-    status: str = "graded",
-    transcribed_text: str = "",
-    scan_result: Any = None,
-    updated_at: str = "",
-    async_mode: bool = True,
-) -> None:
-    """
-    Synchronizes submission grade, OCR transcription, and detection results to Supabase:
-    1. Updates 'submissionTable' (grade, feedback, status, and OCR/score columns if available)
-    2. Upserts into dedicated 'submission_grades' table
-    """
-    if not submission_id:
-        return
-
-    def _task():
-        ts = updated_at or datetime.now(timezone.utc).isoformat()
-        res_data = scan_result
-        if isinstance(res_data, str):
-            try:
-                res_data = json.loads(res_data)
-            except Exception:
-                pass
-
-        score = None
-        if isinstance(res_data, dict):
-            score = res_data.get("score") or res_data.get("plagiarism_score")
-
-        # 1. Update submissionTable (primary Supabase submissions table)
-        full_sub_payload: Dict[str, Any] = {
-            "grade": grade,
-            "feedback": feedback,
-            "status": status,
-        }
-        if transcribed_text:
-            full_sub_payload["transcribed_text"] = transcribed_text
-        if res_data:
-            full_sub_payload["scan_result"] = res_data
-        if score is not None:
-            full_sub_payload["plagiarism_score"] = float(score)
-
-        patch_endpoint = f"submissionTable?id=eq.{urllib.parse.quote(submission_id)}"
-        sub_resp = _send_supabase_request(
-            endpoint=patch_endpoint,
-            method="PATCH",
-            payload=full_sub_payload,
-        )
-
-        if not sub_resp.get("success"):
-            # If extra columns don't exist yet on submissionTable, retry with standard core columns
-            basic_payload = {
-                "grade": grade,
-                "feedback": feedback,
-                "status": status,
-            }
-            basic_resp = _send_supabase_request(
-                endpoint=patch_endpoint,
-                method="PATCH",
-                payload=basic_payload,
-            )
-            if basic_resp.get("success"):
-                print(f"[supabase sync] updated submissionTable for {submission_id} (grade, feedback, status).", flush=True)
-            else:
-                print(f"[supabase sync] submissionTable update note: {basic_resp.get('error')}", flush=True)
-        else:
-            print(f"[supabase sync] updated submissionTable for {submission_id} with full scan details.", flush=True)
-
-        # 2. Upsert into dedicated submission_grades table
-        grade_payload = {
-            "submission_id": submission_id,
-            "grade": grade,
-            "feedback": feedback,
-            "status": status,
-            "transcribed_text": transcribed_text,
-            "scan_result": res_data,
-            "updated_at": ts,
-        }
-
-        sg_resp = _send_supabase_request(
-            endpoint="submission_grades",
-            method="POST",
-            payload=grade_payload,
-            prefer="resolution=merge-duplicates,return=representation",
-        )
-
-        if sg_resp.get("success"):
-            print(f"[supabase sync] synced submission_grades table for {submission_id}.", flush=True)
-        else:
-            err = sg_resp.get("error", "")
-            if "Could not find the table" in str(err) or sg_resp.get("status") == 404:
-                print(f"[supabase sync notice] 'submission_grades' table not created in Supabase yet. Run supabase_schema.sql to enable table sync.", flush=True)
-            else:
-                print(f"[supabase sync] submission_grades note: {err}", flush=True)
-
-    if async_mode:
-        threading.Thread(target=_task, daemon=True).start()
-    else:
-        _task()
-
-
 def sync_all_from_local_db() -> Dict[str, int]:
     """
-    Scans local plagiarism.db and pushes any existing records to Supabase.
+    Syncs standalone scan history only; never replays historical submission grades.
     """
     import sqlite3
     db_path = os.path.join(os.path.dirname(__file__), "plagiarism.db")
@@ -248,22 +145,7 @@ def sync_all_from_local_db() -> Dict[str, int]:
             sync_plagiarism_scan(dict(s), async_mode=False)
             scans_count += 1
 
-        # Sync submission grades
-        cur.execute("SELECT * FROM submission_grades")
-        grades = cur.fetchall()
-        for g in grades:
-            row = dict(g)
-            sync_submission_grade(
-                submission_id=row.get("submission_id"),
-                grade=row.get("grade") or "",
-                feedback=row.get("feedback") or "",
-                status=row.get("status") or "graded",
-                transcribed_text=row.get("transcribed_text") or "",
-                scan_result=row.get("scan_result"),
-                updated_at=row.get("updated_at") or "",
-                async_mode=False,
-            )
-            grades_count += 1
+        # Historical grades remain local; submissionTable is authoritative.
 
         conn.close()
     except Exception as exc:

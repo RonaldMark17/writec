@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import hmac
 import os
 import re
 import threading
@@ -36,6 +38,16 @@ COPYLEAKS_API_BASE = "https://api.copyleaks.com/v3"
 
 
 class CopyleaksService:
+    def webhook_token(self, scan_id: str) -> str:
+        secret = os.getenv("COPYLEAKS_WEBHOOK_SECRET") or self.api_key
+        return hmac.new(secret.encode(), ("writecheck-webhook:" + str(scan_id)).encode(), hashlib.sha256).hexdigest()
+
+    def verify_webhook(self, scan_id: str, supplied) -> bool:
+        try:
+            return isinstance(supplied, str) and hmac.compare_digest(self.webhook_token(scan_id), supplied)
+        except ValueError:
+            return False
+
     def __init__(self):
         self._lock = threading.Lock()
         self._access_token: Optional[str] = None
@@ -191,7 +203,7 @@ class CopyleaksService:
                     "status": webhook_status_url,
                 },
                 "sandbox": use_sandbox,
-                "developerPayload": user_id,
+                "developerPayload": self.webhook_token(scan_id),
                 "expiration": 480,  # 8 hours retention on Copyleaks
             },
         }
