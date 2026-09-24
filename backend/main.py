@@ -639,6 +639,7 @@ def proxy_storage_file(request: Request, path: str = Query(...)):
 async def health():
     return {
         "status": "ok",
+        "submission_worker_configured": bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY")),
         "yolo_model": str(YOLO_MODEL_PATH),
         "trocr_model": str(TROCR_MODEL_SOURCE),
         "device": device,
@@ -955,6 +956,9 @@ async def copyleaks_webhook(status: str, request: Request):
 
     if not scan_id or not copyleaks_service.verify_webhook(scan_id, payload.get("developerPayload")):
         raise HTTPException(403, "Invalid webhook authentication.")
+    from submission_checker import record_submission_webhook
+    if record_submission_webhook(scan_id, status_lower, payload):
+        return {"status": "ok", "scan_id": scan_id}
     if not plagiarism_db.get_scan(scan_id):
         raise HTTPException(404, "Scan not found.")
 
@@ -1288,6 +1292,32 @@ def upload_image_stream(file: UploadFile = File(...)):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+from submission_worker import SubmissionWorker
+from submission_checker import check_submission
+import threading
+
+
+def submission_image_ocr(data, filename):
+    upload = UploadFile(filename=filename, file=io.BytesIO(data))
+    result = upload_image(upload)
+    if result.get('truncated'):
+        raise ValueError('OCR was truncated. Increase MAX_OCR_LINES or correct the transcription.')
+    return result['text']
+
+
+submission_worker = SubmissionWorker(UPLOAD_DIR, submission_image_ocr, check_submission)
+
+
+@app.on_event("startup")
+def start_submission_worker():
+    threading.Thread(target=submission_worker.run, daemon=True, name='submission-worker').start()
+
+
+@app.on_event("shutdown")
+def stop_submission_worker():
+    submission_worker.stop.set()
 
 
 if __name__ == "__main__":

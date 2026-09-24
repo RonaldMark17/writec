@@ -9,3 +9,5 @@ torch
 safetensors
 tiktoken
 protobuf
+pypdf>=6.0,<7
+requests

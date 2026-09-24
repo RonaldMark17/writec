@@ -153,6 +153,8 @@ class CopyleaksService:
         filename: Optional[str] = None,
         user_id: str = "anonymous",
         sandbox: Optional[bool] = None,
+        scan_id: Optional[str] = None,
+        webhook_base: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Submits text or document bytes to Copyleaks Authenticity API.
@@ -180,12 +182,13 @@ class CopyleaksService:
             content_b64 = base64.b64encode(clean_text.encode("utf-8")).decode("utf-8")
 
         # Unique scan ID format: max length is 36 chars in Copyleaks API v3
-        scan_id = f"p-{int(time.time())}-{uuid.uuid4().hex[:16]}"
+        supplied_scan_id = scan_id is not None
+        scan_id = scan_id or f"p-{int(time.time())}-{uuid.uuid4().hex[:16]}"
 
         use_sandbox = self.is_sandbox if sandbox is None else sandbox
         
         # Copyleaks requires a public HTTPS webhook URL (rejects localhost/127.0.0.1)
-        base_url = self.webhook_base_url
+        base_url = webhook_base or self.webhook_base_url
         if "localhost" in base_url or "127.0.0.1" in base_url or not base_url.startswith("http"):
             # Use public compliant placeholder if no public tunnel/domain is configured yet
             base_url = "https://writecheck-scanner.vercel.app"
@@ -244,7 +247,7 @@ class CopyleaksService:
                 "Copyleaks API rate limit exceeded. Please wait a moment and try again."
             )
 
-        if response.status_code not in (200, 201):
+        if response.status_code not in (200, 201) and not (supplied_scan_id and response.status_code == 409):
             print(f"[copyleaks] submit failed status={response.status_code}: {response.text}", flush=True)
             raise RuntimeError(
                 "Copyleaks service could not process this document. Please verify the content and format."

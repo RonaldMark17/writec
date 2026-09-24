@@ -35,13 +35,14 @@ DROP POLICY IF EXISTS legacy_grade_teacher_only ON public.submission_grades;
 CREATE POLICY legacy_grade_teacher_only ON public.submission_grades AS RESTRICTIVE
 FOR SELECT TO anon, authenticated USING (public.can_access_submission(submission_id, true));
 
+-- Students can see grading progress before return; result contents stay private.
 CREATE OR REPLACE FUNCTION public.list_submission_results()
 RETURNS JSONB LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
     'id', s.id, 'created_at', s.created_at, 'assignment_id', s.assignment_id,
     'classroom_id', s.classroom_id, 'student_id', s.student_id,
     'essay_title', s.essay_title, 'file_url', s.file_url, 'returned_at', s.returned_at,
-    'status', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.status ELSE 'submitted' END,
+    'status', CASE WHEN NULLIF(trim(s.grade::text), '') IS NOT NULL THEN 'graded' ELSE COALESCE(s.status, 'submitted') END,
     'grade', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.grade END,
     'feedback', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.feedback END,
     'transcribed_text', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.transcribed_text END,

@@ -1,3 +1,4 @@
+import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
 import { apiFetch } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,7 +44,6 @@ import HighlightedText from "./HighlightedText";
 import {
   ACCEPTED_CHECK_FILE_TYPES,
   analyzePlagiarismInput,
-  checkPeerSimilarityViaBackend,
   checkPlagiarismViaBackend,
   fetchUserPlagiarismScans,
   formatFileSize,
@@ -549,6 +549,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     submissionHubSearch,
     submissionHubSort,
   ]);
+
+  const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, true);
 
   const loadTeacherData = useCallback(async () => {
     const teacherId = profile?.id;
@@ -1459,205 +1461,46 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   };
 
   const handleRunReviewScan = async () => {
-    if (!reviewingSubmission) return;
+    if (!reviewingSubmission || isReviewScanning || isSavingGrade) return;
     setIsReviewScanning(true);
-    setReviewScanProgressText("Retrieving submission file...");
-
+    setErrorMessage("");
     try {
-      let extractedText = "";
-      const fileUrl = reviewingSubmission.fileUrl;
-
-      if (fileUrl) {
-        setReviewScanProgressText("Downloading student submission from Supabase Storage...");
-        let blob;
-        let filename = reviewingSubmission.essayTitle || "submission";
-
-        try {
-          blob = await downloadSubmissionFileBlob(fileUrl);
-          filename = fileUrl.split("/").pop().split("?")[0] || filename;
-        } catch (downloadErr) {
-          console.warn("downloadSubmissionFileBlob error, attempting fallback:", downloadErr);
-          const downloadUrl = await resolveStorageImageUrl(fileUrl);
-          const res = await apiFetch(downloadUrl);
-          if (!res.ok) throw new Error("Could not download submission file from Supabase Storage.");
-          blob = await res.blob();
-          filename = fileUrl.split("/").pop().split("?")[0] || filename;
-        }
-
-        const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
-
-        if (file.type.startsWith("image/") || /\.(jpe?g|png|webp)$/i.test(filename)) {
-          setReviewScanProgressText("Transcribing student handwriting with YOLO26x + TrOCR...");
-          const ocrRes = await extractTextFromImage(file);
-          extractedText = (ocrRes?.text || "").trim();
-        } else if (file.type.startsWith("text/") || /\.(txt|md)$/i.test(filename)) {
-          extractedText = (await file.text()).trim();
-        } else {
-          try {
-            extractedText = (await file.text()).trim();
-          } catch {
-            extractedText = "";
-          }
-        }
-      }
-
-      if (!extractedText) {
-        extractedText =
-          reviewingSubmission.transcribedText ||
-          reviewTranscribedText ||
-          reviewingSubmission.essayTitle ||
-          "Student submission essay";
-      }
-
-      setReviewTranscribedText(extractedText);
-
-      let scanResult = null;
-      if (extractedText.trim().length >= 15) {
-        setReviewScanProgressText("Submitting to Copyleaks Authenticity API...");
-        try {
-          const safeTitle = (reviewingSubmission.essayTitle || "essay").replace(/[^a-zA-Z0-9_\-]/g, "_") + ".txt";
-          const checkSub = await checkPlagiarismViaBackend({
-            text: extractedText,
-            filename: safeTitle,
-            userId: profile?.id || "teacher",
-          });
-
-          if (checkSub?.status === "completed") {
-            scanResult = checkSub;
-          } else {
-            setReviewScanProgressText("Analyzing sources with Copyleaks...");
-            scanResult = await pollPlagiarismScanResult(checkSub.scan_id, {
-              onProgress: (pScan, attempt) => {
-                setReviewScanProgressText(`Analyzing sources with Copyleaks (check ${attempt})...`);
-              },
-            });
-          }
-        } catch (scanErr) {
-          console.warn("Copyleaks scan in review modal notice:", scanErr);
-        }
-      }
-
-      setReviewScanProgressText("Cross-checking with classroom submissions...");
-      let peerResult = null;
-      const currentAssignmentId = reviewingSubmission.assignmentId || reviewingSubmission.assignment_id;
-      const currentClassroomId = reviewingSubmission.classroomId || reviewingSubmission.classroom_id;
-      try {
-        const classmateSubmissions = (submissions || [])
-          .filter(
-            (s) =>
-              (s.assignmentId || s.assignment_id) === currentAssignmentId &&
-              (!currentClassroomId || (s.classroomId || s.classroom_id) === currentClassroomId) &&
-              s.id !== reviewingSubmission.id
-          )
-          .map((s) => ({
-            id: s.id,
-            submission_id: s.id,
-            studentName: s.studentName || "Classmate",
-            text: s.transcribedText || s.scanResult?.transcribedText || s.essayText || "",
-          }))
-          .filter((s) => (s.text || "").trim().length >= 15);
-
-        peerResult = await checkPeerSimilarityViaBackend({
-          text: extractedText,
-          submissionId: reviewingSubmission.id,
-          assignmentId: currentAssignmentId,
-          peerSubmissions: classmateSubmissions,
-        });
-      } catch (peerErr) {
-        console.warn("Peer similarity check in review notice:", peerErr);
-      }
-
-      const localResult = analyzePlagiarismInput({
-        text: extractedText,
+      const { data, error } = await supabase.rpc("retry_submission_processing", {
+        submission_key: String(reviewingSubmission.id),
+        corrected_text: reviewTranscribedText.trim() || null,
       });
-
-      const finalScore =
-        scanResult?.plagiarism_score !== undefined
-          ? Math.round(scanResult.plagiarism_score)
-          : localResult.score;
-
-      const finalTone =
-        finalScore >= 50 ? "red" : finalScore >= 20 ? "amber" : "emerald";
-
-      const finalLabel =
-        finalScore >= 50
-          ? "High review"
-          : finalScore >= 20
-            ? "Medium review"
-            : "Low review";
-
-      const finalDetectionResult = {
-        ...localResult,
-        title: "Plagiarism check",
-        score: finalScore,
-        tone: finalTone,
-        label: finalLabel,
-        wordCount: scanResult?.total_words || localResult.wordCount || (extractedText.match(/\S+/g) || []).length,
-        identicalWords: scanResult?.identical_words ?? Math.round((scanResult?.total_words || localResult.wordCount || 100) * (finalScore / 100.0)),
-        scanStatus: "Completed",
-        matchedSources:
-          (scanResult?.result_data?.matched_sources && scanResult.result_data.matched_sources.length > 0)
-            ? scanResult.result_data.matched_sources
-            : (scanResult?.matchedSources && scanResult.matchedSources.length > 0)
-              ? scanResult.matchedSources
-              : [],
-        summary: scanResult
-          ? "Scanned via Copyleaks Authenticity API. Comprehensive database and source matching completed."
-          : (extractedText.trim().length < 15
-              ? "Text is too short for external database matching (minimum 15 characters required)."
-              : localResult.summary),
-        flags: localResult.flags.length > 0 ? localResult.flags : [
-          "No citation or source markers found in a longer passage.",
-          "1 unusually long sentence flagged.",
-        ],
-        repeatedPhrases: localResult.repeatedPhrases || [],
-        transcribedText: extractedText,
-        peerSimilarity: peerResult,
-        peerScore: peerResult?.peer_similarity_score ?? 0,
-      };
-
-      setReviewScanResult(finalDetectionResult);
-
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-      const saveResponse = await apiFetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcribed_text: extractedText, scan_result: finalDetectionResult,
-          assignment_id: currentAssignmentId }),
-      });
-      const savedScan = await saveResponse.json();
-      if (!saveResponse.ok || !savedScan.success) {
-        throw new Error(savedScan.detail || "Scan results could not be saved. Use Save grade to retry saving your results.");
-      }
-      setReviewScanResult(savedScan.scan_record.scan_result);
-      setReviewingSubmission((current) => ({ ...current,
-        returnedAt: savedScan.scan_record.returned_at,
-        scanResult: savedScan.scan_record.scan_result,
-        transcribedText: savedScan.scan_record.transcribed_text }));
-
-      setSubmissions((prev) =>
-        prev.map((s) =>
-          s.id === reviewingSubmission.id
-            ? {
-                ...s,
-                transcribedText: extractedText,
-                scanResult: savedScan.scan_record.scan_result,
-                returnedAt: savedScan.scan_record.returned_at,
-              }
-            : s
-        )
-      );
-    } catch (err) {
-      setErrorMessage(err.message || "Could not complete OCR & plagiarism check for this submission.");
+      if (error || !data?.state) throw new Error(error?.message || "Could not queue this check.");
+      const update = (row) => ({ ...row, returnedAt: null, processingState: data.state, processingError: null });
+      setSubmissions((rows) => rows.map((row) => row.id === reviewingSubmission.id ? update(row) : row));
+      setReviewingSubmission(update);
+      setSuccessMessage("Check queued. You can close this window; processing continues on the server.");
+    } catch (error) {
+      setErrorMessage(error.message);
     } finally {
       setIsReviewScanning(false);
       setReviewScanProgressText("");
     }
   };
 
-  const handleSaveGrade = async (event) => {
+  useEffect(() => {
+    if (!reviewingSubmission) return;
+    const latest = submissions.find((row) => row.id === reviewingSubmission.id);
+    if (!latest || !latest.processingState || (latest.processingState === reviewingSubmission.processingState
+      && latest.processingError === reviewingSubmission.processingError)) return;
+    setReviewingSubmission((current) => ({ ...current, ...latest }));
+    if (latest.processingState === "ready") {
+      setReviewTranscribedText(latest.transcribedText || "");
+      setReviewScanResult(latest.scanResult || null);
+    }
+  }, [submissions, reviewingSubmission]);
+
+  const handleSaveGrade = async (event, returnWork = false) => {
     if (event) event.preventDefault();
-    if (!reviewingSubmission || isSavingGrade) return;
+    if (!reviewingSubmission || isSavingGrade || isReviewScanning) return;
+    if (reviewTranscribedText.trim() !== String(reviewingSubmission.transcribedText || "").trim()) {
+      setErrorMessage("Recheck the corrected transcription before saving or returning the grade.");
+      return;
+    }
 
     setIsSavingGrade(true);
     setErrorMessage("");
@@ -1673,8 +1516,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         body: JSON.stringify({
           grade: gradeVal, feedback: feedbackVal,
           status: gradeVal ? "graded" : "submitted",
-          transcribed_text: reviewTranscribedText,
-          scan_result: reviewScanResult,
           assignment_id: reviewingSubmission.assignmentId || reviewingSubmission.assignment_id,
         }),
       });
@@ -1692,38 +1533,32 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       setReviewingSubmission((current) => ({ ...current, grade: saved.grade ?? "",
         feedback: saved.feedback ?? "", returnedAt: saved.returned_at,
         transcribedText: saved.transcribed_text ?? "", scanResult: saved.scan_result ?? null }));
+      if (returnWork) {
+        const { data: released, error: releaseError } = await supabase.rpc("return_submission", {
+          submission_key: String(subId),
+        });
+        if (releaseError || !released?.returned_at) {
+          throw new Error(`Grade saved, but could not return work. ${releaseError?.message || "Please retry Return work."}`);
+        }
+        setSubmissions((rows) => rows.map((row) => row.id === subId
+          ? { ...row, returnedAt: released.returned_at } : row));
+        setReviewingSubmission((row) => ({ ...row, returnedAt: released.returned_at }));
+        setSuccessMessage("Work returned. The student can now see the saved results.");
+      }
     } catch (error) {
+      setSuccessMessage("");
       setErrorMessage(error.message || "Could not save. Your changes are still here; please retry.");
     } finally {
       setIsSavingGrade(false);
     }
   };
 
-  const handleReturnWork = async () => {
-    if (!reviewingSubmission || isSavingGrade || isReviewScanning) return;
-    setErrorMessage("");
-    setSuccessMessage("");
-    if (String(gradeInput ?? "").trim() !== String(reviewingSubmission.grade ?? "").trim()
-      || feedbackInput.trim() !== String(reviewingSubmission.feedback ?? "").trim()) {
-      setErrorMessage("Save your grade and feedback before returning work.");
+  const handleReturnWork = () => {
+    if (!String(gradeInput ?? "").trim()) {
+      setErrorMessage("Enter a grade before returning work.");
       return;
     }
-    setIsSavingGrade(true);
-    try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-      const response = await apiFetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/return`, { method: "POST" });
-      const result = await response.json();
-      if (!response.ok || !result.submission?.returned_at) throw new Error(
-        typeof result.detail === "string" ? result.detail : "Could not return work. Save a grade first, then retry.");
-      setSubmissions((rows) => rows.map((row) => row.id === reviewingSubmission.id
-        ? { ...row, returnedAt: result.submission.returned_at } : row));
-      setReviewingSubmission((row) => ({ ...row, returnedAt: result.submission.returned_at }));
-      setSuccessMessage("Work returned. The student can now see the saved results.");
-    } catch (error) {
-      setErrorMessage(error.message || "Could not return work. Please retry.");
-    } finally {
-      setIsSavingGrade(false);
-    }
+    return handleSaveGrade(null, true);
   };
 
   const manualResultBadgeClass =
@@ -2183,7 +2018,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6">
           <StatusMessage
-            error={errorMessage}
+            error={errorMessage || submissionSyncError}
             message={successMessage}
           />
         </div>
@@ -3927,7 +3762,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           {reviewingSubmission.essayTitle}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          Turned in on {formatDateTime(reviewingSubmission.createdAt)} • Status: <span className="font-bold text-emerald-700 uppercase">{reviewingSubmission.status}</span>
+                          Turned in on {formatDateTime(reviewingSubmission.createdAt)} • Status: <span className="font-bold text-emerald-700 uppercase">{processingLabel(reviewingSubmission.processingState)}</span>
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -3941,12 +3776,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         </button>
                         <button
                           type="button"
-                          disabled={isReviewScanning}
+                          disabled={isReviewScanning || ["submitted", "processing"].includes(reviewingSubmission.processingState)}
                           onClick={handleRunReviewScan}
                           className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 text-xs font-extrabold text-white hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm transition"
                         >
                           <FileSearchIcon className="h-4 w-4" />
-                          <span>{isReviewScanning ? "Scanning..." : reviewScanResult ? "Re-scan Plagiarism" : "Run Plagiarism Check"}</span>
+                          <span>{isReviewScanning ? "Scanning..." : reviewScanResult ? "Recheck corrected text" : "Retry processing"}</span>
                         </button>
                       </div>
                     </div>
@@ -4277,7 +4112,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
                   )}
 
-                  <StatusMessage error={errorMessage} message={successMessage} />
+                  <StatusMessage error={errorMessage || submissionSyncError} message={successMessage} />
+                  <p className="mt-3 text-sm font-bold">{processingLabel(reviewingSubmission.processingState)}</p>
+                  {reviewingSubmission.processingError && <p role="alert" className="mt-2 text-sm text-red-700">{reviewingSubmission.processingError}</p>}
+                  <label className="mt-4 block text-sm font-bold" htmlFor="review-transcription">Correct transcription before rechecking</label>
+                  <textarea id="review-transcription" rows={8} value={reviewTranscribedText}
+                    disabled={["submitted", "processing"].includes(reviewingSubmission.processingState)}
+                    onChange={(event) => setReviewTranscribedText(event.target.value)}
+                    className="mt-2 w-full rounded-lg border border-gray-300 p-3 text-sm" />
                   {/* Grading Form */}
                   <form onSubmit={handleSaveGrade} className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-5">
                     <h4 className="text-base font-black text-emerald-950">
@@ -4332,11 +4174,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
 
                     <p className="mt-3 text-sm font-medium text-emerald-800">
-                      {reviewingSubmission.returnedAt ? "Returned to student" : "Draft ? visible only to the teacher"}
+                      {reviewingSubmission.returnedAt ? "Returned to student" : "Grade hidden until you return work"}
                     </p>
                     <div className="mt-5 flex flex-wrap justify-end gap-3">
                       <button type="button" onClick={handleReturnWork}
-                        disabled={isSavingGrade || isReviewScanning || !String(reviewingSubmission.grade ?? "").trim()}
+                        disabled={isSavingGrade || isReviewScanning || ["submitted", "processing", "failed"].includes(reviewingSubmission.processingState) || !String(gradeInput ?? "").trim()}
                         className="rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-blue-800 disabled:opacity-50">
                         Return work
                       </button>

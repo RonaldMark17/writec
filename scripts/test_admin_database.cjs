@@ -140,7 +140,7 @@ async function main() {
     let privateRows = await rpc('SELECT public.list_submission_results() AS result');
     assert.equal(privateRows.length, 1);
     assert.equal(privateRows[0].grade, null);
-    assert.equal(privateRows[0].status, 'submitted');
+    assert.equal(privateRows[0].status, 'graded');
     const releaseId = privateRows[0].id;
     await assert.rejects(() => db.query('SELECT public.return_submission($1)', [releaseId]), /classroom teacher/);
     await asUser(teacher2);
@@ -161,9 +161,84 @@ async function main() {
     assert.equal(privateRows[0].returned_at, null);
     assert.equal(privateRows[0].feedback, null);
     assert.equal((await db.query('SELECT * FROM public."submissionTable"')).rows.length, 0);
+    // Queue lifecycle and permissions use actual PostgreSQL functions and triggers.
+    await db.exec("RESET ROLE; SELECT set_config('request.jwt.claim.role','',false)");
+    await db.exec(fs.readFileSync(path.join(root, 'submission_processing.sql'), 'utf8'));
+    await db.exec(fs.readFileSync(path.join(root, 'submission_processing.sql'), 'utf8'));
+    const queuedId = '00000000-0000-0000-0000-000000000010';
+    const queueAssignment = '00000000-0000-0000-0000-000000000011';
+    await db.query('INSERT INTO public."assignmentTable"(id,classroom_id,teacher_id,title) VALUES ($1,$2,$3,$4)',
+      [queueAssignment,classId,teacher,'Queue test']);
+    await asUser(student);
+    const submitted = await rpc('SELECT public.submit_assignment($1,$2,$3,$4) AS result',
+      [queuedId,queueAssignment,'Essay',`${student}/${queueAssignment}/new.txt`]);
+    assert.equal(submitted.id, queuedId);
+    const duplicate = await rpc('SELECT public.submit_assignment($1,$2,$3,$4) AS result',
+      ['00000000-0000-0000-0000-000000000012',queueAssignment,'Essay',`${student}/${queueAssignment}/retry.txt`]);
+    assert.equal(duplicate.id, queuedId);
+    assert.equal(duplicate.already_submitted, true);
+    const progress = await rpc('SELECT public.submission_processing_status() AS result');
+    assert.equal(progress[queuedId].state, 'submitted');
+    assert.ok((await rpc('SELECT public.accessible_submissions() AS result')).some(row => row.id === queuedId));
+    await assert.rejects(() => db.query('SELECT * FROM public.submission_jobs'), /permission denied/);
+    await assert.rejects(() => db.query('SELECT public.claim_submission_job()'), /permission denied/);
+    await assert.rejects(() => db.query('SELECT public.retry_submission_processing($1)', [queuedId]), /classroom teacher/);
+    await asUser(teacher2);
+    await assert.rejects(() => db.query('SELECT public.retry_submission_processing($1)', [queuedId]), /classroom teacher/);
+    async function asWorker() {
+      await db.exec("RESET ROLE; SELECT set_config('request.jwt.claim.role','service_role',false); SET ROLE service_role");
+    }
+    await asWorker();
+    const firstJob = await rpc('SELECT public.claim_submission_job() AS result');
+    assert.equal(firstJob.submission_id, queuedId);
+    assert.equal(await rpc('SELECT public.claim_submission_job() AS result'), null);
+    await db.exec("RESET ROLE");
+    await db.query("UPDATE public.submission_jobs SET lease_until=now()-interval '1 second' WHERE submission_id=$1", [queuedId]);
+    await asWorker();
+    const resumed = await rpc('SELECT public.claim_submission_job() AS result');
+    assert.equal(resumed.id, firstJob.id);
+    assert.notEqual(resumed.lease, firstJob.lease);
+    assert.equal(await rpc('SELECT public.finish_submission_job($1,$2,$3,$4,NULL) AS result',
+      [queuedId,firstJob.lease,'stale',JSON.stringify({score: 99})]), false);
+    assert.equal(await rpc('SELECT public.finish_submission_job($1,$2,NULL,NULL,$3) AS result',
+      [queuedId,resumed.lease,'Provider unavailable']), true);
+    await asUser(student);
+    assert.equal((await rpc('SELECT public.submission_processing_status() AS result'))[queuedId].error, null);
+    await asUser(teacher);
+    assert.equal((await rpc('SELECT public.submission_processing_status() AS result'))[queuedId].state, 'failed');
+    await db.query('SELECT public.retry_submission_processing($1)', [queuedId]);
+    await db.query('SELECT public.retry_submission_processing($1)', [queuedId]);
+    await db.query(`UPDATE public."submissionTable" SET grade='0' WHERE id=$1`, [queuedId]);
+    await assert.rejects(() => db.query('SELECT public.return_submission($1)', [queuedId]), /Finish processing/);
+    await asWorker();
+    const retried = await rpc('SELECT public.claim_submission_job() AS result');
+    assert.equal(retried.id, firstJob.id); // Retry and restart reuse the external scan ID.
+    const report = {score: 12, transcribedText: 'Verified text', matchedSources: []};
+    assert.equal(await rpc('SELECT public.finish_submission_job($1,$2,$3,$4,NULL) AS result',
+      [queuedId,retried.lease,'Verified text',JSON.stringify(report)]), true);
+    await asUser(student);
+    let ready = (await rpc('SELECT public.list_submission_results() AS result')).find(row => row.id === queuedId);
+    for (const field of ['grade','feedback','transcribed_text','scan_result','plagiarism_score']) assert.equal(ready[field], null);
+    assert.equal((await db.query('SELECT * FROM public."submissionTable" WHERE id=$1',[queuedId])).rows.length, 0);
+    await asUser(teacher);
+    await db.query('SELECT public.return_submission($1)', [queuedId]);
+    await asUser(student);
+    ready = (await rpc('SELECT public.list_submission_results() AS result')).find(row => row.id === queuedId);
+    assert.equal(ready.grade, '0');
+    assert.equal(ready.transcribed_text, 'Verified text');
+    await asUser(teacher);
+    await db.query('SELECT public.retry_submission_processing($1,$2)', [queuedId,'Corrected text']);
+    await asUser(student);
+    ready = (await rpc('SELECT public.list_submission_results() AS result')).find(row => row.id === queuedId);
+    assert.equal(ready.returned_at, null);
+    assert.equal(ready.scan_result, null);
+    await asWorker();
+    const corrected = await rpc('SELECT public.claim_submission_job() AS result');
+    assert.notEqual(corrected.id, firstJob.id);
+    assert.equal(corrected.input_text, 'Corrected text');
     await db.exec("RESET ROLE; SET ROLE anon; SELECT set_config('request.jwt.claim.sub','',false)");
     await assert.rejects(() => db.query("SELECT public.admin_read('dashboard')"), /permission denied/);
-    console.log('Admin database integration checks passed: real RPCs, RLS, audit triggers, status changes, profile guards, roster, teacher-name sync, and repeat migration.');
+    console.log('Database integration checks passed: RPCs, RLS, private results, return controls, atomic submission queue, duplicate retries, lease recovery, stale worker rejection, and repeat migrations.');
   } finally { await db.close(); }
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

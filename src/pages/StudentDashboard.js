@@ -1,3 +1,4 @@
+import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
 import { apiFetch } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useState } from "react";
@@ -15,7 +16,6 @@ import {
   FileIcon,
   FileSearchIcon,
   MEMBER_TABLE,
-  SUBMISSION_TABLE,
   Header,
   ImageIcon,
   PlusIcon,
@@ -188,6 +188,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     setFilePreview("");
   }, []);
 
+  const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, false);
+
   const loadStudentData = useCallback(async () => {
     const studentId = profile?.id;
     if (!studentId) return;
@@ -329,22 +331,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     const assignmentsById =
       new Map(nextAssignments.map((assignment) => [assignment.id, assignment]));
 
-    let localGradesMap = {};
-    try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-      const res = await apiFetch(`${backendUrl}/api/submissions/grades`);
-      if (res.ok) {
-        localGradesMap = await res.json();
-      }
-    } catch {
-      // Ignore network errors fetching grades
-    }
-
     const nextSubmissions =
       submissionRows.map((submission) => {
         const assignment =
           assignmentsById.get(submission.assignment_id);
-        const gradeInfo = localGradesMap[submission.id] || {};
 
         return {
           id: submission.id,
@@ -355,10 +345,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           fileUrl: submission.file_url,
           returnedAt: submission.returned_at,
           status: submission.status || "submitted",
-          grade: submission.grade ?? gradeInfo.grade ?? "",
-          feedback: submission.feedback ?? gradeInfo.feedback ?? "",
-          transcribedText: submission.transcribed_text ?? gradeInfo.transcribed_text ?? "",
-          scanResult: submission.scan_result ?? gradeInfo.scan_result ?? null,
+          grade: submission.returned_at ? (submission.grade ?? "") : "",
+          feedback: submission.returned_at ? (submission.feedback ?? "") : "",
+          transcribedText: submission.returned_at ? (submission.transcribed_text ?? "") : "",
+          scanResult: submission.returned_at ? (submission.scan_result ?? null) : null,
         };
       });
 
@@ -414,6 +404,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
     return () => URL.revokeObjectURL(previewUrl);
   }, [submissionFile]);
+
+  useEffect(() => {
+    setViewingSubmission((current) => current ? submissions.find((row) => row.id === current.id) || current : null);
+  }, [submissions]);
 
   const handleJoinClassroom = async (event) => {
     event.preventDefault();
@@ -595,7 +589,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       `${profile.id}/${selectedAssignment.id}/${Date.now()}-${safeFileName}`;
 
     let uploadedFileUrl = filePath;
-    let isSupabaseStorage = false;
 
     try {
       const { error: uploadError } =
@@ -606,9 +599,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
             contentType: uploadFile.type || "application/octet-stream",
           });
 
-      if (!uploadError) {
-        isSupabaseStorage = true;
-      } else {
+      if (uploadError) {
         console.warn("Supabase storage upload failed, falling back to local backend:", uploadError);
         try {
           const formData = new FormData();
@@ -643,37 +634,29 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         }
       }
 
-      const { error: submissionError } =
-        await supabase
-          .from(SUBMISSION_TABLE)
-          .insert({
-            assignment_id: selectedAssignment.id,
-            classroom_id: selectedAssignment.classroomId,
-            student_id: profile.id,
-            essay_title: essayTitle,
-            file_url: uploadedFileUrl,
-            status: "submitted",
-          });
+      const submissionId = crypto.randomUUID();
+      const { data: savedSubmission, error: submissionError } = await supabase.rpc("submit_assignment", {
+        submission_key: submissionId,
+        assignment_key: String(selectedAssignment.id),
+        title: essayTitle,
+        upload_path: uploadedFileUrl,
+      });
 
-      if (submissionError) {
-        if (isSupabaseStorage) {
-          await supabase
-            .storage
-            .from(ESSAY_BUCKET)
-            .remove([filePath]);
-        }
-
-        if (submissionError.code === "23505") {
+      // A lost response can follow a committed insert. Confirm using safe metadata.
+      const { data: confirmedRows, error: confirmationError } = await supabase.rpc("accessible_submissions");
+      const confirmed = !confirmationError && (confirmedRows || []).some((row) => String(row.id) === String(savedSubmission?.id || submissionId));
+      if (!confirmed) {
+        if (submissionError?.code === "23505") {
           setErrorMessage("You already submitted this assignment.");
           await loadStudentData();
           return;
         }
 
-        setErrorMessage(submissionError.message);
+        setErrorMessage(submissionError?.message || "Could not confirm the save. Refresh your submissions before retrying; your draft is still here.");
         return;
       }
 
-      setSuccessMessage("Assignment submitted.");
+      setSuccessMessage(savedSubmission?.already_submitted ? "This assignment was already saved. Your existing submission is available below." : "Assignment submitted and queued for processing. Results remain private until your teacher returns them.");
       resetSubmissionDraft();
       setActivePage("submissions");
       await loadStudentData();
@@ -705,7 +688,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6">
           <StatusMessage
-            error={errorMessage}
+            error={errorMessage || submissionSyncError}
             message={successMessage}
           />
         </div>
@@ -1255,7 +1238,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         {(errorMessage || successMessage) && (
                           <div className="mt-5">
                             <StatusMessage
-                              error={errorMessage}
+                              error={errorMessage || submissionSyncError}
                               message={successMessage}
                             />
                           </div>
@@ -1326,13 +1309,13 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       {submission.essayTitle}
                     </span>
                     <div>
-                      {submission.grade ? (
+                      {submission.returnedAt && String(submission.grade ?? "").trim() !== "" ? (
                         <span className="inline-flex items-center rounded-md border border-[#ceead6] bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-medium text-[#137333]">
                           {submission.grade} / 100
                         </span>
                       ) : (
                         <span className="text-xs text-[#5f6368] italic">
-                          Awaiting review
+                          {submission.status === "graded" ? "Grade not released yet" : "Awaiting review"}
                         </span>
                       )}
                     </div>
@@ -1341,7 +1324,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         submission.status === "graded" ? "bg-[#e6f4ea] text-[#137333]" :
                         submission.status === "submitted" ? "bg-[#e8f0fe] text-[#1967d2]" : "bg-[#f1f3f4] text-[#3c4043]"
                       }`}>
-                        {submission.returnedAt ? "Returned" : "Awaiting review"}
+                        {submission.returnedAt ? "Returned" : submission.processingState && submission.processingState !== "ready" ? processingLabel(submission.processingState) : submission.status === "graded" ? "Graded" : processingLabel(submission.processingState)}
                       </span>
                     </div>
                     <div className="text-right">
@@ -1464,10 +1447,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="flex-1">
                       <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Grade</p>
-                      {viewingSubmission.grade ? (
+                      {viewingSubmission.returnedAt && String(viewingSubmission.grade ?? "").trim() !== "" ? (
                         <p className="mt-1 text-3xl font-black text-emerald-700">{viewingSubmission.grade}</p>
                       ) : (
-                        <p className="mt-1 text-lg font-extrabold text-gray-400">Awaiting review</p>
+                        <p className="mt-1 text-lg font-extrabold text-gray-400">{viewingSubmission.status === "graded" ? "Grade not released yet" : "Awaiting review"}</p>
                       )}
                     </div>
                     <div className="flex-1">
@@ -1475,7 +1458,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       <p className={`mt-1 text-lg font-extrabold capitalize ${
                         viewingSubmission.status === "graded" ? "text-emerald-700" :
                         viewingSubmission.status === "submitted" ? "text-blue-600" : "text-gray-500"
-                      }`}>{viewingSubmission.returnedAt ? "Returned" : "Awaiting review"}</p>
+                      }`}>{viewingSubmission.returnedAt ? "Returned" : viewingSubmission.processingState && viewingSubmission.processingState !== "ready" ? processingLabel(viewingSubmission.processingState) : viewingSubmission.status === "graded" ? "Graded" : processingLabel(viewingSubmission.processingState)}</p>
                     </div>
                     <button
                       type="button"
