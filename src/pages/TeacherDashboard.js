@@ -1,3 +1,5 @@
+import { apiFetch } from "../apiFetch";
+import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { supabase } from "../supabaseClient";
@@ -85,7 +87,9 @@ function getTeacherActivePage(profileId) {
     : "classrooms";
 }
 
-export default function TeacherDashboard({ profile }) {
+export default function TeacherDashboard({ profile, onProfileUpdated }) {
+  const [openedClassroomId, setOpenedClassroomId] = useState(null);
+
   const [activePage, setActivePage] =
     useState(() => getTeacherActivePage(profile?.id));
 
@@ -120,6 +124,7 @@ export default function TeacherDashboard({ profile }) {
   const [submissionRosterSearch, setSubmissionRosterSearch] = useState("");
   const [selectedSubmissionsClassroomId, setSelectedSubmissionsClassroomId] = useState("all");
   const [selectedSubmissionsAssignmentId, setSelectedSubmissionsAssignmentId] = useState("all");
+  const [gradeSubject, setGradeSubject] = useState("all");
   const [submissionHubSearch, setSubmissionHubSearch] = useState("");
   const [submissionHubClassroomId, setSubmissionHubClassroomId] = useState("all");
   const [submissionHubFilter, setSubmissionHubFilter] = useState("all");
@@ -434,6 +439,14 @@ export default function TeacherDashboard({ profile }) {
     return assignments.filter((a) => a.classroomId === assignmentFilterClassroomId);
   }, [assignments, assignmentFilterClassroomId]);
 
+  const gradeSubjects = [...new Set(classrooms.map((c) => c.subject && c.subject !== "No subject" ? c.subject : c.name))].sort();
+  const gradeClasswork = assignments.filter((assignment) => {
+    const classroom = classrooms.find((c) => c.id === assignment.classroomId);
+    const subject = classroom?.subject && classroom.subject !== "No subject" ? classroom.subject : classroom?.name;
+    return (gradeSubject === "all" || subject === gradeSubject) &&
+      (selectedSubmissionsClassroomId === "all" || String(assignment.classroomId) === String(selectedSubmissionsClassroomId));
+  });
+
   const submissionHubGroups = useMemo(() => {
     const term = submissionHubSearch.trim().toLowerCase();
     const now = new Date();
@@ -473,6 +486,12 @@ export default function TeacherDashboard({ profile }) {
         };
       })
       .filter((assignment) => {
+        if (activePage === "submissions") {
+          const subject = assignment.classroomSubject && assignment.classroomSubject !== "No subject" ? assignment.classroomSubject : assignment.classroomName;
+          return (gradeSubject === "all" || subject === gradeSubject) &&
+            (selectedSubmissionsClassroomId === "all" || String(assignment.classroomId) === String(selectedSubmissionsClassroomId)) &&
+            (selectedSubmissionsAssignmentId === "all" || String(assignment.id) === String(selectedSubmissionsAssignmentId));
+        }
         const searchable = [
           assignment.title,
           assignment.classroomName,
@@ -523,6 +542,10 @@ export default function TeacherDashboard({ profile }) {
     assignments,
     classroomMembers,
     submissions,
+    activePage,
+    gradeSubject,
+    selectedSubmissionsClassroomId,
+    selectedSubmissionsAssignmentId,
     submissionHubClassroomId,
     submissionHubFilter,
     submissionHubSearch,
@@ -684,7 +707,7 @@ export default function TeacherDashboard({ profile }) {
     let localGradesMap = {};
     try {
       const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-      const res = await fetch(`${backendUrl}/api/submissions/grades`);
+      const res = await apiFetch(`${backendUrl}/api/submissions/grades`);
       if (res.ok) {
         localGradesMap = await res.json();
       }
@@ -818,7 +841,13 @@ export default function TeacherDashboard({ profile }) {
       classroomForm.section.trim();
 
     const subject =
-      classroomForm.subject.trim();
+      className;
+
+    if (!className || !section) {
+      setErrorMessage("Enter a subject name and section.");
+      setIsSavingClassroom(false);
+      return;
+    }
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const classroomCode =
@@ -1057,7 +1086,7 @@ export default function TeacherDashboard({ profile }) {
   const handleLoadSampleEssay = async () => {
     try {
       setManualCheckError("");
-      const response = await fetch("/samples/sample_student_essay.jpg");
+      const response = await apiFetch("/samples/sample_student_essay.jpg");
       if (!response.ok) throw new Error("Sample file not found");
       const blob = await response.blob();
       const sampleFile = new File([blob], "sample_student_essay.jpg", {
@@ -1431,7 +1460,7 @@ export default function TeacherDashboard({ profile }) {
         } catch (downloadErr) {
           console.warn("downloadSubmissionFileBlob error, attempting fallback:", downloadErr);
           const downloadUrl = await resolveStorageImageUrl(fileUrl);
-          const res = await fetch(downloadUrl);
+          const res = await apiFetch(downloadUrl);
           if (!res.ok) throw new Error("Could not download submission file from Supabase Storage.");
           blob = await res.blob();
           filename = fileUrl.split("/").pop().split("?")[0] || filename;
@@ -1586,7 +1615,7 @@ export default function TeacherDashboard({ profile }) {
       // 2. Backup: Save to local backend SQLite
       try {
         const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-        await fetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/scan`, {
+        await apiFetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/scan`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1644,7 +1673,7 @@ export default function TeacherDashboard({ profile }) {
     // 2. Always persist to backend SQLite grades table
     try {
       const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-      await fetch(`${backendUrl}/api/submissions/${subId}/grade`, {
+      await apiFetch(`${backendUrl}/api/submissions/${subId}/grade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2123,6 +2152,8 @@ export default function TeacherDashboard({ profile }) {
   return (
     <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
       <Header
+        profile={profile}
+        onProfileUpdated={onProfileUpdated}
         workspace="Teacher workspace"
         pages={teacherPages}
         activePage={activePage}
@@ -2166,7 +2197,7 @@ export default function TeacherDashboard({ profile }) {
 
               <form onSubmit={handleCreateClassroom} className="mt-5 space-y-4">
                 <label className="block">
-                  <span className="text-xs font-medium text-[#3c4043]">Class name (required)</span>
+                  <span className="text-xs font-medium text-[#3c4043]">Subject name (required)</span>
                   <input
                     type="text"
                     value={classroomForm.name}
@@ -2186,17 +2217,6 @@ export default function TeacherDashboard({ profile }) {
                     placeholder="e.g. Period 1, Section A"
                     className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                     required
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-xs font-medium text-[#3c4043]">Subject</span>
-                  <input
-                    type="text"
-                    value={classroomForm.subject}
-                    onChange={(e) => setClassroomForm((f) => ({ ...f, subject: e.target.value }))}
-                    placeholder="e.g. Literature, Science"
-                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                   />
                 </label>
 
@@ -2319,8 +2339,27 @@ export default function TeacherDashboard({ profile }) {
           </div>
         )}
 
+        {activePage === "classrooms" && openedClassroomId && classrooms.some((c) => c.id === openedClassroomId) && (
+          <ClassroomDetail
+            key={openedClassroomId}
+            classroom={classrooms.find((c) => c.id === openedClassroomId)}
+            assignments={assignments}
+            onBack={() => setOpenedClassroomId(null)}
+              onOpenAssignment={(assignment) => {
+                setAssignmentFilterClassroomId(openedClassroomId);
+                setSelectedAssignmentId(assignment.id);
+                setAssignmentDetailTab("roster");
+                setActivePage("assignments");
+              }}
+              onCreateAssignment={() => {
+                setAssignmentForm({ ...emptyAssignmentForm, classroomId: openedClassroomId });
+                setIsCreatingAssignment(true);
+              }}
+          />
+        )}
+
         {/* Classes Page */}
-        {activePage === "classrooms" && (
+        {activePage === "classrooms" && (!openedClassroomId || !classrooms.some((c) => c.id === openedClassroomId)) && (
           <div className="space-y-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#dadce0] pb-5">
               <div>
@@ -2382,19 +2421,15 @@ export default function TeacherDashboard({ profile }) {
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 pr-14">
-                          <h3
-                            onClick={() => {
-                              setAssignmentFilterClassroomId(classroom.id);
-                              setSelectedAssignmentId(null);
-                              setActivePage("assignments");
-                            }}
-                            className="text-xl font-medium tracking-tight text-white hover:underline cursor-pointer truncate"
-                            title={classroom.name}
-                          >
-                            {classroom.name}
+                          <h3>
+                            <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
+                              className="text-left text-xl font-medium tracking-tight text-white hover:underline break-words"
+                              title={classroom.name}>
+                              {classroom.name}
+                            </button>
                           </h3>
                           <p className="text-xs font-normal text-white/90 truncate mt-0.5">
-                            Section {classroom.section} {classroom.subject ? `• ${classroom.subject}` : ""}
+                            Section {classroom.section} {classroom.subject && classroom.subject !== classroom.name ? `• ${classroom.subject}` : ""}
                           </p>
                         </div>
                       </div>
@@ -2454,6 +2489,8 @@ export default function TeacherDashboard({ profile }) {
                           type="button"
                           onClick={() => {
                             setSelectedSubmissionsClassroomId(classroom.id);
+                            setGradeSubject("all");
+                            setSelectedSubmissionsAssignmentId("all");
                             setSelectedAssignmentId(null);
                             setActivePage("submissions");
                           }}
@@ -2463,6 +2500,10 @@ export default function TeacherDashboard({ profile }) {
                           <span>Gradebook</span>
                         </button>
                       </div>
+                      <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
+                        className="mt-4 border-t border-gray-200 pt-3 text-left text-sm font-medium text-[#137333] hover:underline">
+                        Open classroom
+                      </button>
                     </div>
                   </article>
                 ))}
@@ -3529,7 +3570,49 @@ export default function TeacherDashboard({ profile }) {
           )}
 
           {activePage === "submissions" && (
-            selectedAssignment ? (
+            <>
+              <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-gray-200 bg-white p-4">
+                <label className="flex flex-col gap-1 text-sm font-medium">
+                  Subject
+                  <select value={gradeSubject} onChange={(event) => {
+                    setGradeSubject(event.target.value);
+                    setSelectedSubmissionsClassroomId("all");
+                    setSelectedSubmissionsAssignmentId("all");
+                    setSelectedAssignmentId(null);
+                  }} className="h-10 rounded-lg border border-gray-300 px-3">
+                    <option value="all">All subjects</option>
+                    {gradeSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium">
+                  Classroom
+                  <select value={selectedSubmissionsClassroomId} onChange={(event) => {
+                    setSelectedSubmissionsClassroomId(event.target.value);
+                    setSelectedSubmissionsAssignmentId("all");
+                    setSelectedAssignmentId(null);
+                  }} className="h-10 rounded-lg border border-gray-300 px-3">
+                    <option value="all">All classrooms</option>
+                    {classrooms.filter((c) => gradeSubject === "all" || (c.subject && c.subject !== "No subject" ? c.subject : c.name) === gradeSubject).map((c) => <option key={c.id} value={c.id}>{c.name} ? {c.section}</option>)}
+                  </select>
+                </label>
+                <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+                  Classwork
+                  <select value={selectedSubmissionsAssignmentId} onChange={(event) => {
+                    setSelectedSubmissionsAssignmentId(event.target.value);
+                    setSelectedAssignmentId(null);
+                  }} className="h-10 max-w-full rounded-lg border border-gray-300 px-3">
+                    <option value="all">All classwork</option>
+                    {gradeClasswork.map((a) => <option key={a.id} value={a.id}>{a.title} ? {a.classroomName} ({a.classroomSection})</option>)}
+                  </select>
+                </label>
+                <button type="button" onClick={() => {
+                  setGradeSubject("all");
+                  setSelectedSubmissionsClassroomId("all");
+                  setSelectedSubmissionsAssignmentId("all");
+                  setSelectedAssignmentId(null);
+                }} className="h-10 px-3 text-sm font-medium text-emerald-700 hover:underline">Clear filters</button>
+              </div>
+            {selectedAssignment ? (
               <div className="space-y-4">
                 <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between shadow-2xs">
                   <div className="flex flex-wrap items-center gap-2">
@@ -3549,7 +3632,7 @@ export default function TeacherDashboard({ profile }) {
                         onChange={(e) => setSelectedAssignmentId(e.target.value)}
                         className="h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold outline-none transition focus:border-emerald-600"
                       >
-                        {assignments.map((a) => (
+                        {gradeClasswork.filter((a) => selectedSubmissionsAssignmentId === "all" || String(a.id) === String(selectedSubmissionsAssignmentId) || a.id === selectedAssignment.id).map((a) => (
                           <option key={a.id} value={a.id}>
                             {a.classroomName} ({a.classroomSection || "Standard"}) — {a.title}
                           </option>
@@ -3601,7 +3684,7 @@ export default function TeacherDashboard({ profile }) {
                   submissionHubGroups.size === 0 ? (
                     <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-10 text-center">
                       <p className="text-sm font-medium text-[#202124]">No assignments match these filters.</p>
-                      <p className="mt-1 text-xs text-[#5f6368]">Try another class, status filter, or search term.</p>
+                      <p className="mt-1 text-xs text-[#5f6368]">Try another subject, classroom, or classwork.</p>
                     </div>
                   ) : (
                   <div className="space-y-6">
@@ -3668,7 +3751,8 @@ export default function TeacherDashboard({ profile }) {
                   )
                 )}
               </div>
-            )
+            )}
+            </>
           )}
 
           {/* Edit Assignment Modal Dialog */}

@@ -508,7 +508,11 @@ def prepare_ocr_input(file, started_at):
 # FASTAPI
 # ==========================================
 
+from admin_api import router as admin_router, install_account_guard
+
 app = FastAPI()
+app.include_router(admin_router)
+install_account_guard(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -522,54 +526,70 @@ app.add_middleware(
 # LOAD MODELS
 # ==========================================
 
-YOLO_MODEL_PATH = resolve_yolo_model_path()
-TROCR_MODEL_SOURCE = resolve_trocr_model_source()
-
-print(f"[ocr] loading YOLO from {YOLO_MODEL_PATH}", flush=True)
-yolo_model = YOLO(str(YOLO_MODEL_PATH))
-
-print(f"[ocr] loading TrOCR from {TROCR_MODEL_SOURCE}", flush=True)
-is_local_trocr = Path(TROCR_MODEL_SOURCE).exists()
-processor = TrOCRProcessor.from_pretrained(TROCR_MODEL_SOURCE, local_files_only=is_local_trocr)
-trocr_model = VisionEncoderDecoderModel.from_pretrained(TROCR_MODEL_SOURCE, local_files_only=is_local_trocr)
-
+OCR_LOAD_ERROR = None
+YOLO_MODEL_PATH = None
+TROCR_MODEL_SOURCE = None
+yolo_model = processor = trocr_model = None
 device = "cuda" if torch.cuda.is_available() else "cpu"
-TROCR_FP16 = (device == "cuda") and (os.getenv("TROCR_FP16", "1") != "0")
-
-if device == "cuda":
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-    if TROCR_FP16:
-        print("[ocr] converting TrOCR to FP16 for Ampere Tensor Core acceleration", flush=True)
-        trocr_model = trocr_model.half()
-
-trocr_model.to(device)
-trocr_model.eval()
-
-# Suppress max_length warning when max_new_tokens is passed
-if hasattr(trocr_model.config, "max_length"):
-    trocr_model.config.max_length = None
-if hasattr(trocr_model, "generation_config") and hasattr(trocr_model.generation_config, "max_length"):
-    trocr_model.generation_config.max_length = None
-
-if device == "cpu" and TROCR_CPU_QUANTIZE:
-    print("[ocr] applying CPU dynamic quantization to TrOCR", flush=True)
-    trocr_model = torch.ao.quantization.quantize_dynamic(
-        trocr_model,
-        {torch.nn.Linear},
-        dtype=torch.qint8,
+TROCR_FP16 = False
+try:
+    YOLO_MODEL_PATH = resolve_yolo_model_path()
+    TROCR_MODEL_SOURCE = resolve_trocr_model_source()
+    
+    print(f"[ocr] loading YOLO from {YOLO_MODEL_PATH}", flush=True)
+    yolo_model = YOLO(str(YOLO_MODEL_PATH))
+    
+    print(f"[ocr] loading TrOCR from {TROCR_MODEL_SOURCE}", flush=True)
+    is_local_trocr = Path(TROCR_MODEL_SOURCE).exists()
+    processor = TrOCRProcessor.from_pretrained(TROCR_MODEL_SOURCE, local_files_only=is_local_trocr)
+    trocr_model = VisionEncoderDecoderModel.from_pretrained(TROCR_MODEL_SOURCE, local_files_only=is_local_trocr)
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    TROCR_FP16 = (device == "cuda") and (os.getenv("TROCR_FP16", "1") != "0")
+    
+    if device == "cuda":
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        if TROCR_FP16:
+            print("[ocr] converting TrOCR to FP16 for Ampere Tensor Core acceleration", flush=True)
+            trocr_model = trocr_model.half()
+    
+    trocr_model.to(device)
+    trocr_model.eval()
+    
+    # Suppress max_length warning when max_new_tokens is passed
+    if hasattr(trocr_model.config, "max_length"):
+        trocr_model.config.max_length = None
+    if hasattr(trocr_model, "generation_config") and hasattr(trocr_model.generation_config, "max_length"):
+        trocr_model.generation_config.max_length = None
+    
+    if device == "cpu" and TROCR_CPU_QUANTIZE:
+        print("[ocr] applying CPU dynamic quantization to TrOCR", flush=True)
+        trocr_model = torch.ao.quantization.quantize_dynamic(
+            trocr_model,
+            {torch.nn.Linear},
+            dtype=torch.qint8,
+        )
+    
+    configure_trocr_kv_cache(trocr_model, TROCR_USE_CACHE)
+    
+    print(
+        f"[ocr] TrOCR device={device} "
+        f"fp16={TROCR_FP16} "
+        f"beams={OCR_NUM_BEAMS} "
+        f"batch_size={OCR_BATCH_SIZE} "
+        f"use_cache={TROCR_USE_CACHE}",
+        flush=True,
     )
+except Exception as exc:
+    OCR_LOAD_ERROR = str(exc)
+    yolo_model = processor = trocr_model = None
+    print(f"[ocr] unavailable; other APIs will remain online: {exc}", flush=True)
 
-configure_trocr_kv_cache(trocr_model, TROCR_USE_CACHE)
 
-print(
-    f"[ocr] TrOCR device={device} "
-    f"fp16={TROCR_FP16} "
-    f"beams={OCR_NUM_BEAMS} "
-    f"batch_size={OCR_BATCH_SIZE} "
-    f"use_cache={TROCR_USE_CACHE}",
-    flush=True,
-)
+def require_ocr_models():
+    if OCR_LOAD_ERROR:
+        raise HTTPException(503, "Handwriting recognition is unavailable. Configure YOLO_MODEL_PATH and TROCR_MODEL_PATH on the server, then restart the backend.")
 
 
 def warmup_models():
@@ -586,7 +606,8 @@ def warmup_models():
         print(f"[ocr] warmup note: {e}", flush=True)
 
 
-warmup_models()
+if not OCR_LOAD_ERROR:
+    warmup_models()
 
 # Background synchronization to Supabase for all local plagiarism.db records
 try:
@@ -764,6 +785,7 @@ async def proxy_storage_file(path: str = Query(..., description="Supabase storag
 async def health():
     return {
         "status": "ok",
+        "ocr_ready": OCR_LOAD_ERROR is None,
         "yolo_model": str(YOLO_MODEL_PATH),
         "trocr_model": str(TROCR_MODEL_SOURCE),
         "device": device,
@@ -1224,6 +1246,7 @@ def simulate_complete_scan(scan_id: str):
 
 @app.post("/upload")
 def upload_image(file: UploadFile = File(...)):
+    require_ocr_models()
     started_at = time.perf_counter()
     ocr_input = prepare_ocr_input(file, started_at)
     raw_boxes = ocr_input["raw_boxes"]
@@ -1280,6 +1303,7 @@ def upload_image(file: UploadFile = File(...)):
 
 @app.post("/upload-stream")
 def upload_image_stream(file: UploadFile = File(...)):
+    require_ocr_models()
     started_at = time.perf_counter()
     ocr_input = prepare_ocr_input(file, started_at)
     raw_boxes = ocr_input["raw_boxes"]

@@ -81,3 +81,121 @@ CREATE POLICY "Teachers can update their own assignments"
   WITH CHECK (teacher_id = auth.uid());
 
 GRANT UPDATE ON TABLE public."assignmentTable" TO authenticated;
+
+-- 6. Share only enrolled students' names with the class owner and classmates.
+-- SECURITY DEFINER avoids recursive membership RLS checks without granting
+-- students access to classmates' full profiles, emails, or submissions.
+CREATE OR REPLACE FUNCTION public.get_classroom_roster(requested_classroom_id TEXT)
+RETURNS TABLE (student_id TEXT, student_name TEXT)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF auth.uid() IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public."classroomTable" c
+    WHERE c.id::text = requested_classroom_id
+      AND (c.teacher_id = auth.uid() OR EXISTS (
+        SELECT 1 FROM public."classroomMembers" own_membership
+        WHERE own_membership.classroom_id = c.id
+          AND own_membership.student_id = auth.uid()
+      ))
+  ) THEN
+    RAISE EXCEPTION 'You do not have access to this classroom.'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+    SELECT DISTINCT m.student_id::text,
+      COALESCE(NULLIF(TRIM(u.full_name), ''), 'Student')::text AS student_name
+    FROM public."classroomMembers" m
+    LEFT JOIN public."userTable" u ON u.id = m.student_id
+    WHERE m.classroom_id::text = requested_classroom_id
+    ORDER BY student_name, m.student_id::text;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_classroom_roster(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_classroom_roster(TEXT) TO authenticated;
+
+-- 7. Allow either workspace to edit only its own display name.
+CREATE OR REPLACE FUNCTION public.update_my_profile(new_full_name TEXT)
+RETURNS TABLE (full_name TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Sign in to edit your profile.' USING ERRCODE = '42501';
+  END IF;
+  IF new_full_name IS NULL OR length(trim(new_full_name)) NOT BETWEEN 1 AND 120 THEN
+    RAISE EXCEPTION 'Enter a name between 1 and 120 characters.';
+  END IF;
+  RETURN QUERY
+    UPDATE public."userTable" AS u
+    SET full_name = trim(new_full_name)
+    WHERE u.id = auth.uid()
+    RETURNING u.full_name::text;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.update_my_profile(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.update_my_profile(TEXT) TO authenticated;
+
+-- 8. Store the assigned teacher's display name alongside teacher_id.
+-- teacher_id remains the identity used for ownership and permissions.
+BEGIN;
+
+ALTER TABLE public."classroomTable"
+  ADD COLUMN IF NOT EXISTS teacher_name TEXT;
+
+CREATE OR REPLACE FUNCTION public.set_classroom_teacher_name()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.teacher_name := (
+    SELECT u.full_name FROM public."userTable" u
+    WHERE u.id = NEW.teacher_id
+  );
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS set_classroom_teacher_name ON public."classroomTable";
+CREATE TRIGGER set_classroom_teacher_name
+BEFORE INSERT OR UPDATE OF teacher_id, teacher_name
+ON public."classroomTable"
+FOR EACH ROW EXECUTE FUNCTION public.set_classroom_teacher_name();
+
+CREATE OR REPLACE FUNCTION public.sync_teacher_name_to_classrooms()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  UPDATE public."classroomTable"
+  SET teacher_name = NEW.full_name
+  WHERE teacher_id = NEW.id
+    AND teacher_name IS DISTINCT FROM NEW.full_name;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS sync_teacher_name_to_classrooms ON public."userTable";
+CREATE TRIGGER sync_teacher_name_to_classrooms
+AFTER INSERT OR UPDATE OF full_name
+ON public."userTable"
+FOR EACH ROW EXECUTE FUNCTION public.sync_teacher_name_to_classrooms();
+
+REVOKE ALL ON FUNCTION public.set_classroom_teacher_name() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.sync_teacher_name_to_classrooms() FROM PUBLIC, anon, authenticated;
+
+-- Populate existing classrooms; the trigger resolves each teacher's name.
+UPDATE public."classroomTable" SET teacher_name = NULL;
+
+COMMIT;

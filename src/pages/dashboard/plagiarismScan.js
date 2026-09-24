@@ -1,3 +1,4 @@
+import { apiFetch } from "../../apiFetch";
 import { extractTextFromImage } from "./ocrService";
 
 export const ACCEPTED_CHECK_FILE_TYPES =
@@ -345,12 +346,12 @@ export async function checkPlagiarismViaBackend({
     formData.append("user_id", userId);
     if (sandbox !== null) formData.append("sandbox", String(sandbox));
 
-    response = await fetch(`${BACKEND_URL}/api/plagiarism/check`, {
+    response = await apiFetch(`${BACKEND_URL}/api/plagiarism/check`, {
       method: "POST",
       body: formData,
     });
   } else {
-    response = await fetch(`${BACKEND_URL}/api/plagiarism/check`, {
+    response = await apiFetch(`${BACKEND_URL}/api/plagiarism/check`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -408,7 +409,7 @@ export async function checkPeerSimilarityViaBackend({
   }
 
   try {
-    const response = await fetch(`${BACKEND_URL}/api/plagiarism/peer-check`, {
+    const response = await apiFetch(`${BACKEND_URL}/api/plagiarism/peer-check`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -459,7 +460,7 @@ export async function pollPlagiarismScanResult(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/plagiarism/scans/${scanId}`);
+      const response = await apiFetch(`${BACKEND_URL}/api/plagiarism/scans/${scanId}`);
       if (response.ok) {
         const scan = await response.json();
         if (onProgress) {
@@ -486,7 +487,7 @@ export async function pollPlagiarismScanResult(
   }
 
   // If still processing after timeout, try one last check
-  const finalRes = await fetch(`${BACKEND_URL}/api/plagiarism/scans/${scanId}`);
+  const finalRes = await apiFetch(`${BACKEND_URL}/api/plagiarism/scans/${scanId}`);
   if (finalRes.ok) {
     return finalRes.json();
   }
@@ -499,7 +500,7 @@ export async function pollPlagiarismScanResult(
  */
 export async function fetchUserPlagiarismScans(userId = "anonymous", limit = 10) {
   try {
-    const res = await fetch(
+    const res = await apiFetch(
       `${BACKEND_URL}/api/plagiarism/scans?user_id=${encodeURIComponent(userId)}&limit=${limit}`
     );
     if (!res.ok) return [];

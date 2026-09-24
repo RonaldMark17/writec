@@ -130,6 +130,8 @@ export default function Login() {
             required
           />
 
+          <Link to="/forgot-password" className="mt-3 inline-block text-sm font-semibold text-emerald-700 hover:underline">Forgot password?</Link>
+
           {errorMessage && (
             <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
               {errorMessage}

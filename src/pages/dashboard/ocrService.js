@@ -1,3 +1,4 @@
+import { apiFetch } from "../../apiFetch";
 const OCR_ENDPOINT =
   process.env.REACT_APP_OCR_ENDPOINT || "http://localhost:8000/upload";
 
@@ -31,7 +32,7 @@ async function extractTextFromImageJson(file, signal) {
 
   try {
     response =
-      await fetch(OCR_ENDPOINT, {
+      await apiFetch(OCR_ENDPOINT, {
         method: "POST",
         body: formData,
         signal,
@@ -84,7 +85,7 @@ async function extractTextFromImageStream(file, signal, onProgress) {
 
   try {
     response =
-      await fetch(OCR_STREAM_ENDPOINT, {
+      await apiFetch(OCR_STREAM_ENDPOINT, {
         method: "POST",
         body: formData,
         signal,
@@ -232,7 +233,7 @@ export async function extractTextFromImage(file, options = {}) {
 
 export async function getOcrEngineInfo() {
   try {
-    const response = await fetch("http://localhost:8000/health");
+    const response = await apiFetch("http://localhost:8000/health");
     if (!response.ok) return null;
     return await response.json();
   } catch {

@@ -1,3 +1,6 @@
+import { apiFetch } from "../../apiFetch";
+import { useState } from "react";
+import ProfileEditor, { ProfileIcon } from "./ProfileEditor";
 import { supabase, signOutAndExpireToken } from "../../supabaseClient";
 
 export const CLASSROOM_TABLE = "classroomTable";
@@ -648,7 +651,7 @@ export async function downloadSubmissionFileBlob(fileUrl) {
 
   // 1. If already a Blob or Data URI, convert directly
   if (fileUrl.startsWith("blob:") || fileUrl.startsWith("data:")) {
-    const res = await fetch(fileUrl);
+    const res = await apiFetch(fileUrl);
     return await res.blob();
   }
 
@@ -657,7 +660,7 @@ export async function downloadSubmissionFileBlob(fileUrl) {
   // 2. If it is already a direct backend URL, fetch from backend immediately (fastest & bypasses Supabase 400)
   if (fileUrl.startsWith(backendUrl) || /^https?:\/\/[^/]+:(?:8000|5000)\/uploads/i.test(fileUrl)) {
     try {
-      const res = await fetch(fileUrl);
+      const res = await apiFetch(fileUrl);
       if (res.ok) {
         const b = await res.blob();
         if (b.size > 0) return b;
@@ -725,7 +728,7 @@ export async function downloadSubmissionFileBlob(fileUrl) {
 
   for (const bUrl of backendCandidates) {
     try {
-      const res = await fetch(bUrl);
+      const res = await apiFetch(bUrl);
       if (res.ok) {
         const b = await res.blob();
         if (b.size > 0) return b;
@@ -753,7 +756,11 @@ export async function resolveStorageImageUrl(fileUrl) {
 
   // If already a backend URL, it is immediately renderable by the browser
   if (fileUrl.startsWith(backendUrl) || /^https?:\/\/[^/]+:(?:8000|5000)\/uploads/i.test(fileUrl)) {
-    return fileUrl;
+    const response = await apiFetch(fileUrl);
+    if (!response.ok) throw new Error("Unable to load the submission image.");
+    const url = URL.createObjectURL(await response.blob());
+    blobUrlCache.set(fileUrl, url);
+    return url;
   }
 
   try {
@@ -847,8 +854,8 @@ function PageNav({ pages, activePage, onChange, label }) {
             onClick={() => onChange(page.id)}
             className={
               isActive
-                ? "relative border-b-2 border-[#137333] px-3.5 py-3 text-sm font-semibold text-[#137333] transition-colors"
-                : "border-b-2 border-transparent px-3.5 py-3 text-sm font-medium text-[#5f6368] transition-colors hover:bg-[#f1f3f4] hover:text-[#202124] rounded-t-md"
+                ? "relative border-b-2 border-[#137333] shrink-0 px-4 py-5 text-base font-semibold text-[#137333] transition-colors"
+                : "border-b-2 border-transparent shrink-0 px-4 py-5 text-base font-medium text-[#5f6368] transition-colors hover:bg-[#f1f3f4] hover:text-[#202124] rounded-t-md"
             }
             aria-current={isActive ? "page" : undefined}
           >
@@ -860,30 +867,31 @@ function PageNav({ pages, activePage, onChange, label }) {
   );
 }
 
-export function Header({ workspace, pages, activePage, onPageChange }) {
+export function Header({ workspace, pages, activePage, onPageChange, profile, onProfileUpdated }) {
+  const [editingProfile, setEditingProfile] = useState(false);
   const handleLogout = async () => {
     await signOutAndExpireToken("/login");
   };
 
   return (
     <header className="sticky top-0 z-30 border-b border-[#dadce0] bg-white shadow-2xs">
-      <div className="mx-auto flex max-w-[1280px] items-center justify-between px-4 sm:px-6">
+      <div className="mx-auto flex min-h-[88px] max-w-[1440px] flex-wrap items-center justify-between gap-x-3 px-4 sm:px-6 lg:flex-nowrap">
         {/* Brand Left */}
         <div className="flex items-center gap-3 py-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#137333] text-white shadow-2xs">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#137333] text-white shadow-2xs">
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
               <polyline points="10 2 10 10 13 7 16 10 16 2" />
             </svg>
           </div>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-xl font-bold tracking-tight text-[#202124]">WriteCheck</span>
+            <span className="text-2xl font-bold tracking-tight text-[#202124]">WriteCheck</span>
             <span className="text-xs font-medium text-[#5f6368] hidden sm:inline">Classroom</span>
           </div>
         </div>
 
         {/* Center Nav */}
-        <div className="flex-1 flex justify-center px-2">
+        <div className="order-3 flex w-full min-w-0 justify-center lg:order-none lg:w-auto lg:flex-1 lg:px-3">
           <PageNav
             pages={pages}
             activePage={activePage}
@@ -892,16 +900,18 @@ export function Header({ workspace, pages, activePage, onPageChange }) {
           />
         </div>
 
+        {editingProfile && profile && <ProfileEditor profile={profile} onSaved={onProfileUpdated} onClose={() => setEditingProfile(false)} />}
         {/* Right Actions */}
         <div className="flex items-center gap-2.5 py-2.5">
-          <span className="hidden md:inline-flex items-center rounded-full bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-semibold text-[#137333]">
+          {profile && <button type="button" aria-label="Open profile" aria-haspopup="dialog" aria-expanded={editingProfile} title={profile.full_name || "Your profile"} onClick={() => setEditingProfile(true)} className="flex h-12 w-12 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-[#137333] transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-200"><ProfileIcon className="h-7 w-7" /></button>}
+          <span className="hidden xl:inline-flex items-center rounded-full bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-semibold text-[#137333]">
             {workspace}
           </span>
 
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] px-3 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-gray-400"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] px-3 py-2.5 text-sm font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-gray-400"
             title="Sign out of account"
           >
             <LogOutIcon className="h-3.5 w-3.5 text-[#5f6368]" />

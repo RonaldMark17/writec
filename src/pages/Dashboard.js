@@ -1,176 +1,66 @@
 import { useEffect, useState } from "react";
-
-import {
-  supabase,
-  isSessionExpired,
-  signOutAndExpireToken,
-} from "../supabaseClient";
+import { Navigate, useLocation } from "react-router-dom";
+import { supabase, signOutAndExpireToken } from "../supabaseClient";
 import StudentDashboard from "./StudentDashboard";
 import TeacherDashboard from "./TeacherDashboard";
+import AdminDashboard from "./AdminDashboard";
 
-export default function Dashboard({ session: propSession }) {
+export default function Dashboard({ session: propSession, adminOnly = false }) {
+  const location = useLocation();
+  const user = propSession?.user;
   const [profile, setProfile] = useState(null);
-  const [isProfileLoading, setIsProfileLoading] = useState(true);
-
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchUserProfile = async (user) => {
-      if (!user) {
-        if (isMounted) {
-          setProfile(null);
-          setIsProfileLoading(false);
+    let cancelled = false;
+    let running = false;
+    setLoading(true);
+    setProfile(null);
+    async function load() {
+      if (running) return;
+      running = true;
+      try {
+        if (!user) throw new Error("Sign in to continue.");
+        let { data, error: profileError } = await supabase.rpc("current_account");
+        if (profileError) throw profileError;
+        if (!data) {
+          // Metadata is only a registration hint; it can never grant admin access.
+          const role = user.user_metadata?.role === "teacher" ? "teacher" : "student";
+          const { error: createError } = await supabase.from("userTable").insert({
+            id: user.id, full_name: user.user_metadata?.full_name || user.email,
+            email: user.email, role,
+          });
+          if (createError && createError.code !== "23505") throw createError;
+          const response = await supabase.rpc("current_account");
+          if (response.error) throw response.error;
+          data = response.data;
         }
-        return;
-      }
+        if (!data || !["student", "teacher", "admin"].includes(data.role)) throw new Error("Your account has no valid workspace role. Contact an administrator.");
+        if (!cancelled) { setProfile(data); setError(""); }
+      } catch (err) {
+        if (!cancelled) { setProfile(null); setError(err.message || "Unable to verify your account."); }
+      } finally { running = false; if (!cancelled) setLoading(false); }
+    }
+    load();
+    const timer = window.setInterval(load, 30000);
+    window.addEventListener("focus", load);
+    return () => { cancelled = true; clearInterval(timer); window.removeEventListener("focus", load); };
+  }, [user, retry]);
 
-      const { data } = await supabase
-        .from("userTable")
-        .select("full_name, email, role")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (!isMounted) return;
-
-      const fallbackProfile = {
-        id: user.id,
-        email: user.email,
-        full_name:
-          user.user_metadata?.full_name ||
-          user.email,
-        role:
-          user.user_metadata?.role ||
-          "teacher",
-      };
-
-      let profileRow = data;
-
-      if (!profileRow) {
-        const { data: createdProfile } = await supabase
-          .from("userTable")
-          .upsert([
-            {
-              id: fallbackProfile.id,
-              full_name: fallbackProfile.full_name,
-              email: fallbackProfile.email,
-              role: fallbackProfile.role,
-            },
-          ])
-          .select("full_name, email, role")
-          .maybeSingle();
-
-        profileRow = createdProfile ?? fallbackProfile;
-      }
-
-      if (!isMounted) return;
-
-      setProfile({
-        id: user.id,
-        email: profileRow?.email || user.email,
-        full_name:
-          profileRow?.full_name ||
-          user.user_metadata?.full_name ||
-          user.email,
-        role:
-          profileRow?.role ||
-          user.user_metadata?.role ||
-          "teacher",
-      });
-      setIsProfileLoading(false);
-    };
-
-    const loadProfile = async () => {
-      // 1. If propSession is passed, check expiry first
-      if (propSession) {
-        if (isSessionExpired(propSession)) {
-          await signOutAndExpireToken("/login");
-          return;
-        }
-        if (propSession.user) {
-          await fetchUserProfile(propSession.user);
-          return;
-        }
-      }
-
-      // 2. Try current local session and check expiry
-      const { data: sessionData } = await supabase.auth.getSession();
-      const localSession = sessionData?.session;
-      if (localSession) {
-        if (isSessionExpired(localSession)) {
-          await signOutAndExpireToken("/login");
-          return;
-        }
-        if (localSession.user) {
-          await fetchUserProfile(localSession.user);
-          return;
-        }
-      }
-
-      // 3. Fall back to getUser network call
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData?.user) {
-        await fetchUserProfile(userData.user);
-      } else {
-        if (isMounted) {
-          setProfile(null);
-          setIsProfileLoading(false);
-        }
-      }
-    };
-
-    loadProfile();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!isMounted) return;
-      if (session) {
-        if (isSessionExpired(session)) {
-          await signOutAndExpireToken("/login");
-          return;
-        }
-        if (session.user) {
-          await fetchUserProfile(session.user);
-        }
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription?.unsubscribe?.();
-    };
-  }, [propSession]);
-
-  if (isProfileLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] px-6 text-center text-[#202124]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#137333] border-t-transparent" />
-          <span className="text-sm font-medium text-[#5f6368]">Loading dashboard...</span>
-        </div>
+  if (loading) return <div className="p-12 text-center">Loading workspace?</div>;
+  if (error || !profile || profile.account_status !== "active") return (
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+      <div className="max-w-md rounded-xl border bg-white p-8 text-center">
+        <h1 className="text-xl font-bold">Workspace unavailable</h1>
+        <p role="alert" className="mt-4 text-sm text-red-700">{error || "This account is inactive. Contact an administrator to reactivate it."}</p>
+        <button onClick={() => setRetry(retry + 1)} className="m-3 text-emerald-700 underline">Retry</button>
+        <button onClick={() => signOutAndExpireToken("/login")} className="m-3 text-emerald-700 underline">Sign out</button>
       </div>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] px-6 text-center text-[#202124]">
-        <div>
-          <p className="text-sm font-medium text-red-600">Session expired or not found</p>
-          <a
-            href="/login"
-            className="mt-3 inline-block rounded-full bg-[#137333] px-5 py-2 text-sm font-medium text-white hover:bg-[#0f5b28]"
-          >
-            Sign in
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  if (profile.role === "student") {
-    return <StudentDashboard profile={profile} />;
-  }
-
-  return <TeacherDashboard profile={profile} />;
+    </main>
+  );
+  if (adminOnly && profile.role !== "admin") return <Navigate to="/dashboard" replace />;
+  if (profile.role === "admin") return adminOnly ? <AdminDashboard key={location.pathname} profile={profile} onProfileUpdated={setProfile} /> : <Navigate to="/admin/dashboard" replace />;
+  if (profile.role === "student") return <StudentDashboard profile={profile} onProfileUpdated={setProfile} />;
+  return <TeacherDashboard profile={profile} onProfileUpdated={setProfile} />;
 }

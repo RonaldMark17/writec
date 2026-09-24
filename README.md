@@ -69,3 +69,17 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
 # WriteCheck
+
+## Profile editing and password recovery
+
+- Run section 7 of `supabase_schema.sql` in Supabase SQL Editor to install `update_my_profile`. This function edits only the signed-in user's full name; email and role remain read-only in the profile form.
+- In Supabase Authentication > URL Configuration, add `http://localhost:3000/reset-password` for local development and `https://YOUR_APP_DOMAIN/reset-password` for production to Redirect URLs. Set Site URL to your app's deployed origin.
+- Configure email delivery in Supabase for production password recovery. Ensure the hosting service serves the React app for `/forgot-password` and `/reset-password` as well as `/dashboard`.
+- Test with a real registered student and teacher: edit the name, reload, request a password reset from Login, follow the email link, save matching passwords, then sign out and sign in with the new password. Sample SQL-only profiles do not have Auth accounts and cannot reset a login password.
+
+## Admin workspace
+
+See [ADMIN_SETUP.md](ADMIN_SETUP.md) for the database migration, admin account assignment,
+API endpoints, local setup, security boundaries, and verification checklist. Apply
+`admin_schema.sql` after `supabase_schema.sql` before deploying the admin-enabled
+frontend/backend. Administrative routes start at `/admin/dashboard`.

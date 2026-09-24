@@ -1,3 +1,5 @@
+import { apiFetch } from "../apiFetch";
+import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useState } from "react";
 
 import { supabase } from "../supabaseClient";
@@ -7,6 +9,7 @@ import {
   CheckIcon,
   ClipboardIcon,
   CopyIcon,
+  DoorIcon,
   CalendarIcon,
   ESSAY_BUCKET,
   FileIcon,
@@ -85,7 +88,9 @@ function getSubmissionBlockMessage(draft, file) {
   return "";
 }
 
-export default function StudentDashboard({ profile }) {
+export default function StudentDashboard({ profile, onProfileUpdated }) {
+  const [openedClassroomId, setOpenedClassroomId] = useState(null);
+
   const [activePage, setActivePage] =
     useState("classrooms");
 
@@ -332,7 +337,7 @@ export default function StudentDashboard({ profile }) {
     let localGradesMap = {};
     try {
       const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-      const res = await fetch(`${backendUrl}/api/submissions/grades`);
+      const res = await apiFetch(`${backendUrl}/api/submissions/grades`);
       if (res.ok) {
         localGradesMap = await res.json();
       }
@@ -614,7 +619,7 @@ export default function StudentDashboard({ profile }) {
           formData.append("file", uploadFile);
 
           const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-          const res = await fetch(`${backendUrl}/api/submissions/upload`, {
+          const res = await apiFetch(`${backendUrl}/api/submissions/upload`, {
             method: "POST",
             body: formData,
           });
@@ -688,6 +693,8 @@ export default function StudentDashboard({ profile }) {
   return (
     <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
       <Header
+        profile={profile}
+        onProfileUpdated={onProfileUpdated}
         workspace="Student workspace"
         pages={studentPages}
         activePage={activePage}
@@ -770,8 +777,21 @@ export default function StudentDashboard({ profile }) {
           </div>
         )}
 
+        {activePage === "classrooms" && openedClassroomId && classrooms.some((c) => c.id === openedClassroomId) && (
+          <ClassroomDetail
+            key={openedClassroomId}
+            classroom={classrooms.find((c) => c.id === openedClassroomId)}
+            assignments={assignments}
+            onBack={() => setOpenedClassroomId(null)}
+              onOpenAssignment={(assignment) => {
+                handleViewClassroomAssignments(openedClassroomId);
+                handleOpenSubmissionDraft(assignment);
+              }}
+          />
+        )}
+
         {/* Classes Page */}
-        {activePage === "classrooms" && (
+        {activePage === "classrooms" && (!openedClassroomId || !classrooms.some((c) => c.id === openedClassroomId)) && (
           <div className="space-y-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#dadce0] pb-5">
               <div>
@@ -833,12 +853,12 @@ export default function StudentDashboard({ profile }) {
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 pr-14">
-                          <h3
-                            onClick={() => handleViewClassroomAssignments(classroom.id)}
-                            className="text-xl font-medium tracking-tight text-white hover:underline cursor-pointer truncate"
-                            title={classroom.name}
-                          >
-                            {classroom.name}
+                          <h3>
+                            <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
+                              className="text-left text-xl font-medium tracking-tight text-white hover:underline break-words"
+                              title={classroom.name}>
+                              {classroom.name}
+                            </button>
                           </h3>
                           <p className="text-xs font-normal text-white/90 truncate mt-0.5">
                             Section {classroom.section} • {classroom.teacher}
@@ -874,6 +894,10 @@ export default function StudentDashboard({ profile }) {
                           <span>View classwork</span>
                         </button>
                       </div>
+                      <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
+                        className="mt-4 border-t border-gray-200 pt-3 text-left text-sm font-medium text-[#137333] hover:underline">
+                        Open classroom
+                      </button>
                     </div>
                   </article>
                 ))}

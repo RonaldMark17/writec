@@ -13,12 +13,13 @@ import {
   signOutAndExpireToken,
 } from "./supabaseClient";
 
+import PasswordReset from "./pages/PasswordReset";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Startup from "./pages/Startup";
 
-function ProtectedDashboard({ session, isAuthLoading }) {
+function ProtectedDashboard({ session, isAuthLoading, adminOnly = false }) {
   if (isAuthLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa]">
@@ -34,7 +35,7 @@ function ProtectedDashboard({ session, isAuthLoading }) {
     return <Navigate to="/login" replace />;
   }
 
-  return <Dashboard session={session} />;
+  return <Dashboard session={session} adminOnly={adminOnly} />;
 }
 
 function AuthLoginRoute({ session, isAuthLoading }) {
@@ -78,6 +79,7 @@ function HomeRoute({ session, isAuthLoading }) {
 }
 
 function App() {
+  const [recovering, setRecovering] = useState(false);
   const [session, setSession] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
@@ -102,6 +104,7 @@ function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
       (_event, nextSession) => {
+        if (_event === "PASSWORD_RECOVERY") setRecovering(true);
         if (nextSession && isSessionExpired(nextSession)) {
           signOutAndExpireToken("/login");
           setSession(null);
@@ -158,7 +161,11 @@ function App() {
         v7_startTransition: true,
       }}
     >
+      {recovering && <Navigate to="/reset-password" replace />}
       <Routes>
+        <Route path="/admin/*" element={<ProtectedDashboard session={session} isAuthLoading={isAuthLoading} adminOnly />} />
+        <Route path="/forgot-password" element={<PasswordReset key="request" />} />
+        <Route path="/reset-password" element={<PasswordReset key="reset" mode="reset" session={session} isAuthLoading={isAuthLoading} onComplete={() => setRecovering(false)} />} />
         <Route
           path="/"
           element={<HomeRoute session={session} isAuthLoading={isAuthLoading} />}
