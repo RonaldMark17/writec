@@ -1,7 +1,7 @@
 import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
 import { apiFetch } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "../supabaseClient";
 import {
@@ -30,6 +30,9 @@ import {
   openSubmissionFile,
   resolveStorageImageUrl,
   studentPages,
+  SearchIcon,
+  getInitials,
+  getTeacherAvatarTheme,
 } from "./dashboard/shared";
 import {
   ACCEPTED_CHECK_FILE_TYPES,
@@ -102,6 +105,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const [submissions, setSubmissions] =
     useState([]);
+
+  const [submissionSearch, setSubmissionSearch] = useState("");
+  const [submissionClassroomId, setSubmissionClassroomId] = useState("all");
+  const [submissionStatusFilter, setSubmissionStatusFilter] = useState("all");
+  const [submissionSort, setSubmissionSort] = useState("newest");
 
   const [joinCode, setJoinCode] =
     useState("");
@@ -222,12 +230,22 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
-    const { data: classroomRows, error: classroomError } =
+    let { data: classroomRows, error: classroomError } =
       await supabase
+        .from(CLASSROOM_TABLE)
+        .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section, teacher_name")
+        .in("id", classroomIds)
+        .order("created_at", { ascending: false });
+
+    if (classroomError && (classroomError.message?.includes("teacher_name") || classroomError.code === "42703" || classroomError.code === "PGRST204")) {
+      const fallback = await supabase
         .from(CLASSROOM_TABLE)
         .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section")
         .in("id", classroomIds)
         .order("created_at", { ascending: false });
+      classroomRows = fallback.data;
+      classroomError = fallback.error;
+    }
 
     if (classroomError) {
       setErrorMessage(classroomError.message);
@@ -235,12 +253,22 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
-    const { data: assignmentRows, error: assignmentError } =
+    let { data: assignmentRows, error: assignmentError } =
       await supabase
+        .from(ASSIGNMENT_TABLE)
+        .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date, accept_late_submissions")
+        .in("classroom_id", classroomIds)
+        .order("created_at", { ascending: false });
+
+    if (assignmentError && (assignmentError.message?.includes("accept_late_submissions") || assignmentError.code === "42703" || assignmentError.code === "PGRST204")) {
+      const fallback = await supabase
         .from(ASSIGNMENT_TABLE)
         .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date")
         .in("classroom_id", classroomIds)
         .order("created_at", { ascending: false });
+      assignmentRows = fallback.data;
+      assignmentError = fallback.error;
+    }
 
     if (assignmentError) {
       setErrorMessage(assignmentError.message);
@@ -273,23 +301,50 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     let teacherRows = [];
 
     if (teacherIds.length > 0) {
-      const { data: teachers } =
-        await supabase
-          .from("userTable")
-          .select("id, full_name, email")
-          .in("id", teacherIds);
+      try {
+        const { data: teachers } =
+          await supabase
+            .from("userTable")
+            .select("id, full_name, email")
+            .in("id", teacherIds);
 
-      teacherRows =
-        teachers ?? [];
+        teacherRows = teachers ?? [];
+      } catch {}
     }
 
     const teachersById =
       new Map(
         teacherRows.map((teacher) => [
           teacher.id,
-          teacher.full_name || teacher.email || "Teacher",
+          { id: teacher.id, name: teacher.full_name || teacher.email || "Teacher", email: teacher.email || "" },
         ])
       );
+
+    for (const c of (classroomRows ?? [])) {
+      if (!c.teacher_id) continue;
+      const existing = teachersById.get(c.teacher_id);
+      let cached = null;
+      if (!existing || existing.name === "Teacher" || !existing.email) {
+        try {
+          const s = localStorage.getItem(`writecheck_teacher_${c.teacher_id}`) || localStorage.getItem(`writecheck_profile_prefs_${c.teacher_id}`);
+          if (s) cached = JSON.parse(s);
+        } catch {}
+      }
+      const finalName = (existing?.name && existing.name !== "Teacher")
+        ? existing.name
+        : c.teacher_name || cached?.name || cached?.full_name || existing?.name || "Teacher";
+      const finalEmail = existing?.email || cached?.email || "";
+      const avatarColor = cached?.avatarColor || "";
+      const avatarUrl = cached?.avatarUrl || "";
+
+      teachersById.set(c.teacher_id, {
+        id: c.teacher_id,
+        name: finalName,
+        email: finalEmail,
+        avatarColor,
+        avatarUrl,
+      });
+    }
 
     const assignmentCountByClass =
       (assignmentRows ?? []).reduce((counts, assignment) => {
@@ -306,13 +361,20 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       }, {});
 
     const nextClassrooms =
-      (classroomRows ?? []).map((classroom, index) =>
-        normalizeClassroom(classroom, index, {
+      (classroomRows ?? []).map((classroom, index) => {
+        const teacherInfo = teachersById.get(classroom.teacher_id) || {
+          id: classroom.teacher_id,
+          name: classroom.teacher_name || "Teacher",
+          email: "",
+        };
+        const resolvedTeacherName = teacherInfo.name || classroom.teacher_name || "Teacher";
+        return normalizeClassroom(classroom, index, {
           assignments: assignmentCountByClass[classroom.id] ?? 0,
           submissions: submissionCountByClass[classroom.id] ?? 0,
-          teacher: teachersById.get(classroom.teacher_id) || "Teacher",
-        })
-      );
+          teacher: resolvedTeacherName,
+          teacherInfo,
+        });
+      });
 
     const classroomsById =
       new Map(nextClassrooms.map((classroom) => [classroom.id, classroom]));
@@ -339,8 +401,13 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         return {
           id: submission.id,
           createdAt: submission.created_at,
+          assignmentId: submission.assignment_id,
           assignmentTitle: assignment?.title || "Assignment",
+          classroomId: assignment?.classroomId || "",
           classroomName: assignment?.classroomName || "Classroom",
+          classroomSection: assignment?.classroomSection || "",
+          classroomSubject: assignment?.classroomSubject || "",
+          dueDate: assignment?.dueDate || null,
           essayTitle: submission.essay_title || "Essay submission",
           fileUrl: submission.file_url,
           returnedAt: submission.returned_at,
@@ -349,6 +416,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           feedback: submission.returned_at ? (submission.feedback ?? "") : "",
           transcribedText: submission.returned_at ? (submission.transcribed_text ?? "") : "",
           scanResult: submission.returned_at ? (submission.scan_result ?? null) : null,
+          processingState: submission.processing_state || "ready",
+          processingError: submission.processing_error || null,
         };
       });
 
@@ -407,6 +476,63 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   useEffect(() => {
     setViewingSubmission((current) => current ? submissions.find((row) => row.id === current.id) || current : null);
+  }, [submissions]);
+
+  const filteredSubmissions = useMemo(() => {
+    let list = submissions;
+
+    if (submissionClassroomId !== "all" && submissionClassroomId) {
+      list = list.filter((sub) => String(sub.classroomId) === String(submissionClassroomId));
+    }
+
+    if (submissionStatusFilter === "graded") {
+      list = list.filter((sub) => sub.returnedAt && String(sub.grade ?? "").trim() !== "");
+    } else if (submissionStatusFilter === "returned") {
+      list = list.filter((sub) => Boolean(sub.returnedAt));
+    } else if (submissionStatusFilter === "awaiting") {
+      list = list.filter((sub) => !sub.returnedAt);
+    }
+
+    const term = submissionSearch.trim().toLowerCase();
+    if (term) {
+      list = list.filter((sub) => {
+        const haystack = [
+          sub.assignmentTitle,
+          sub.essayTitle,
+          sub.classroomName,
+          sub.classroomSubject,
+          sub.classroomSection,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(term);
+      });
+    }
+
+    return [...list].sort((a, b) => {
+      if (submissionSort === "oldest") {
+        return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      }
+      if (submissionSort === "grade") {
+        const aGrade = parseFloat(a.grade) || 0;
+        const bGrade = parseFloat(b.grade) || 0;
+        return bGrade - aGrade;
+      }
+      if (submissionSort === "assignment") {
+        return (a.assignmentTitle || "").localeCompare(b.assignmentTitle || "");
+      }
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
+  }, [submissions, submissionClassroomId, submissionStatusFilter, submissionSearch, submissionSort]);
+
+  const submissionStats = useMemo(() => {
+    const total = submissions.length;
+    const graded = submissions.filter((s) => s.returnedAt && String(s.grade ?? "").trim() !== "").length;
+    const returned = submissions.filter((s) => Boolean(s.returnedAt)).length;
+    const awaiting = total - returned;
+
+    return { total, graded, returned, awaiting };
   }, [submissions]);
 
   const handleJoinClassroom = async (event) => {
@@ -541,6 +667,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
     if (selectedAssignment.submitted) {
       setErrorMessage("You already submitted this assignment.");
+      return;
+    }
+
+    if (selectedAssignment.dueInfo?.isOverdue && selectedAssignment.acceptLateSubmissions === false) {
+      setErrorMessage("Submissions are closed. Your teacher has disabled late submissions for this assignment.");
       return;
     }
 
@@ -685,8 +816,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         }}
       />
 
-      <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
+      <main className="mx-auto max-w-[1280px] px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+        <div className="mb-4 sm:mb-6">
           <StatusMessage
             error={errorMessage || submissionSyncError}
             message={successMessage}
@@ -757,18 +888,22 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           </div>
         )}
 
-        {activePage === "classrooms" && openedClassroomId && classrooms.some((c) => c.id === openedClassroomId) && (
-          <ClassroomDetail
-            key={openedClassroomId}
-            classroom={classrooms.find((c) => c.id === openedClassroomId)}
-            assignments={assignments}
-            onBack={() => setOpenedClassroomId(null)}
-              onOpenAssignment={(assignment) => {
-                handleViewClassroomAssignments(openedClassroomId);
-                handleOpenSubmissionDraft(assignment);
-              }}
-          />
-        )}
+        {activePage === "classrooms" && openedClassroomId && classrooms.some((c) => c.id === openedClassroomId) && (() => {
+          const cls = classrooms.find((c) => c.id === openedClassroomId);
+          return (
+            <ClassroomDetail
+              key={openedClassroomId}
+              classroom={cls}
+              assignments={assignments}
+              teacher={cls?.teacherInfo || { id: cls?.teacherId, name: cls?.teacher || "Teacher", email: "" }}
+              onBack={() => setOpenedClassroomId(null)}
+                onOpenAssignment={(assignment) => {
+                  handleViewClassroomAssignments(openedClassroomId);
+                  handleOpenSubmissionDraft(assignment);
+                }}
+            />
+          );
+        })()}
 
         {/* Classes Page */}
         {activePage === "classrooms" && (!openedClassroomId || !classrooms.some((c) => c.id === openedClassroomId)) && (
@@ -847,10 +982,18 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       </div>
 
                       <div
-                        className="absolute -bottom-6 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#137333] text-lg font-bold shadow-sm ring-4 ring-white border border-gray-100"
-                        title={classroom.teacher}
+                        className="group/avatar absolute -bottom-6 right-4 z-10"
+                        title={`Instructor & Classroom Creator: ${classroom.teacher || "Teacher"}`}
                       >
-                        {(classroom.teacher || classroom.name || "T").slice(0, 2).toUpperCase()}
+                        <div
+                          className={`flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr ${getTeacherAvatarTheme(classroom.teacherId || classroom.teacher).bg} text-white text-lg font-bold shadow-md ring-4 ring-white transition-all duration-200 group-hover/avatar:scale-105 select-none overflow-hidden`}
+                        >
+                          {classroom.teacherAvatarUrl ? (
+                            <img src={classroom.teacherAvatarUrl} alt={classroom.teacher || "Teacher"} className="h-full w-full object-cover" />
+                          ) : (
+                            getInitials(classroom.teacher || "Teacher", "TE")
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1053,12 +1196,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       </button>
 
                       {assignment.instructions && (
-                        <p className="mt-3 text-xs text-[#5f6368] leading-relaxed pl-14">
+                        <p className="mt-2.5 sm:mt-3 text-xs text-[#5f6368] leading-relaxed pl-0 sm:pl-14">
                           {assignment.instructions}
                         </p>
                       )}
 
-                      {!isDraftOpen && <div className="mt-4 flex flex-wrap gap-3 pl-14">
+                      {!isDraftOpen && <div className="mt-3.5 sm:mt-4 flex flex-wrap gap-2.5 sm:gap-3 pl-0 sm:pl-14">
                         {assignment.submitted ? (
                           <button
                             type="button"
@@ -1073,6 +1216,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                             <FileIcon className="h-3.5 w-3.5 text-[#5f6368]" />
                             <span>View submission</span>
                           </button>
+                        ) : assignment.dueInfo.isOverdue && assignment.acceptLateSubmissions === false ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-xs font-semibold text-red-700">
+                            <AlertCircleIcon className="h-3.5 w-3.5" />
+                            <span>Submissions closed (Late submissions disabled)</span>
+                          </span>
                         ) : (
                           <button
                             type="button"
@@ -1269,91 +1417,294 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         )}
 
         {activePage === "submissions" && (
-          <div className="space-y-6">
-            <div className="border-b border-[#dadce0] pb-5">
-              <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
-                Submissions
-              </h2>
-              <p className="mt-1 text-sm text-[#5f6368]">
-                Review your turned in assignments, teacher feedback, and OCR/plagiarism scan reports.
-              </p>
+          <div className="space-y-6 animate-fadeIn">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#dadce0] pb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-md bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-[#137333]">
+                    My Work
+                  </span>
+                </div>
+                <h2 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-[#202124]">
+                  Submissions
+                </h2>
+                <p className="mt-1 text-xs sm:text-sm text-[#5f6368]">
+                  Review your turned in assignments, teacher feedback, and OCR/plagiarism scan reports.
+                </p>
+              </div>
+
+              {/* Quick stats pills */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-3.5 py-1.5 text-xs font-semibold shadow-2xs">
+                  <span className="text-[#202124]">{submissionStats.total}</span>
+                  <span className="text-[#5f6368]">total turned in</span>
+                </div>
+                <div className="flex items-center gap-1.5 rounded-full border border-[#ceead6] bg-[#e6f4ea] px-3.5 py-1.5 text-xs font-semibold text-[#137333] shadow-2xs">
+                  <span>{submissionStats.graded}</span>
+                  <span>graded</span>
+                </div>
+                <div className="flex items-center gap-1.5 rounded-full border border-[#c2e7ff] bg-[#e8f0fe] px-3.5 py-1.5 text-xs font-semibold text-[#1967d2] shadow-2xs">
+                  <span>{submissionStats.awaiting}</span>
+                  <span>awaiting review</span>
+                </div>
+              </div>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-[#dadce0] bg-white shadow-2xs">
-              <div className="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.8fr] gap-4 border-b border-[#dadce0] bg-[#f8f9fa] px-5 py-3 text-xs font-medium text-[#5f6368]">
-                <span>Assignment</span>
-                <span>Essay Title</span>
-                <span>Grade</span>
-                <span>Status</span>
-                <span className="text-right">Action</span>
+            {/* Filter & Search Toolbar */}
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 rounded-2xl border border-[#dadce0] bg-white p-3.5 sm:p-4 shadow-2xs">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 min-w-0">
+                {/* Search */}
+                <div className="relative flex-1 min-w-[200px]">
+                  <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
+                  <input
+                    type="search"
+                    value={submissionSearch}
+                    onChange={(e) => setSubmissionSearch(e.target.value)}
+                    placeholder="Search by assignment, essay, or class..."
+                    className="h-10 w-full rounded-lg border border-[#dadce0] bg-white pl-9 pr-8 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] placeholder:text-[#80868b]"
+                  />
+                  {submissionSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setSubmissionSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5f6368] hover:text-[#202124] p-1 rounded-full hover:bg-gray-100"
+                      title="Clear search"
+                    >
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                    </button>
+                  )}
+                </div>
+
+                {/* Classroom Filter */}
+                {classrooms.length > 0 && (
+                  <select
+                    value={submissionClassroomId}
+                    onChange={(e) => setSubmissionClassroomId(e.target.value)}
+                    className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs sm:text-sm font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] max-w-full sm:max-w-[220px] truncate"
+                  >
+                    <option value="all">All classes ({classrooms.length})</option>
+                    {classrooms.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.section ? `— ${c.section}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
-              {submissions.length === 0 && (
-                <div className="p-12 text-center">
-                  <p className="text-sm font-medium text-[#5f6368]">
-                    No submissions turned in yet.
-                  </p>
+              {/* Status Chips and Sort */}
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                  {[
+                    { id: "all", label: "All", count: submissionStats.total },
+                    { id: "graded", label: "Graded", count: submissionStats.graded },
+                    { id: "awaiting", label: "Awaiting review", count: submissionStats.awaiting },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setSubmissionStatusFilter(tab.id)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                        submissionStatusFilter === tab.id
+                          ? "bg-[#137333] text-white shadow-2xs"
+                          : "bg-[#f1f3f4] text-[#5f6368] hover:bg-[#e8eaed] hover:text-[#202124]"
+                      }`}
+                    >
+                      {tab.label} ({tab.count})
+                    </button>
+                  ))}
                 </div>
-              )}
 
-              <div className="divide-y divide-[#dadce0]">
-                {submissions.map((submission) => (
-                  <div
-                    key={submission.id}
-                    className="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr_0.8fr] items-center gap-4 px-5 py-4 text-sm transition hover:bg-[#f8f9fa]"
+                <select
+                  value={submissionSort}
+                  onChange={(e) => setSubmissionSort(e.target.value)}
+                  className="h-9 rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333]"
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="grade">Highest grade</option>
+                  <option value="assignment">Assignment (A–Z)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Submissions Table / Card Container */}
+            <div className="overflow-hidden rounded-2xl border border-[#dadce0] bg-white shadow-2xs">
+              {submissions.length === 0 ? (
+                <div className="p-12 text-center max-w-md mx-auto">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                    <ClipboardIcon className="h-7 w-7" />
+                  </div>
+                  <h3 className="mt-4 text-base sm:text-lg font-bold text-[#202124]">
+                    No submissions turned in yet
+                  </h3>
+                  <p className="mt-1 text-xs sm:text-sm text-[#5f6368]">
+                    When you turn in work from the To-do tab, your grades, originality checks, and teacher feedback will be displayed here.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActivePage("assignments")}
+                    className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2 text-xs sm:text-sm font-semibold text-white shadow-xs transition hover:bg-[#0f5b28]"
                   >
-                    <span className="font-medium text-[#202124] truncate">
-                      {submission.assignmentTitle}
-                    </span>
-                    <span className="text-xs text-[#5f6368] truncate">
-                      {submission.essayTitle}
-                    </span>
-                    <div>
-                      {submission.returnedAt && String(submission.grade ?? "").trim() !== "" ? (
-                        <span className="inline-flex items-center rounded-md border border-[#ceead6] bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-medium text-[#137333]">
-                          {submission.grade} / 100
-                        </span>
-                      ) : (
-                        <span className="text-xs text-[#5f6368] italic">
-                          {submission.status === "graded" ? "Grade not released yet" : "Awaiting review"}
-                        </span>
-                      )}
+                    <span>Go to To-do</span>
+                  </button>
+                </div>
+              ) : filteredSubmissions.length === 0 ? (
+                <div className="p-10 text-center max-w-md mx-auto">
+                  <p className="text-sm font-medium text-[#202124]">
+                    No submissions match your search or filter.
+                  </p>
+                  <p className="mt-1 text-xs text-[#5f6368]">
+                    Try changing your search terms or selecting another classroom.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubmissionSearch("");
+                      setSubmissionClassroomId("all");
+                      setSubmissionStatusFilter("all");
+                      setSubmissionSort("newest");
+                    }}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-4 py-1.5 text-xs font-semibold text-[#3c4043] hover:bg-[#f8f9fa]"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto no-scrollbar">
+                  <div className="min-w-[720px]">
+                    {/* Table Header */}
+                    <div className="grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1.2fr)_minmax(140px,0.9fr)_minmax(130px,0.9fr)_minmax(110px,auto)] gap-4 border-b border-[#dadce0] bg-[#f8f9fa] px-5 py-3.5 text-xs font-semibold text-[#5f6368]">
+                      <span>Assignment & Class</span>
+                      <span>Submitted Work</span>
+                      <span>Grade</span>
+                      <span>Status</span>
+                      <span className="text-right">Action</span>
                     </div>
-                    <div>
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        submission.status === "graded" ? "bg-[#e6f4ea] text-[#137333]" :
-                        submission.status === "submitted" ? "bg-[#e8f0fe] text-[#1967d2]" : "bg-[#f1f3f4] text-[#3c4043]"
-                      }`}>
-                        {submission.returnedAt ? "Returned" : submission.processingState && submission.processingState !== "ready" ? processingLabel(submission.processingState) : submission.status === "graded" ? "Graded" : processingLabel(submission.processingState)}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setViewingSubmission(submission);
-                          setStudentCopySuccess(false);
-                          setIsStudentImageExpanded(false);
-                          setStudentImagePreviewUrl("");
-                          const fileUrl = submission.fileUrl;
-                          if (!fileUrl) return;
-                          resolveStorageImageUrl(fileUrl)
-                            .then((resolvedUrl) => {
-                              if (resolvedUrl) setStudentImagePreviewUrl(resolvedUrl);
-                            })
-                            .catch((err) => {
-                              console.warn("Failed to resolve student preview URL:", err);
-                            });
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] px-3.5 py-1 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333]"
-                      >
-                        <FileSearchIcon className="h-3.5 w-3.5 text-[#5f6368]" />
-                        <span>View details</span>
-                      </button>
+
+                    {/* Table Rows */}
+                    <div className="divide-y divide-[#dadce0]">
+                      {filteredSubmissions.map((submission) => (
+                        <div
+                          key={submission.id}
+                          className="grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1.2fr)_minmax(140px,0.9fr)_minmax(130px,0.9fr)_minmax(110px,auto)] items-center gap-4 px-5 py-4 text-sm transition hover:bg-[#f8f9fa]/80"
+                        >
+                          {/* Assignment & Classroom */}
+                          <div className="min-w-0">
+                            <p className="font-semibold text-sm text-[#202124] truncate">
+                              {submission.assignmentTitle}
+                            </p>
+                            <p className="mt-0.5 text-xs text-[#5f6368] truncate">
+                              {submission.classroomName}
+                              {submission.classroomSection ? ` • Section ${submission.classroomSection}` : ""}
+                            </p>
+                          </div>
+
+                          {/* Submitted Work */}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-[#e8f0fe] text-[#1967d2]">
+                                <FileIcon className="h-3.5 w-3.5" />
+                              </span>
+                              <p className="text-xs sm:text-sm font-medium text-[#202124] truncate">
+                                {submission.essayTitle}
+                              </p>
+                            </div>
+                            <div className="mt-1 flex items-center gap-2 flex-wrap">
+                              <span className="text-[11px] text-[#5f6368]">
+                                {formatDateTime(submission.createdAt)}
+                              </span>
+                              {submission.feedback && (
+                                <span className="inline-flex items-center gap-1 rounded bg-[#e6f4ea] px-1.5 py-0.5 text-[10px] font-bold text-[#137333]">
+                                  <CheckIcon className="h-3 w-3" /> Teacher feedback
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Grade */}
+                          <div>
+                            {submission.returnedAt && String(submission.grade ?? "").trim() !== "" ? (
+                              <span className="inline-flex items-center rounded-md border border-[#ceead6] bg-[#e6f4ea] px-2.5 py-1 text-xs font-bold text-[#137333] shadow-2xs">
+                                {submission.grade} / 100
+                              </span>
+                            ) : submission.returnedAt && submission.feedback ? (
+                              <span className="text-xs font-semibold text-[#137333]">
+                                Feedback released
+                              </span>
+                            ) : submission.status === "graded" ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-[#5f6368] italic">
+                                <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                </svg>
+                                Grade not released yet
+                              </span>
+                            ) : (
+                              <span className="text-xs text-[#5f6368] italic">
+                                Awaiting review
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Status & Similarity */}
+                          <div className="space-y-1">
+                            <div>
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                submission.returnedAt ? "bg-[#e6f4ea] text-[#137333] border border-[#ceead6]" :
+                                submission.processingState && submission.processingState !== "ready" ? "bg-[#fef7e0] text-[#b06000] border border-[#fdd663] animate-pulse" :
+                                submission.status === "graded" ? "bg-[#e6f4ea] text-[#137333]" :
+                                "bg-[#e8f0fe] text-[#1967d2] border border-[#c2e7ff]"
+                              }`}>
+                                {submission.returnedAt ? "Returned" : submission.processingState && submission.processingState !== "ready" ? processingLabel(submission.processingState) : submission.status === "graded" ? "Graded" : "Turned in"}
+                              </span>
+                            </div>
+                            {submission.scanResult && (
+                              <div>
+                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  (submission.scanResult.plagiarism_score ?? submission.scanResult.score ?? 0) >= 50
+                                    ? "bg-red-50 text-red-700"
+                                    : (submission.scanResult.plagiarism_score ?? submission.scanResult.score ?? 0) >= 20
+                                      ? "bg-amber-50 text-amber-700"
+                                      : "bg-emerald-50 text-emerald-700"
+                                }`}>
+                                  {Math.round(submission.scanResult.plagiarism_score ?? submission.scanResult.score ?? 0)}% similarity
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Button */}
+                          <div className="text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setViewingSubmission(submission);
+                                setStudentCopySuccess(false);
+                                setIsStudentImageExpanded(false);
+                                setStudentImagePreviewUrl("");
+                                const fileUrl = submission.fileUrl;
+                                if (!fileUrl) return;
+                                resolveStorageImageUrl(fileUrl)
+                                  .then((resolvedUrl) => {
+                                    if (resolvedUrl) setStudentImagePreviewUrl(resolvedUrl);
+                                  })
+                                  .catch((err) => {
+                                    console.warn("Failed to resolve student preview URL:", err);
+                                  });
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333] hover:text-[#137333] shadow-2xs active:scale-[0.98]"
+                            >
+                              <FileSearchIcon className="h-3.5 w-3.5 text-[#5f6368]" />
+                              <span>View details</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         )}

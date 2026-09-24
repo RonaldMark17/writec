@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import AuthModal from "./AuthModal";
 
 import {
   ACCEPTED_CHECK_FILE_TYPES,
@@ -333,7 +334,9 @@ const features = [
   },
 ];
 
-export default function Startup() {
+export default function Startup({ initialAuthModal = null }) {
+  const navigate = useNavigate();
+  const [authModal, setAuthModal] = useState(initialAuthModal);
   const [isDark, setIsDark] = useState(getInitialDarkMode);
   const [activeSection, setActiveSection] = useState("home");
   const [demoMode, setDemoMode] = useState("picture");
@@ -343,6 +346,21 @@ export default function Startup() {
   const [demoResult, setDemoResult] = useState(null);
   const [demoError, setDemoError] = useState("");
   const [isDemoScanning, setIsDemoScanning] = useState(false);
+
+  useEffect(() => {
+    setAuthModal(initialAuthModal);
+  }, [initialAuthModal]);
+
+  const handleCloseAuthModal = () => {
+    setAuthModal(null);
+    if (window.location.pathname === "/login" || window.location.pathname === "/register") {
+      navigate("/", { replace: true });
+    }
+  };
+
+  const handleOpenAuthModal = (mode) => {
+    setAuthModal(mode);
+  };
 
   useEffect(() => {
     window.localStorage.setItem("writecheck-theme", isDark ? "dark" : "light");
@@ -518,19 +536,21 @@ export default function Startup() {
               )}
             </button>
 
-            <Link
-              to="/login"
+            <button
+              type="button"
+              onClick={() => handleOpenAuthModal("login")}
               className="inline-flex h-9 items-center justify-center rounded-full px-4 text-sm font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)] transition"
             >
               Sign in
-            </Link>
+            </button>
 
-            <Link
-              to="/register"
+            <button
+              type="button"
+              onClick={() => handleOpenAuthModal("register")}
               className="inline-flex h-9 items-center justify-center rounded-full bg-[var(--accent)] px-5 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] transition"
             >
               Get started
-            </Link>
+            </button>
           </div>
         </div>
       </header>
@@ -552,12 +572,13 @@ export default function Startup() {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link
-                to="/register"
+              <button
+                type="button"
+                onClick={() => handleOpenAuthModal("register")}
                 className="inline-flex h-11 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 transition"
               >
                 Get started free
-              </Link>
+              </button>
 
               <a
                 href="#about"
@@ -874,18 +895,20 @@ export default function Startup() {
               Join teachers and students already checking handwritten essays, upholding academic integrity, and reviewing clear submission reports.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <Link
-                to="/register"
+              <button
+                type="button"
+                onClick={() => handleOpenAuthModal("register")}
                 className="inline-flex h-10 items-center justify-center rounded-full bg-[var(--accent)] px-6 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] transition"
               >
                 Create Teacher Account
-              </Link>
-              <Link
-                to="/login"
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenAuthModal("login")}
                 className="inline-flex h-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel)] px-6 text-sm font-medium text-[var(--page-text)] hover:bg-[var(--border-soft)] transition"
               >
                 Student Sign In
-              </Link>
+              </button>
             </div>
           </div>
         </section>
@@ -925,6 +948,14 @@ export default function Startup() {
           </div>
         </div>
       </footer>
+
+      {authModal && (
+        <AuthModal
+          initialMode={authModal}
+          onClose={handleCloseAuthModal}
+          onModeChange={(nextMode) => setAuthModal(nextMode)}
+        />
+      )}
     </div>
   );
 }

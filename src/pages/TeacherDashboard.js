@@ -39,6 +39,8 @@ import {
   SearchIcon,
   ExternalLinkIcon,
   DownloadIcon,
+  getInitials,
+  getTeacherAvatarTheme,
 } from "./dashboard/shared";
 import HighlightedText from "./HighlightedText";
 import {
@@ -128,6 +130,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   const [submissionHubClassroomId, setSubmissionHubClassroomId] = useState("all");
   const [submissionHubFilter, setSubmissionHubFilter] = useState("all");
   const [submissionHubSort, setSubmissionHubSort] = useState("newest");
+  const [scanRosterFilter, setScanRosterFilter] = useState("all");
+  const [scanRosterSearch, setScanRosterSearch] = useState("");
+  const [loadedSubmissionInfo, setLoadedSubmissionInfo] = useState(null);
+  const [loadingSubmissionId, setLoadingSubmissionId] = useState(null);
 
   const [uploadMode, setUploadMode] =
     useState("");
@@ -550,6 +556,160 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     submissionHubSort,
   ]);
 
+  const scanStationAssignments = useMemo(() => {
+    const term = submissionHubSearch.trim().toLowerCase();
+    return assignments
+      .filter((assignment) => {
+        if (submissionHubClassroomId !== "all" && String(assignment.classroomId) !== String(submissionHubClassroomId)) {
+          return false;
+        }
+        if (term) {
+          const haystack = [
+            assignment.title,
+            assignment.classroomName,
+            assignment.classroomSubject,
+            assignment.classroomSection,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          if (!haystack.includes(term)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (submissionHubSort === "oldest") {
+          return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+        }
+        if (submissionHubSort === "dueDate") {
+          const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+          const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+          return aDue - bDue;
+        }
+        if (submissionHubSort === "title") {
+          return (a.title || "").localeCompare(b.title || "");
+        }
+        if (submissionHubSort === "recentSubmissions") {
+          return (b.submissions || 0) - (a.submissions || 0);
+        }
+        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      });
+  }, [assignments, submissionHubClassroomId, submissionHubSearch, submissionHubSort]);
+
+  const selectedScanAssignment = useMemo(() => {
+    if (!submissionHubFilter || submissionHubFilter === "all" || ["dueSoon", "noDueDate", "submitted", "notSubmitted"].includes(submissionHubFilter)) {
+      return null;
+    }
+    return assignments.find((a) => String(a.id) === String(submissionHubFilter)) || null;
+  }, [assignments, submissionHubFilter]);
+
+  const selectedScanRoster = useMemo(() => {
+    if (!selectedScanAssignment) return [];
+    const assignmentId = String(selectedScanAssignment.id);
+    const classroomId = String(selectedScanAssignment.classroomId);
+
+    const enrolledMembers = classroomMembers.filter(
+      (member) => String(member.classroomId) === classroomId
+    );
+
+    const assignmentSubmissions = submissions.filter(
+      (sub) =>
+        String(sub.assignmentId || sub.assignment_id) === assignmentId &&
+        String(sub.classroomId || sub.classroom_id) === classroomId
+    );
+
+    const submissionByStudentId = new Map(
+      assignmentSubmissions.map((s) => [String(s.studentId || s.student_id), s])
+    );
+
+    const enrolledIds = new Set(enrolledMembers.map((m) => String(m.studentId)));
+
+    const roster = enrolledMembers.map((member) => {
+      const sub = submissionByStudentId.get(String(member.studentId));
+      const isSubmitted = Boolean(sub);
+      const isGraded = Boolean(sub?.grade);
+
+      let status = "missing";
+      if (isGraded) {
+        status = "graded";
+      } else if (isSubmitted) {
+        if (
+          selectedScanAssignment.dueDate &&
+          new Date(sub.createdAt) > new Date(selectedScanAssignment.dueDate)
+        ) {
+          status = "late";
+        } else {
+          status = "submitted";
+        }
+      }
+
+      return {
+        studentId: member.studentId,
+        studentName: member.studentName || "Student",
+        studentEmail: member.studentEmail || "",
+        submission: sub || null,
+        isSubmitted,
+        isGraded,
+        status,
+        fileUrl: sub?.fileUrl || null,
+        essayTitle: sub?.essayTitle || "",
+        grade: sub?.grade || "",
+        feedback: sub?.feedback || "",
+        submittedAt: sub?.createdAt || null,
+        scanResult: sub?.scanResult || null,
+        transcribedText: sub?.transcribedText || "",
+      };
+    });
+
+    for (const sub of assignmentSubmissions) {
+      const sId = String(sub.studentId || sub.student_id);
+      if (!enrolledIds.has(sId)) {
+        const isGraded = Boolean(sub?.grade);
+        roster.push({
+          studentId: sId,
+          studentName: sub.studentName || "Student",
+          studentEmail: "",
+          submission: sub,
+          isSubmitted: true,
+          isGraded,
+          status: isGraded ? "graded" : "submitted",
+          fileUrl: sub?.fileUrl || null,
+          essayTitle: sub?.essayTitle || "",
+          grade: sub?.grade || "",
+          feedback: sub?.feedback || "",
+          submittedAt: sub?.createdAt || null,
+          scanResult: sub?.scanResult || null,
+          transcribedText: sub?.transcribedText || "",
+        });
+      }
+    }
+
+    return roster;
+  }, [selectedScanAssignment, classroomMembers, submissions]);
+
+  const filteredScanRoster = useMemo(() => {
+    let list = selectedScanRoster;
+    if (scanRosterFilter === "submitted") {
+      list = list.filter((r) => r.isSubmitted && !r.isGraded);
+    } else if (scanRosterFilter === "graded") {
+      list = list.filter((r) => r.isGraded);
+    } else if (scanRosterFilter === "missing") {
+      list = list.filter((r) => !r.isSubmitted);
+    }
+
+    const term = scanRosterSearch.trim().toLowerCase();
+    if (term) {
+      list = list.filter(
+        (r) =>
+          r.studentName.toLowerCase().includes(term) ||
+          r.studentEmail.toLowerCase().includes(term) ||
+          (r.essayTitle && r.essayTitle.toLowerCase().includes(term))
+      );
+    }
+
+    return list;
+  }, [selectedScanRoster, scanRosterFilter, scanRosterSearch]);
+
   const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, true);
 
   const loadTeacherData = useCallback(async () => {
@@ -564,7 +724,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     const { data: classroomRows, error: classroomError } =
       await supabase
         .from(CLASSROOM_TABLE)
-        .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section")
+        .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section, teacher_name")
         .eq("teacher_id", teacherId)
         .order("created_at", { ascending: false });
 
@@ -572,6 +732,29 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       setErrorMessage(classroomError.message);
       setIsLoading(false);
       return false;
+    }
+
+    if (profile?.id) {
+      try {
+        localStorage.setItem(`writecheck_teacher_${profile.id}`, JSON.stringify({
+          id: profile.id,
+          name: profile.full_name || profile.email || "Teacher",
+          email: profile.email || "",
+          avatarColor: profile.avatarColor || "amber",
+          avatarUrl: profile.avatarUrl || "",
+        }));
+      } catch {}
+
+      const missingTeacherName = (classroomRows ?? []).filter(
+        (c) => c.teacher_id === profile.id && (!c.teacher_name || c.teacher_name !== profile.full_name)
+      );
+      if (missingTeacherName.length > 0 && profile.full_name) {
+        supabase
+          .from(CLASSROOM_TABLE)
+          .update({ teacher_name: profile.full_name })
+          .in("id", missingTeacherName.map((c) => c.id))
+          .then(() => {});
+      }
     }
 
     const classIds =
@@ -607,12 +790,22 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       }));
     }
 
-    const { data: assignmentsData, error: assignmentError } =
+    let { data: assignmentsData, error: assignmentError } =
       await supabase
+        .from(ASSIGNMENT_TABLE)
+        .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date, accept_late_submissions")
+        .eq("teacher_id", teacherId)
+        .order("created_at", { ascending: false });
+
+    if (assignmentError && (assignmentError.message?.includes("accept_late_submissions") || assignmentError.code === "42703" || assignmentError.code === "PGRST204")) {
+      const fallback = await supabase
         .from(ASSIGNMENT_TABLE)
         .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date")
         .eq("teacher_id", teacherId)
         .order("created_at", { ascending: false });
+      assignmentsData = fallback.data;
+      assignmentError = fallback.error;
+    }
 
     if (assignmentError) {
       setErrorMessage(assignmentError.message);
@@ -877,6 +1070,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           .from(CLASSROOM_TABLE)
           .insert({
             teacher_id: profile.id,
+            teacher_name: profile.full_name || profile.email || "Teacher",
             classroom_name: className,
             classroom_code: classroomCode,
             subject: subject || null,
@@ -919,16 +1113,22 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         ? new Date(assignmentForm.dueDate).toISOString()
         : null;
 
-    const { error } =
-      await supabase
-        .from(ASSIGNMENT_TABLE)
-        .insert({
-          classroom_id: classroomId,
-          teacher_id: profile.id,
-          title: assignmentForm.title.trim(),
-          instructions: assignmentForm.instructions.trim() || null,
-          due_date: dueDate,
-        });
+    const payload = {
+      classroom_id: classroomId,
+      teacher_id: profile.id,
+      title: assignmentForm.title.trim(),
+      instructions: assignmentForm.instructions.trim() || null,
+      due_date: dueDate,
+      accept_late_submissions: assignmentForm.acceptLateSubmissions !== false,
+    };
+
+    let { error } = await supabase.from(ASSIGNMENT_TABLE).insert(payload);
+
+    if (error && (error.message?.includes("accept_late_submissions") || error.code === "42703" || error.code === "PGRST204")) {
+      delete payload.accept_late_submissions;
+      const retry = await supabase.from(ASSIGNMENT_TABLE).insert(payload);
+      error = retry.error;
+    }
 
     if (error) {
       setErrorMessage(error.message);
@@ -953,6 +1153,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       title: assignment.title || "",
       instructions: assignment.instructions || "",
       dueDate: toDateTimeLocalInput(assignment.dueDate),
+      acceptLateSubmissions: assignment.acceptLateSubmissions !== false,
     });
   };
 
@@ -974,16 +1175,29 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         ? new Date(editingAssignment.dueDate).toISOString()
         : null;
 
-      const { error: updateError } = await supabase
+      const updatePayload = {
+        classroom_id: editingAssignment.classroomId,
+        title: editingAssignment.title.trim(),
+        instructions: editingAssignment.instructions?.trim() || null,
+        due_date: dueDate,
+        accept_late_submissions: editingAssignment.acceptLateSubmissions !== false,
+      };
+
+      let { error: updateError } = await supabase
         .from(ASSIGNMENT_TABLE)
-        .update({
-          classroom_id: editingAssignment.classroomId,
-          title: editingAssignment.title.trim(),
-          instructions: editingAssignment.instructions?.trim() || null,
-          due_date: dueDate,
-        })
+        .update(updatePayload)
         .eq("id", editingAssignment.id)
         .eq("teacher_id", profile.id);
+
+      if (updateError && (updateError.message?.includes("accept_late_submissions") || updateError.code === "42703" || updateError.code === "PGRST204")) {
+        delete updatePayload.accept_late_submissions;
+        const retry = await supabase
+          .from(ASSIGNMENT_TABLE)
+          .update(updatePayload)
+          .eq("id", editingAssignment.id)
+          .eq("teacher_id", profile.id);
+        updateError = retry.error;
+      }
 
       if (updateError) {
         if (process.env.NODE_ENV === "development") {
@@ -1352,6 +1566,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setManualCheckTitle("");
     setManualCheckText("");
     setManualCheckFiles([]);
+    setManualImagePreview("");
     setManualCheckResult(null);
     setManualLiveOcrResult(null);
     setTranscribedText("");
@@ -1362,6 +1577,148 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setPlagiarismScanProgressText("");
     setIsEditingTranscript(false);
     setIsManualImageExpanded(false);
+    setLoadedSubmissionInfo(null);
+    setLoadingSubmissionId(null);
+    setSubmissionHubSearch("");
+    setSubmissionHubClassroomId("all");
+    setSubmissionHubFilter("all");
+    setSubmissionHubSort("newest");
+    setScanRosterFilter("all");
+    setScanRosterSearch("");
+  };
+
+  const handleSelectScanAssignment = (assignmentId) => {
+    setSubmissionHubFilter(assignmentId);
+    if (!assignmentId || assignmentId === "all") return;
+    const matched = assignments.find((a) => String(a.id) === String(assignmentId));
+    if (matched) {
+      if (submissionHubClassroomId !== "all" && String(submissionHubClassroomId) !== String(matched.classroomId)) {
+        setSubmissionHubClassroomId(String(matched.classroomId));
+      }
+      setManualCheckTitle(`${matched.title} — ${matched.classroomName || "Class"}`);
+    }
+  };
+
+  const handleSelectScanClassroom = (classroomId) => {
+    setSubmissionHubClassroomId(classroomId);
+    if (classroomId !== "all" && selectedScanAssignment && String(selectedScanAssignment.classroomId) !== String(classroomId)) {
+      setSubmissionHubFilter("all");
+    }
+  };
+
+  const handleLoadSubmissionToScanStation = async (sub) => {
+    if (!sub) return;
+    setManualCheckError("");
+    setManualCheckResult(null);
+    setManualLiveOcrResult(null);
+    setTranscriptionResult(null);
+    setLoadingSubmissionId(sub.id);
+
+    const title = `${selectedScanAssignment?.title || sub.essayTitle || "Essay"} — ${sub.studentName || "Student"}`;
+    setManualCheckTitle(title);
+
+    const fileUrl = sub.fileUrl || sub.file_url;
+    setLoadedSubmissionInfo({
+      id: sub.id,
+      studentName: sub.studentName || "Student",
+      essayTitle: sub.essayTitle || "Essay submission",
+      assignmentTitle: selectedScanAssignment?.title || sub.assignmentTitle || "Assignment",
+      fileUrl: fileUrl || null,
+      submittedAt: sub.createdAt,
+    });
+
+    try {
+      if (fileUrl) {
+        let blob = null;
+        try {
+          blob = await downloadSubmissionFileBlob(fileUrl);
+        } catch (fetchErr) {
+          console.warn("Could not download submission file blob directly:", fetchErr);
+        }
+
+        const isImgUrl = /\.(jpe?g|png|webp|gif|bmp|tiff)($|\?)/i.test(fileUrl);
+        const isImage = (blob && blob.type && blob.type.startsWith("image/")) || isImgUrl;
+
+        let cleanFilename = "";
+        try {
+          cleanFilename = decodeURIComponent(fileUrl.split("?")[0].split("/").pop());
+        } catch {
+          cleanFilename = "";
+        }
+        if (!cleanFilename || cleanFilename.length > 80 || cleanFilename.startsWith("blob:")) {
+          cleanFilename = `${sub.studentName || "student"}_${(sub.essayTitle || "essay").replace(/[^a-zA-Z0-9_-]/g, "_")}${isImage ? ".jpg" : ".pdf"}`;
+        }
+
+        if (blob) {
+          const file = new File([blob], cleanFilename, {
+            type: blob.type || (isImage ? "image/jpeg" : "application/pdf"),
+            lastModified: Date.now(),
+          });
+          setManualCheckFiles([file]);
+
+          if (isImage) {
+            setUploadMode("picture");
+            const previewUrl = URL.createObjectURL(blob);
+            setManualImagePreview(previewUrl);
+            if (sub.transcribedText) {
+              setTranscribedText(sub.transcribedText);
+            }
+          } else {
+            setUploadMode("file");
+            setManualImagePreview("");
+            // Automatically extract text in background so it's loaded and ready
+            try {
+              const fileTextResult = await readTextFromFiles([file]);
+              if (fileTextResult?.text) {
+                setManualCheckText(fileTextResult.text);
+              }
+            } catch (err) {
+              console.warn("Could not pre-read text from loaded submission file:", err);
+            }
+          }
+        } else {
+          // If blob download failed, fallback to text/transcribed or picture mode
+          if (isImage) {
+            setUploadMode("picture");
+            try {
+              const resolvedUrl = await resolveStorageImageUrl(fileUrl);
+              if (resolvedUrl) setManualImagePreview(resolvedUrl);
+            } catch {}
+            if (sub.transcribedText) setTranscribedText(sub.transcribedText);
+          } else if (sub.essayText || sub.transcribedText) {
+            setUploadMode("text");
+            setManualCheckText(sub.essayText || sub.transcribedText);
+          } else {
+            setUploadMode("file");
+          }
+        }
+      } else if (sub.essayText || sub.transcribedText) {
+        setUploadMode("text");
+        setManualCheckText(sub.essayText || sub.transcribedText);
+        setManualCheckFiles([]);
+        setManualImagePreview("");
+      }
+
+      if (sub.scanResult) {
+        const score = Math.round(sub.scanResult.plagiarism_score ?? sub.scanResult.score ?? 0);
+        setManualCheckResult({
+          ...sub.scanResult,
+          title: sub.essayTitle || title,
+          score,
+          label: sub.scanResult.label || (score >= 50 ? "High review" : score >= 20 ? "Medium review" : "Low review"),
+          tone: score >= 50 ? "red" : score >= 20 ? "amber" : "emerald",
+        });
+      }
+    } finally {
+      setLoadingSubmissionId(null);
+    }
+
+    const stationElem = document.getElementById("scan-station-form-top") || document.getElementById("scan-station-container");
+    if (stationElem) {
+      stationElem.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo({ top: 180, behavior: "smooth" });
+    }
   };
 
   const handleOpenReview = (submission) => {
@@ -2015,8 +2372,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         }}
       />
 
-      <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
+      <main className="mx-auto max-w-[1280px] px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+        <div className="mb-4 sm:mb-6">
           <StatusMessage
             error={errorMessage || submissionSyncError}
             message={successMessage}
@@ -2166,6 +2523,23 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   />
                 </label>
 
+                <div className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-3.5">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={assignmentForm.acceptLateSubmissions !== false}
+                      onChange={(e) => setAssignmentForm((f) => ({ ...f, acceptLateSubmissions: e.target.checked }))}
+                      className="mt-0.5 h-4 w-4 rounded border-[#dadce0] text-[#137333] focus:ring-[#137333]"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-[#202124]">Allow late submissions</span>
+                      <p className="mt-0.5 text-xs text-[#5f6368]">
+                        If checked, students can turn in work after the deadline (marked as Late). If unchecked, late submissions are blocked once overdue.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
                 <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#dadce0]">
                   <button
                     type="button"
@@ -2195,6 +2569,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             key={openedClassroomId}
             classroom={classrooms.find((c) => c.id === openedClassroomId)}
             assignments={assignments}
+            teacher={{ id: profile?.id, name: profile?.full_name || profile?.email || "Teacher", email: profile?.email || "" }}
             onBack={() => setOpenedClassroomId(null)}
               onOpenAssignment={(assignment) => {
                 setAssignmentFilterClassroomId(openedClassroomId);
@@ -2264,7 +2639,13 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
               </div>
             ) : (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {classrooms.map((classroom) => (
+                {classrooms.map((classroom) => {
+                  const creatorName = profile?.full_name || classroom.teacherName || "Teacher";
+                  const creatorInitials = getInitials(creatorName, "PX");
+                  const creatorTheme = getTeacherAvatarTheme(profile?.id || classroom.teacherId, profile?.avatarColor || "blue");
+                  const creatorAvatarUrl = (classroom.teacherId === profile?.id || !classroom.teacherId) ? (profile?.avatarUrl || "") : "";
+
+                  return (
                   <article
                     key={classroom.id}
                     className="group flex flex-col rounded-xl border border-[#dadce0] bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200"
@@ -2286,10 +2667,18 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       </div>
 
                       <div
-                        className="absolute -bottom-6 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-white text-[#137333] text-lg font-bold shadow-sm ring-4 ring-white border border-gray-100"
-                        title={profile?.full_name || "Teacher"}
+                        className="group/avatar absolute -bottom-6 right-4 z-10"
+                        title={`Instructor & Classroom Creator: ${creatorName}`}
                       >
-                        {(profile?.full_name || classroom.name || "T").slice(0, 2).toUpperCase()}
+                        <div
+                          className={`flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr ${creatorTheme.bg} text-white text-lg font-bold shadow-md ring-4 ring-white transition-all duration-200 group-hover/avatar:scale-105 select-none overflow-hidden`}
+                        >
+                          {creatorAvatarUrl ? (
+                            <img src={creatorAvatarUrl} alt={creatorName} className="h-full w-full object-cover" />
+                          ) : (
+                            creatorInitials
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -2357,7 +2746,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       </button>
                     </div>
                   </article>
-                ))}
+                );
+              })}
               </div>
             )}
           </div>
@@ -2369,63 +2759,63 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             renderAssignmentDetailsAndSubmissions(() => setSelectedAssignmentId(null))
           ) : (
             <div className="space-y-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#dadce0] pb-5">
-                <div>
-                  <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
-                    Classwork
-                  </h2>
-                  <p className="mt-1 text-sm text-[#5f6368]">
-                    Create and organize assignments, review student submissions, and grade work.
-                  </p>
-                </div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#dadce0] pb-4 sm:pb-5">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-[#202124]">
+                      Classwork
+                    </h2>
+                    <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-[#5f6368]">
+                      Create and organize assignments, review student submissions, and grade work.
+                    </p>
+                  </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  {classrooms.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <label htmlFor="section-filter" className="text-xs font-medium text-[#5f6368]">
-                        Section:
-                      </label>
-                      <select
-                        id="section-filter"
-                        value={assignmentFilterClassroomId}
-                        onChange={(e) => setAssignmentFilterClassroomId(e.target.value)}
-                        className="h-9 rounded-md border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                      >
-                        <option value="all">All sections</option>
-                        {classrooms.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name} — Section {c.section}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignmentForm({
+                          ...emptyAssignmentForm,
+                          classroomId: classrooms[0]?.id || "",
+                        });
+                        setIsCreatingAssignment(true);
+                      }}
+                      disabled={classrooms.length === 0}
+                      className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-[#137333] px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white shadow-xs transition hover:bg-[#0f5b28] disabled:cursor-not-allowed disabled:bg-gray-300 active:scale-[0.98] shrink-0"
+                    >
+                      <PlusIcon className="h-4 w-4" />
+                      <span>Create</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAssignmentForm({
-                        ...emptyAssignmentForm,
-                        classroomId: classrooms[0]?.id || "",
-                      });
-                      setIsCreatingAssignment(true);
-                    }}
-                    disabled={classrooms.length === 0}
-                    className="inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-[#0f5b28] disabled:cursor-not-allowed disabled:bg-gray-300 active:scale-[0.98]"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                    <span>Create</span>
-                  </button>
+                    {classrooms.length > 0 && (
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1 sm:flex-initial">
+                        <label htmlFor="section-filter" className="text-xs font-medium text-[#5f6368] shrink-0">
+                          Section:
+                        </label>
+                        <select
+                          id="section-filter"
+                          value={assignmentFilterClassroomId}
+                          onChange={(e) => setAssignmentFilterClassroomId(e.target.value)}
+                          className="h-9 w-full sm:w-auto max-w-[170px] sm:max-w-[220px] rounded-lg border border-[#dadce0] bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] truncate"
+                        >
+                          <option value="all">All sections</option>
+                          {classrooms.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} — Section {c.section}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
               {filteredAssignments.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
-                    <ClipboardIcon className="h-7 w-7" />
+                <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-8 sm:p-12 text-center max-w-md mx-auto my-6 sm:my-8">
+                  <div className="mx-auto flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                    <ClipboardIcon className="h-6 w-6 sm:h-7 sm:w-7" />
                   </div>
-                  <h3 className="mt-4 text-lg font-medium text-[#202124]">No assignments yet</h3>
-                  <p className="mt-1 text-sm text-[#5f6368]">
+                  <h3 className="mt-4 text-base sm:text-lg font-medium text-[#202124]">No assignments yet</h3>
+                  <p className="mt-1 text-xs sm:text-sm text-[#5f6368]">
                     {classrooms.length === 0
                       ? "Create a class first before creating assignments."
                       : "Click + Create to post your first assignment for this section."}
@@ -2440,7 +2830,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         });
                         setIsCreatingAssignment(true);
                       }}
-                      className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#0f5b28]"
+                      className="mt-4 sm:mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2 text-xs sm:text-sm font-medium text-white hover:bg-[#0f5b28]"
                     >
                       <PlusIcon className="h-4 w-4" />
                       <span>Create assignment</span>
@@ -2453,58 +2843,81 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <article
                       key={assignment.id}
                       onClick={() => setSelectedAssignmentId(assignment.id)}
-                      className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-xl border border-[#dadce0] bg-white p-4 transition-all hover:border-[#137333] hover:shadow-xs cursor-pointer"
+                      className="group flex flex-col gap-3 rounded-2xl border border-[#dadce0] bg-white p-4 sm:p-5 transition-all hover:border-[#137333] hover:shadow-xs cursor-pointer"
                     >
-                      <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
-                          <ClipboardIcon className="h-5 w-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-base font-medium text-[#202124] group-hover:text-[#137333] group-hover:underline truncate">
+                      {/* Card Top: Icon, Title, Section tag, and top-right Edit button */}
+                      <div className="flex items-start justify-between gap-3 min-w-0">
+                        <div className="flex items-start gap-3 sm:gap-3.5 min-w-0">
+                          <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                            <ClipboardIcon className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-sm sm:text-base font-medium text-[#202124] group-hover:text-[#137333] group-hover:underline truncate">
                               {assignment.title}
                             </h3>
-                            <span className="rounded bg-[#f1f3f4] px-2 py-0.5 text-xs font-medium text-[#3c4043]">
-                              {assignment.classroomName} • Section {assignment.classroomSection}
-                            </span>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className="rounded bg-[#f1f3f4] px-2 py-0.5 text-[11px] sm:text-xs font-medium text-[#3c4043]">
+                                {assignment.classroomName} • Section {assignment.classroomSection}
+                              </span>
+                            </div>
+                            {assignment.instructions && (
+                              <p className="mt-1.5 text-xs text-[#5f6368] line-clamp-1 max-w-xl">
+                                {assignment.instructions}
+                              </p>
+                            )}
                           </div>
-                          {assignment.instructions && (
-                            <p className="mt-0.5 text-xs text-[#5f6368] line-clamp-1 max-w-xl">
-                              {assignment.instructions}
-                            </p>
-                          )}
                         </div>
-                      </div>
 
-                      <div
-                        className="flex items-center gap-3 shrink-0 self-end sm:self-auto"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <span className="text-xs text-[#5f6368]">
-                          Due {formatDateTime(assignment.dueDate)}
-                        </span>
-
-                        <span className="rounded-full bg-[#e6f4ea] px-3 py-1 text-xs font-medium text-[#137333]">
-                          {assignment.submissions} turned in
-                        </span>
-
+                        {/* Top-right Edit button on mobile */}
                         <button
                           type="button"
-                          onClick={() => handleOpenEditAssignment(assignment)}
-                          className="rounded-full p-1.5 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#202124]"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditAssignment(assignment);
+                          }}
+                          className="sm:hidden shrink-0 rounded-full p-2 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#202124]"
                           title="Edit assignment"
+                          aria-label="Edit assignment"
                         >
                           <EditIcon className="h-4 w-4" />
                         </button>
+                      </div>
 
-                        <button
-                          type="button"
-                          onClick={() => setSelectedAssignmentId(assignment.id)}
-                          className="inline-flex items-center gap-1 rounded-full border border-[#dadce0] px-3 py-1 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa] hover:border-[#137333]"
-                        >
-                          <span>Student work</span>
-                          <span aria-hidden="true">→</span>
-                        </button>
+                      {/* Card Bottom: Due Date, Turned in Badge, and Student Work Action */}
+                      <div
+                        className="mt-1 pt-3 border-t border-[#f1f3f4] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between sm:justify-start gap-2.5 flex-wrap">
+                          <span className="text-xs text-[#5f6368]">
+                            Due {formatDateTime(assignment.dueDate)}
+                          </span>
+
+                          <span className="rounded-full bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-semibold text-[#137333]">
+                            {assignment.submissions} turned in
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditAssignment(assignment)}
+                            className="hidden sm:inline-flex rounded-full p-1.5 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#202124]"
+                            title="Edit assignment"
+                            aria-label="Edit assignment"
+                          >
+                            <EditIcon className="h-4 w-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAssignmentId(assignment.id)}
+                            className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-full border border-[#dadce0] px-4 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333] hover:text-[#137333]"
+                          >
+                            <span>Student work</span>
+                            <span aria-hidden="true">→</span>
+                          </button>
+                        </div>
                       </div>
                     </article>
                   ))}
@@ -2516,46 +2929,155 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
           {activePage === "upload" && (
             <div>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-                    Manual check
-                  </p>
-                  <h2 className="mt-2 text-4xl font-black tracking-normal">
-                    Upload station
-                  </h2>
-                  <p className="mt-2 max-w-[680px] text-base font-semibold leading-7 text-gray-500">
-                    Review student work from a photo, document, readable file, or pasted text.
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-[#dadce0] bg-white p-4 shadow-2xs">
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_repeat(3,minmax(150px,0.45fr))]">
-                    <label className="relative block">
-                      <span className="sr-only">Search assignments</span>
-                      <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
-                      <input type="search" value={submissionHubSearch} onChange={(event) => setSubmissionHubSearch(event.target.value)} placeholder="Search assignment, subject, or class" className="h-10 w-full rounded-lg border border-[#dadce0] bg-white pl-9 pr-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]" />
-                    </label>
-                    <select value={submissionHubClassroomId} onChange={(event) => setSubmissionHubClassroomId(event.target.value)} aria-label="Filter by class and section" className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none focus:border-[#137333]">
-                      <option value="all">All classes</option>
-                      {classrooms.map((classroom) => <option key={classroom.id} value={classroom.id}>{classroom.name} — {classroom.section || "Standard"}</option>)}
-                    </select>
-                    <select value={submissionHubFilter} onChange={(event) => setSubmissionHubFilter(event.target.value)} aria-label="Filter assignments" className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none focus:border-[#137333]">
-                      <option value="all">All assignments</option><option value="dueSoon">Due soon</option><option value="noDueDate">No due date</option><option value="submitted">Submitted</option><option value="notSubmitted">Not submitted</option>
-                    </select>
-                    <select value={submissionHubSort} onChange={(event) => setSubmissionHubSort(event.target.value)} aria-label="Sort assignments" className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none focus:border-[#137333]">
-                      <option value="newest">Newest</option><option value="oldest">Oldest</option><option value="dueDate">Due date</option><option value="recentSubmissions">Most recent submissions</option>
-                    </select>
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wider text-[#137333]">
+                      Manual check
+                    </p>
+                    <h2 className="mt-1 text-3xl sm:text-4xl font-black tracking-normal text-[#202124]">
+                      Upload station
+                    </h2>
+                    <p className="mt-1 max-w-[680px] text-sm sm:text-base font-semibold leading-relaxed text-[#5f6368]">
+                      Review student work from a photo, document, readable file, or pasted text.
+                    </p>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleResetManualCheck}
-                  className="inline-flex h-11 w-fit items-center justify-center rounded-lg border border-gray-200 bg-white px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
-                >
-                  Clear station
-                </button>
+                {/* Interactive Filter & Scan Station Toolbar */}
+                <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
+                  <div className="flex-1 rounded-xl border border-[#dadce0] bg-white p-3 shadow-2xs">
+                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.4fr)_repeat(3,minmax(140px,1fr))]">
+                      {/* 1. Search */}
+                      <div className="relative block">
+                        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
+                        <input
+                          type="search"
+                          value={submissionHubSearch}
+                          onChange={(event) => setSubmissionHubSearch(event.target.value)}
+                          placeholder="Search assignment, subject, or class"
+                          className="h-10 w-full rounded-lg border border-[#dadce0] bg-white pl-9 pr-8 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] placeholder:text-[#80868b]"
+                        />
+                        {submissionHubSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setSubmissionHubSearch("")}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5f6368] hover:text-[#202124] p-1 rounded-full hover:bg-gray-100"
+                            title="Clear search"
+                          >
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 2. All Classes Dropdown */}
+                      <select
+                        value={submissionHubClassroomId}
+                        onChange={(event) => handleSelectScanClassroom(event.target.value)}
+                        aria-label="Filter by class and section"
+                        className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs sm:text-sm font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                      >
+                        <option value="all">All classes ({classrooms.length})</option>
+                        {classrooms.map((classroom) => (
+                          <option key={classroom.id} value={classroom.id}>
+                            {classroom.name} — {classroom.section || "Standard"}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* 3. All Assignments Dropdown */}
+                      <select
+                        value={submissionHubFilter}
+                        onChange={(event) => handleSelectScanAssignment(event.target.value)}
+                        aria-label="Filter assignments"
+                        className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs sm:text-sm font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                      >
+                        <option value="all">
+                          {scanStationAssignments.length === 0
+                            ? "No assignments"
+                            : `All assignments (${scanStationAssignments.length})`}
+                        </option>
+                        {scanStationAssignments.map((assignment) => (
+                          <option key={assignment.id} value={assignment.id}>
+                            {assignment.title} ({assignment.classroomName || "Class"})
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* 4. Sort Dropdown */}
+                      <select
+                        value={submissionHubSort}
+                        onChange={(event) => setSubmissionHubSort(event.target.value)}
+                        aria-label="Sort assignments"
+                        className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs sm:text-sm font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                      >
+                        <option value="newest">Newest</option>
+                        <option value="oldest">Oldest</option>
+                        <option value="dueDate">Due date</option>
+                        <option value="title">Assignment name (A–Z)</option>
+                        <option value="recentSubmissions">Most submissions</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 5. Clear Station Button */}
+                  <button
+                    type="button"
+                    onClick={handleResetManualCheck}
+                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-[#dadce0] bg-white px-4 text-xs sm:text-sm font-semibold text-[#3c4043] transition hover:bg-[#f8f9fa] hover:text-[#202124] hover:border-[#c4c7c5] shadow-2xs active:scale-[0.98]"
+                    title="Clear uploaded files, OCR text, and reset filters"
+                  >
+                    <svg className="h-4 w-4 text-[#5f6368]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>Clear station</span>
+                  </button>
+                </div>
+
+                {/* Linked Assignment Banner */}
+                {selectedScanAssignment && (
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-[#c2e7ff] bg-[#f0f7ff] p-3.5 sm:px-4 shadow-2xs animate-fadeIn">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#1967d2] text-white shadow-2xs">
+                        <ClipboardIcon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="rounded bg-[#d3e3fd] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#041e49]">
+                            Linked Assignment
+                          </span>
+                          <span className="text-xs font-medium text-[#5f6368]">
+                            {selectedScanAssignment.classroomName} • Section {selectedScanAssignment.classroomSection || "Standard"}
+                          </span>
+                        </div>
+                        <h3 className="mt-0.5 truncate text-sm sm:text-base font-bold text-[#202124]">
+                          {selectedScanAssignment.title}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0 flex-wrap">
+                      <div className="flex items-center gap-1.5 text-xs text-[#5f6368] bg-white border border-[#dadce0] px-3 py-1.5 rounded-lg shadow-2xs">
+                        <span className="font-semibold text-[#202124]">
+                          {selectedScanRoster.filter((r) => r.isSubmitted).length} / {selectedScanRoster.length}
+                        </span>
+                        <span>submitted</span>
+                      </div>
+                      {selectedScanAssignment.dueDate && (
+                        <div className="text-xs text-[#5f6368] bg-white border border-[#dadce0] px-3 py-1.5 rounded-lg shadow-2xs">
+                          <span>Due: {formatDateTime(selectedScanAssignment.dueDate)}</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSubmissionHubFilter("all")}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#1967d2] hover:text-[#041e49] hover:bg-[#d3e3fd]/40 px-2.5 py-1.5 rounded-lg transition"
+                      >
+                        Unlink
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6 lg:min-h-[720px]">
@@ -2681,9 +3203,44 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   </div>
                 ) : (
                   <form
+                    id="scan-station-form-top"
                     onSubmit={handleRunManualCheck}
                     className="flex min-h-[560px] flex-col rounded-lg border border-gray-200 bg-gray-50 p-4 sm:p-6"
                   >
+                    {loadedSubmissionInfo && (
+                      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-950 shadow-2xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#137333] text-white shadow-xs">
+                            <CheckIcon className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[11px] font-bold uppercase tracking-wider text-[#137333]">
+                                Auto-loaded Student Submission
+                              </span>
+                              <span className="rounded bg-[#e6f4ea] border border-[#ceead6] px-2 py-0.2 text-[10px] font-black text-[#137333]">
+                                Active in station
+                              </span>
+                            </div>
+                            <p className="text-sm font-bold text-[#202124] truncate">
+                              {loadedSubmissionInfo.studentName} — {loadedSubmissionInfo.essayTitle}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleResetManualCheck();
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#dadce0] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4043] transition hover:bg-[#f1f3f4] hover:text-[#202124] shadow-2xs"
+                          >
+                            <span>Clear station</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid gap-3 md:grid-cols-3">
                     {uploadModes.map(({ id, label, icon: Icon }) => {
                       const isActive =
@@ -2788,49 +3345,146 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           </div>
                         )}
 
-                        <label className="flex flex-1 min-h-[340px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white px-6 text-center transition hover:border-emerald-600 hover:bg-emerald-50">
-                          {manualImagePreview ? (
-                            <div className="flex w-full flex-col items-center py-4">
-                              <img
-                                src={manualImagePreview}
-                                alt="Manual check preview"
-                                className="max-h-[300px] w-full rounded-lg object-contain"
-                              />
-                              <p className="mt-3 text-xs font-bold text-gray-500">
-                                Click or drop another image to replace
-                              </p>
+                        {uploadMode === "file" && manualCheckFiles.length > 0 ? (
+                          <div className="flex flex-1 flex-col justify-between rounded-xl border-2 border-emerald-300 bg-white p-5 sm:p-6 shadow-sm">
+                            <div className="space-y-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-100 pb-4">
+                                <div className="flex items-center gap-3.5 min-w-0">
+                                  <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-800 shadow-2xs border border-emerald-200">
+                                    <FileIcon className="h-7 w-7" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="rounded-md bg-emerald-700 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-white">
+                                        {getFileKind(manualCheckFiles[0])}
+                                      </span>
+                                      <span className="text-xs font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                                        {formatFileSize(manualCheckFiles[0].size)}
+                                      </span>
+                                      {loadedSubmissionInfo && (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-2.5 py-0.5 text-[11px] font-bold text-[#137333]">
+                                          <CheckIcon className="h-3 w-3 text-[#137333]" />
+                                          Auto-loaded from {loadedSubmissionInfo.studentName}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h4 className="mt-1 text-base sm:text-lg font-black text-gray-950 truncate max-w-lg">
+                                      {manualCheckFiles[0].name}
+                                    </h4>
+                                    <p className="text-xs text-[#5f6368] truncate">
+                                      {loadedSubmissionInfo
+                                        ? `Submission for ${loadedSubmissionInfo.assignmentTitle || "Assignment"} • Ready to scan`
+                                        : "Attached file ready for plagiarism and originality verification"}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-[#dadce0] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4043] hover:bg-[#f1f3f4] transition shadow-2xs">
+                                    <span>Change file</span>
+                                    <input
+                                      type="file"
+                                      accept={ACCEPTED_CHECK_FILE_TYPES}
+                                      multiple
+                                      onChange={handleManualCheckFiles}
+                                      className="sr-only"
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setManualCheckFiles([]);
+                                      setManualCheckText("");
+                                    }}
+                                    className="rounded-lg border border-[#dadce0] bg-white px-3 py-1.5 text-xs font-semibold text-[#c5221f] hover:bg-red-50 hover:border-red-200 transition shadow-2xs"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+
+                              {manualCheckText ? (
+                                <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+                                  <div className="flex items-center justify-between border-b border-emerald-100 pb-2 mb-2">
+                                    <span className="text-xs font-black uppercase tracking-wider text-emerald-900">
+                                      Loaded Document Text Content
+                                    </span>
+                                    <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
+                                      {manualCheckText.split(/\s+/).filter(Boolean).length} words
+                                    </span>
+                                  </div>
+                                  <div className="max-h-48 overflow-y-auto font-mono text-xs leading-relaxed text-gray-800 whitespace-pre-wrap pr-1 bg-white p-3 rounded-lg border border-emerald-100">
+                                    {manualCheckText.slice(0, 1200)}
+                                    {manualCheckText.length > 1200 ? "..." : ""}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 text-xs font-semibold text-emerald-900">
+                                  <SparklesIcon className="h-5 w-5 text-emerald-700 shrink-0" />
+                                  <span>Student document is loaded automatically into the scan station. Click <strong>"Scan for plagiarism"</strong> below to run originality and Copyleaks checks.</span>
+                                </div>
+                              )}
                             </div>
-                          ) : (
-                            <>
-                              <span className="grid h-20 w-20 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
-                                {uploadMode === "picture" ? (
-                                  <ImageIcon className="h-10 w-10" />
-                                ) : (
-                                  <UploadIcon className="h-10 w-10" />
+
+                            <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 text-xs text-[#5f6368]">
+                              <span className="inline-flex items-center gap-1 font-medium">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                                Submission loaded automatically — no upload required
+                              </span>
+                              <span className="font-semibold text-emerald-800">Ready to scan</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="flex flex-1 min-h-[340px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white px-6 text-center transition hover:border-emerald-600 hover:bg-emerald-50">
+                            {manualImagePreview ? (
+                              <div className="flex w-full flex-col items-center py-4">
+                                {loadedSubmissionInfo && (
+                                  <div className="mb-3 inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-3 py-1 text-xs font-bold text-[#137333]">
+                                    <CheckIcon className="h-3.5 w-3.5 text-[#137333]" />
+                                    Auto-loaded from {loadedSubmissionInfo.studentName}'s handwriting
+                                  </div>
                                 )}
-                              </span>
-                              <span className="mt-6 text-2xl font-black text-gray-950">
-                                {uploadMode === "picture" ? "Upload student handwriting" : "Upload a file"}
-                              </span>
-                              <span className="mt-2 max-w-[520px] text-sm font-semibold leading-6 text-gray-500">
-                                {uploadMode === "picture"
-                                  ? "Select a PNG, JPG, JPEG, or WEBP photo of handwritten student work to transcribe."
-                                  : "Select a PDF, DOCX, TXT, MD, CSV, JSON, or other supported classroom file."}
-                              </span>
-                            </>
-                          )}
-                          <input
-                            type="file"
-                            accept={
-                              uploadMode === "picture"
-                                ? "image/png,image/jpeg,image/jpg,image/webp"
-                                : ACCEPTED_CHECK_FILE_TYPES
-                            }
-                            multiple
-                            onChange={handleManualCheckFiles}
-                            className="sr-only"
-                          />
-                        </label>
+                                <img
+                                  src={manualImagePreview}
+                                  alt="Manual check preview"
+                                  className="max-h-[300px] w-full rounded-lg object-contain"
+                                />
+                                <p className="mt-3 text-xs font-bold text-gray-500">
+                                  Click or drop another image to replace
+                                </p>
+                              </div>
+                            ) : (
+                              <>
+                                <span className="grid h-20 w-20 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
+                                  {uploadMode === "picture" ? (
+                                    <ImageIcon className="h-10 w-10" />
+                                  ) : (
+                                    <UploadIcon className="h-10 w-10" />
+                                  )}
+                                </span>
+                                <span className="mt-6 text-2xl font-black text-gray-950">
+                                  {uploadMode === "picture" ? "Upload student handwriting" : "Upload a file"}
+                                </span>
+                                <span className="mt-2 max-w-[520px] text-sm font-semibold leading-6 text-gray-500">
+                                  {uploadMode === "picture"
+                                    ? "Select a PNG, JPG, JPEG, or WEBP photo of handwritten student work to transcribe."
+                                    : "Select a PDF, DOCX, TXT, MD, CSV, JSON, or other supported classroom file."}
+                                </span>
+                              </>
+                            )}
+                            <input
+                              type="file"
+                              accept={
+                                uploadMode === "picture"
+                                  ? "image/png,image/jpeg,image/jpg,image/webp"
+                                  : ACCEPTED_CHECK_FILE_TYPES
+                              }
+                              multiple
+                              onChange={handleManualCheckFiles}
+                              className="sr-only"
+                            />
+                          </label>
+                        )}
 
                         {uploadMode === "picture" && manualCheckFiles.length > 0 && (
                           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3.5 shadow-sm">
@@ -2998,7 +3652,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           </div>
                         )}
 
-                        {manualCheckFiles.length > 0 && (
+                        {manualCheckFiles.length > 0 && uploadMode !== "file" && (
                           <div className="mt-5 rounded-lg border border-gray-200 bg-white">
                             <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
                               <span>File</span>
@@ -3417,193 +4071,468 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 </section>
                 )}
               </div>
+
+              {/* Linked Assignment Submissions Roster */}
+              {selectedScanAssignment && (
+                <div className="mt-8 rounded-2xl border border-[#dadce0] bg-white p-4 sm:p-6 shadow-2xs animate-fadeIn">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#dadce0] pb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#e6f4ea] text-[#137333]">
+                          <UsersIcon className="h-4 w-4" />
+                        </span>
+                        <h3 className="text-base sm:text-lg font-bold text-[#202124]">
+                          Student Submissions & Roster
+                        </h3>
+                      </div>
+                      <p className="mt-1 text-xs sm:text-sm text-[#5f6368]">
+                        Enrolled students in {selectedScanAssignment.classroomName} • Section {selectedScanAssignment.classroomSection || "Standard"}
+                      </p>
+                    </div>
+
+                    {/* Stats pills */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="rounded-full bg-[#f1f3f4] px-3 py-1 text-xs font-semibold text-[#3c4043]">
+                        {selectedScanRoster.length} students
+                      </span>
+                      <span className="rounded-full bg-[#e8f0fe] px-3 py-1 text-xs font-semibold text-[#1967d2]">
+                        {selectedScanRoster.filter((r) => r.isSubmitted && !r.isGraded).length} turned in
+                      </span>
+                      <span className="rounded-full bg-[#e6f4ea] px-3 py-1 text-xs font-semibold text-[#137333]">
+                        {selectedScanRoster.filter((r) => r.isGraded).length} graded
+                      </span>
+                      {selectedScanRoster.filter((r) => !r.isSubmitted).length > 0 && (
+                        <span className="rounded-full bg-[#fef7e0] px-3 py-1 text-xs font-semibold text-[#b06000]">
+                          {selectedScanRoster.filter((r) => !r.isSubmitted).length} missing
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Filter tabs and student search */}
+                  <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                      {[
+                        { id: "all", label: "All", count: selectedScanRoster.length },
+                        { id: "submitted", label: "Turned In", count: selectedScanRoster.filter((r) => r.isSubmitted && !r.isGraded).length },
+                        { id: "graded", label: "Graded", count: selectedScanRoster.filter((r) => r.isGraded).length },
+                        { id: "missing", label: "Missing", count: selectedScanRoster.filter((r) => !r.isSubmitted).length },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setScanRosterFilter(tab.id)}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                            scanRosterFilter === tab.id
+                              ? "bg-[#137333] text-white shadow-2xs"
+                              : "bg-[#f1f3f4] text-[#5f6368] hover:bg-[#e8eaed] hover:text-[#202124]"
+                          }`}
+                        >
+                          {tab.label} ({tab.count})
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="relative min-w-[200px] sm:max-w-xs">
+                      <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#5f6368]" />
+                      <input
+                        type="search"
+                        value={scanRosterSearch}
+                        onChange={(e) => setScanRosterSearch(e.target.value)}
+                        placeholder="Search student or essay..."
+                        className="h-8 w-full rounded-lg border border-[#dadce0] bg-white pl-8 pr-3 text-xs text-[#202124] outline-none transition focus:border-[#137333] focus:ring-1 focus:ring-[#e6f4ea]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Roster table / list */}
+                  <div className="mt-4 divide-y divide-[#f1f3f4] overflow-hidden rounded-xl border border-[#dadce0]">
+                    {filteredScanRoster.length === 0 ? (
+                      <div className="p-8 text-center text-xs sm:text-sm text-[#5f6368]">
+                        No students found matching this criteria.
+                      </div>
+                    ) : (
+                      filteredScanRoster.map((item) => {
+                        const initials = item.studentName
+                          .split(" ")
+                          .map((n) => n[0])
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .join("")
+                          .toUpperCase() || "S";
+
+                        return (
+                          <div
+                            key={item.studentId}
+                            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 hover:bg-[#f8f9fa] transition"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#e8f0fe] text-xs font-bold text-[#1967d2]">
+                                {initials}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-semibold text-[#202124] truncate">
+                                    {item.studentName}
+                                  </p>
+                                  {item.isGraded ? (
+                                    <span className="rounded-full bg-[#e6f4ea] px-2 py-0.5 text-[10px] font-bold text-[#137333]">
+                                      Graded: {item.grade}/100
+                                    </span>
+                                  ) : item.isSubmitted ? (
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                      item.status === "late"
+                                        ? "bg-[#fef7e0] text-[#b06000]"
+                                        : "bg-[#e8f0fe] text-[#1967d2]"
+                                    }`}>
+                                      {item.status === "late" ? "Turned in late" : "Turned in"}
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-full bg-[#f1f3f4] px-2 py-0.5 text-[10px] font-medium text-[#5f6368]">
+                                      Missing
+                                    </span>
+                                  )}
+                                  {item.scanResult && (
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                      (item.scanResult.plagiarism_score ?? item.scanResult.score ?? 0) >= 50
+                                        ? "bg-red-50 text-red-700"
+                                        : (item.scanResult.plagiarism_score ?? item.scanResult.score ?? 0) >= 20
+                                          ? "bg-amber-50 text-amber-700"
+                                          : "bg-emerald-50 text-emerald-700"
+                                    }`}>
+                                      {Math.round(item.scanResult.plagiarism_score ?? item.scanResult.score ?? 0)}% similarity
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-[#5f6368] truncate">
+                                  {item.studentEmail || (item.essayTitle ? `Essay: ${item.essayTitle}` : "No email")}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {item.isSubmitted ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={loadingSubmissionId === item.submission?.id}
+                                    onClick={() => handleLoadSubmissionToScanStation(item.submission)}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#dadce0] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#3c4043] transition hover:bg-[#f1f3f4] hover:text-[#202124] shadow-2xs disabled:opacity-60"
+                                    title="Load student file/essay automatically into Scan station"
+                                  >
+                                    {loadingSubmissionId === item.submission?.id ? (
+                                      <>
+                                        <span className="h-3.5 w-3.5 border-2 border-[#137333] border-t-transparent rounded-full animate-spin shrink-0" />
+                                        <span>Loading...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <UploadIcon className="h-3.5 w-3.5 text-[#5f6368]" />
+                                        <span>Load in Scan Station</span>
+                                      </>
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenReview(item.submission)}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-[#137333] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#0f5b28] shadow-2xs"
+                                  >
+                                    <EditIcon className="h-3.5 w-3.5" />
+                                    <span>{item.isGraded ? "Edit Grade" : "Review & Grade"}</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-xs font-medium text-[#80868b] italic">
+                                  Awaiting submission
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {activePage === "submissions" && (
-            <>
-              <div className="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-gray-200 bg-white p-4">
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Subject
-                  <select value={gradeSubject} onChange={(event) => {
-                    setGradeSubject(event.target.value);
-                    setSelectedSubmissionsClassroomId("all");
-                    setSelectedSubmissionsAssignmentId("all");
-                    setSelectedAssignmentId(null);
-                  }} className="h-10 rounded-lg border border-gray-300 px-3">
-                    <option value="all">All subjects</option>
-                    {gradeSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1 text-sm font-medium">
-                  Classroom
-                  <select value={selectedSubmissionsClassroomId} onChange={(event) => {
-                    setSelectedSubmissionsClassroomId(event.target.value);
-                    setSelectedSubmissionsAssignmentId("all");
-                    setSelectedAssignmentId(null);
-                  }} className="h-10 rounded-lg border border-gray-300 px-3">
-                    <option value="all">All classrooms</option>
-                    {classrooms.filter((c) => gradeSubject === "all" || (c.subject && c.subject !== "No subject" ? c.subject : c.name) === gradeSubject).map((c) => <option key={c.id} value={c.id}>{c.name} ? {c.section}</option>)}
-                  </select>
-                </label>
-                <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-                  Classwork
-                  <select value={selectedSubmissionsAssignmentId} onChange={(event) => {
-                    setSelectedSubmissionsAssignmentId(event.target.value);
-                    setSelectedAssignmentId(null);
-                  }} className="h-10 max-w-full rounded-lg border border-gray-300 px-3">
-                    <option value="all">All classwork</option>
-                    {gradeClasswork.map((a) => <option key={a.id} value={a.id}>{a.title} ? {a.classroomName} ({a.classroomSection})</option>)}
-                  </select>
-                </label>
-                <button type="button" onClick={() => {
-                  setGradeSubject("all");
-                  setSelectedSubmissionsClassroomId("all");
-                  setSelectedSubmissionsAssignmentId("all");
-                  setSelectedAssignmentId(null);
-                }} className="h-10 px-3 text-sm font-medium text-emerald-700 hover:underline">Clear filters</button>
-              </div>
-            {selectedAssignment ? (
-              <div className="space-y-4">
-                <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between shadow-2xs">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-extrabold uppercase text-gray-500">
-                      Viewing Section:
-                    </span>
-                    <span className="inline-flex items-center rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800">
-                      {selectedAssignment.classroomName} — Section: {selectedAssignment.classroomSection || "Standard"}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="flex items-center gap-2 text-xs font-extrabold text-gray-700">
-                      <span>Switch Assignment:</span>
-                      <select
-                        value={selectedAssignment.id}
-                        onChange={(e) => setSelectedAssignmentId(e.target.value)}
-                        className="h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold outline-none transition focus:border-emerald-600"
-                      >
-                        {gradeClasswork.filter((a) => selectedSubmissionsAssignmentId === "all" || String(a.id) === String(selectedSubmissionsAssignmentId) || a.id === selectedAssignment.id).map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.classroomName} ({a.classroomSection || "Standard"}) — {a.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedAssignmentId(null)}
-                      className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-bold text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                    >
-                      All Assignments
-                    </button>
-                  </div>
-                </div>
-
-                {renderAssignmentDetailsAndSubmissions(() => setSelectedAssignmentId(null))}
-              </div>
-            ) : (
-              <div className="space-y-6">
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#dadce0] pb-4 sm:pb-5">
                 <div>
-                  <p className="text-sm font-extrabold uppercase tracking-normal text-emerald-700">
-                    Student work
-                  </p>
-                  <h2 className="mt-2 text-4xl font-black tracking-normal">
-                    Submissions Hub
+                  <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-[#202124]">
+                    Grades & Submissions
                   </h2>
-                  <p className="mt-1 text-sm font-semibold text-gray-500">
-                    Select an assignment to view its section-isolated student submissions and grades.
+                  <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-[#5f6368]">
+                    Review student work, check originality scores, and grade submissions organized by section.
                   </p>
                 </div>
+              </div>
 
-                {assignments.length === 0 ? (
-                  <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
-                    <p className="text-base font-bold text-gray-500">
-                      No assignments found. Create an assignment to start receiving submissions.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActivePage("assignments")}
-                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-extrabold text-white hover:bg-emerald-800 transition"
+              {/* Google Classroom Filter Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#dadce0] bg-white p-3.5 sm:p-4 shadow-2xs">
+                <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap flex-1 min-w-0">
+                  {/* Subject filter */}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <label htmlFor="filter-subject" className="text-xs font-medium text-[#5f6368] shrink-0">
+                      Subject:
+                    </label>
+                    <select
+                      id="filter-subject"
+                      value={gradeSubject}
+                      onChange={(event) => {
+                        setGradeSubject(event.target.value);
+                        setSelectedSubmissionsClassroomId("all");
+                        setSelectedSubmissionsAssignmentId("all");
+                        setSelectedAssignmentId(null);
+                      }}
+                      className="h-9 rounded-lg border border-[#dadce0] bg-[#fafafa] hover:bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] max-w-[150px] sm:max-w-[180px] truncate"
                     >
-                      <PlusIcon className="h-4 w-4" />
-                      <span>Create assignment</span>
-                    </button>
+                      <option value="all">All subjects</option>
+                      {gradeSubjects.map((subject) => (
+                        <option key={subject} value={subject}>{subject}</option>
+                      ))}
+                    </select>
                   </div>
-                ) : (
-                  submissionHubGroups.size === 0 ? (
-                    <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-10 text-center">
+
+                  {/* Classroom filter */}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <label htmlFor="filter-classroom" className="text-xs font-medium text-[#5f6368] shrink-0">
+                      Class:
+                    </label>
+                    <select
+                      id="filter-classroom"
+                      value={selectedSubmissionsClassroomId}
+                      onChange={(event) => {
+                        setSelectedSubmissionsClassroomId(event.target.value);
+                        setSelectedSubmissionsAssignmentId("all");
+                        setSelectedAssignmentId(null);
+                      }}
+                      className="h-9 rounded-lg border border-[#dadce0] bg-[#fafafa] hover:bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] max-w-[180px] sm:max-w-[220px] truncate"
+                    >
+                      <option value="all">All classrooms</option>
+                      {classrooms
+                        .filter((c) => gradeSubject === "all" || (c.subject && c.subject !== "No subject" ? c.subject : c.name) === gradeSubject)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>{c.name} • Section {c.section}</option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Classwork filter */}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <label htmlFor="filter-classwork" className="text-xs font-medium text-[#5f6368] shrink-0">
+                      Assignment:
+                    </label>
+                    <select
+                      id="filter-classwork"
+                      value={selectedSubmissionsAssignmentId}
+                      onChange={(event) => {
+                        setSelectedSubmissionsAssignmentId(event.target.value);
+                        setSelectedAssignmentId(null);
+                      }}
+                      className="h-9 rounded-lg border border-[#dadce0] bg-[#fafafa] hover:bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] max-w-[200px] sm:max-w-[240px] truncate"
+                    >
+                      <option value="all">All assignments</option>
+                      {gradeClasswork.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.title} • {a.classroomName} ({a.classroomSection})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {(gradeSubject !== "all" || selectedSubmissionsClassroomId !== "all" || selectedSubmissionsAssignmentId !== "all") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGradeSubject("all");
+                      setSelectedSubmissionsClassroomId("all");
+                      setSelectedSubmissionsAssignmentId("all");
+                      setSelectedAssignmentId(null);
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#137333] hover:bg-[#e6f4ea] px-3 py-1.5 rounded-full transition shrink-0"
+                  >
+                    <span>✕</span>
+                    <span>Reset filters</span>
+                  </button>
+                )}
+              </div>
+
+              {selectedAssignment ? (
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-3 rounded-2xl border border-[#dadce0] bg-white p-3.5 sm:p-4 sm:flex-row sm:items-center sm:justify-between shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAssignmentId(null)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-3.5 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333] hover:text-[#137333]"
+                      >
+                        <span aria-hidden="true">←</span>
+                        <span>All assignments</span>
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <span className="hidden sm:inline text-xs font-medium text-[#5f6368]">
+                          Section:
+                        </span>
+                        <span className="inline-flex items-center rounded-full bg-[#e6f4ea] px-3 py-0.5 text-xs font-semibold text-[#137333]">
+                          {selectedAssignment.classroomName} • Section {selectedAssignment.classroomSection || "Standard"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <label className="flex items-center gap-2 text-xs font-medium text-[#5f6368]">
+                        <span className="hidden md:inline">Switch:</span>
+                        <select
+                          value={selectedAssignment.id}
+                          onChange={(e) => setSelectedAssignmentId(e.target.value)}
+                          className="h-9 max-w-[200px] sm:max-w-[260px] rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] truncate"
+                        >
+                          {gradeClasswork
+                            .filter(
+                              (a) =>
+                                selectedSubmissionsAssignmentId === "all" ||
+                                String(a.id) === String(selectedSubmissionsAssignmentId) ||
+                                a.id === selectedAssignment.id
+                            )
+                            .map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.title} • {a.classroomName} ({a.classroomSection || "Standard"})
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  {renderAssignmentDetailsAndSubmissions(() => setSelectedAssignmentId(null))}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {assignments.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[#dadce0] bg-white p-8 sm:p-12 text-center max-w-md mx-auto my-6">
+                      <div className="mx-auto flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                        <ClipboardIcon className="h-6 w-6 sm:h-7 sm:w-7" />
+                      </div>
+                      <h3 className="mt-4 text-base sm:text-lg font-medium text-[#202124]">No assignments found</h3>
+                      <p className="mt-1 text-xs sm:text-sm text-[#5f6368]">
+                        Create an assignment first to begin tracking student submissions and assigning grades.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setActivePage("assignments")}
+                        className="mt-4 sm:mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2 text-xs sm:text-sm font-medium text-white hover:bg-[#0f5b28] transition"
+                      >
+                        <PlusIcon className="h-4 w-4" />
+                        <span>Create assignment</span>
+                      </button>
+                    </div>
+                  ) : submissionHubGroups.size === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[#dadce0] bg-white p-10 text-center max-w-md mx-auto my-6">
                       <p className="text-sm font-medium text-[#202124]">No assignments match these filters.</p>
-                      <p className="mt-1 text-xs text-[#5f6368]">Try another subject, classroom, or classwork.</p>
+                      <p className="mt-1 text-xs text-[#5f6368]">Try selecting another subject, classroom, or classwork option.</p>
                     </div>
                   ) : (
-                  <div className="space-y-6">
-                    {Array.from(submissionHubGroups.values()).map((group) => (
-                      <section key={group.id} className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-4 sm:p-5">
-                        <div className="mb-4 border-b border-[#dadce0] pb-3">
-                          <h3 className="text-lg font-medium text-[#202124]">{group.name}</h3>
-                          <p className="mt-0.5 text-xs text-[#5f6368]">Section: {group.section || "Standard"}{group.subject ? ` · ${group.subject}` : ""}</p>
-                        </div>
-                        <div className="space-y-2">
-                    {group.assignments.map((assignment) => (
-                      <article
-                        key={assignment.id}
-                        className="group flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-xs transition hover:border-emerald-400 hover:shadow-md cursor-pointer md:flex-row md:items-center md:justify-between"
-                        onClick={() => setSelectedAssignmentId(assignment.id)}
-                      >
-                        <div className="min-w-0">
-                          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-800 border border-emerald-200">
-                              {assignment.classroomName}
-                            </span>
-                            <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-black text-sky-800 border border-sky-200">
-                              Section: {assignment.classroomSection || "Standard"}
+                    <div className="space-y-6">
+                      {Array.from(submissionHubGroups.values()).map((group) => (
+                        <section key={group.id} className="rounded-2xl border border-[#dadce0] bg-white overflow-hidden shadow-2xs">
+                          {/* Group Header Strip */}
+                          <div className="flex items-center justify-between border-b border-[#dadce0] bg-[#f8f9fa] px-4 py-3 sm:px-5">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#137333] text-white shadow-2xs">
+                                <ClipboardIcon className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="text-sm sm:text-base font-semibold text-[#202124] truncate">
+                                    {group.name}
+                                  </h3>
+                                  <span className="rounded-full bg-white border border-[#dadce0] px-2.5 py-0.5 text-[11px] font-medium text-[#3c4043]">
+                                    Section {group.section || "Standard"}
+                                  </span>
+                                  {group.subject && (
+                                    <span className="text-xs text-[#5f6368] hidden sm:inline">
+                                      • {group.subject}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <span className="rounded-full bg-[#f1f3f4] px-2.5 py-1 text-xs font-medium text-[#5f6368] shrink-0">
+                              {group.assignments.length} {group.assignments.length === 1 ? "assignment" : "assignments"}
                             </span>
                           </div>
 
-                          <h3 className="truncate text-base font-black text-gray-950 group-hover:text-emerald-800 transition">
-                            {assignment.title}
-                          </h3>
-                          <p className="mt-1 text-xs font-semibold text-gray-500">
-                            Due: {formatDateTime(assignment.dueDate)}
-                          </p>
-                        </div>
+                          {/* Assignment Cards inside the Group */}
+                          <div className="divide-y divide-[#f1f3f4] p-2 sm:p-3">
+                            {group.assignments.map((assignment) => (
+                              <article
+                                key={assignment.id}
+                                className="group flex flex-col gap-3 rounded-xl p-3 sm:p-4 transition hover:bg-[#f8f9fa] cursor-pointer sm:flex-row sm:items-center sm:justify-between"
+                                onClick={() => setSelectedAssignmentId(assignment.id)}
+                              >
+                                <div className="flex items-start gap-3 sm:gap-3.5 min-w-0">
+                                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333] mt-0.5">
+                                    <ClipboardIcon className="h-5 w-5" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <h4 className="text-sm sm:text-base font-medium text-[#202124] group-hover:text-[#137333] group-hover:underline truncate">
+                                      {assignment.title}
+                                    </h4>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#5f6368]">
+                                      <span>Due {formatDateTime(assignment.dueDate)}</span>
+                                      {assignment.instructions && (
+                                        <>
+                                          <span aria-hidden="true">•</span>
+                                          <span className="truncate max-w-xs">{assignment.instructions}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
 
-                        <div
-                          className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-3 md:border-t-0 md:pt-0"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setAssignmentDetailTab("roster");
-                              setSelectedAssignmentId(assignment.id);
-                            }}
-                            className="text-xs font-extrabold text-emerald-700 hover:underline"
-                          >
-                            Open Submissions →
-                          </button>
-                          <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 border border-emerald-200">
-                            {assignment.submissionStats.submitted} turned in
-                          </span>
-                          <span className="text-xs font-extrabold text-emerald-700 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
-                            <span>{assignment.submissionStats.missing} not submitted</span>
-                            <span aria-hidden="true">→</span>
-                          </span>
-                        </div>
-                      </article>
-                    ))}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                  )
-                )}
-              </div>
-            )}
-            </>
+                                <div
+                                  className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t border-[#f1f3f4] sm:border-t-0"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="rounded-full bg-[#e6f4ea] px-2.5 py-0.5 text-xs font-semibold text-[#137333]">
+                                      {assignment.submissionStats.submitted} turned in
+                                    </span>
+                                    <span className="rounded-full bg-[#f1f3f4] px-2 py-0.5 text-xs font-medium text-[#5f6368]">
+                                      {assignment.submissionStats.missing} missing
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setAssignmentDetailTab("roster");
+                                      setSelectedAssignmentId(assignment.id);
+                                    }}
+                                    className="inline-flex items-center gap-1.5 rounded-full bg-[#137333] hover:bg-[#0f5b28] text-white px-3.5 py-1.5 text-xs font-medium transition shadow-2xs active:scale-[0.98]"
+                                  >
+                                    <span>Review work</span>
+                                    <span aria-hidden="true">→</span>
+                                  </button>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Edit Assignment Modal Dialog */}
@@ -3703,6 +4632,28 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       className="mt-1.5 h-11 w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
                     />
                   </label>
+
+                  <div className="mt-4 rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-3.5">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editingAssignment.acceptLateSubmissions !== false}
+                        onChange={(e) =>
+                          setEditingAssignment((prev) => ({
+                            ...prev,
+                            acceptLateSubmissions: e.target.checked,
+                          }))
+                        }
+                        className="mt-0.5 h-4 w-4 rounded border-[#dadce0] text-[#137333] focus:ring-[#137333]"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-[#202124]">Allow late submissions</span>
+                        <p className="mt-0.5 text-xs text-[#5f6368]">
+                          If checked, students can turn in work after the deadline (marked as Late). If unchecked, late submissions are blocked once overdue.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
 
                   <div className="mt-6 flex items-center justify-end gap-3 pt-2">
                     <button

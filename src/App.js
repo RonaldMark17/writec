@@ -54,7 +54,26 @@ function AuthLoginRoute({ session, isAuthLoading }) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  return <Login />;
+  return <Startup initialAuthModal="login" />;
+}
+
+function AuthRegisterRoute({ session, isAuthLoading }) {
+  if (isAuthLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#137333] border-t-transparent" />
+          <span className="text-sm font-medium text-[#5f6368]">Loading WriteCheck...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (session && !isSessionExpired(session)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Startup initialAuthModal="register" />;
 }
 
 function HomeRoute({ session, isAuthLoading }) {
@@ -180,7 +199,9 @@ function App() {
 
         <Route
           path="/register"
-          element={<Register />}
+          element={
+            <AuthRegisterRoute session={session} isAuthLoading={isAuthLoading} />
+          }
         />
 
         <Route

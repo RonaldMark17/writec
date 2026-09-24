@@ -57,3 +57,31 @@ test("profile errors do not report success", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("Unable to save");
   expect(saved).not.toHaveBeenCalled();
 });
+
+test("allows uploading and removing custom profile photo", async () => {
+  supabase.rpc.mockResolvedValue({ data: [{ full_name: "Student Name" }] });
+  const saved = jest.fn();
+  show(<ProfileEditor profile={{ id: "u2", full_name: "Student Name", role: "student" }} onSaved={saved} />);
+
+  const fileInput = screen.getByTestId("profile-photo-input");
+  const testFile = new File(["dummy image"], "avatar.png", { type: "image/png" });
+
+  fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+  // Status or message indicating upload
+  expect(await screen.findByRole("status")).toHaveTextContent("Photo uploaded");
+
+  // Save profile and check that onSaved receives avatarUrl
+  fireEvent.click(screen.getByText("Save profile"));
+  expect(await screen.findByRole("status")).toHaveTextContent("Profile updated");
+  expect(saved).toHaveBeenCalledWith(expect.objectContaining({
+    full_name: "Student Name",
+    avatarUrl: expect.stringContaining("data:image"),
+  }));
+
+  // Now remove photo
+  const removeButtons = screen.getAllByRole("button", { name: /remove/i });
+  fireEvent.click(removeButtons[0]);
+  expect(await screen.findByRole("status")).toHaveTextContent("Photo removed");
+});
+

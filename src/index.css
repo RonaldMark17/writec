@@ -6,6 +6,14 @@
 
 html {
   scroll-behavior: smooth;
+  /* prevent horizontal overflow without breaking position: sticky */
+  overflow-x: clip;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
@@ -15,4 +23,29 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: #f8f9fa;
   color: #202124;
+  /* smooth touch scrolling on iOS */
+  -webkit-overflow-scrolling: touch;
+  overflow-x: clip;
 }
+
+/* Prevent text from being cut off on small screens */
+img, video, canvas, svg {
+  max-width: 100%;
+}
+
+/* Hide scrollbar utility (keeps scroll functionality) */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Responsive modal overlay */
+@layer utilities {
+  .min-h-screen-safe {
+    min-height: 100dvh;
+  }
+}
+

@@ -37,7 +37,24 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           data = response.data;
         }
         if (!data || !["student", "teacher", "admin"].includes(data.role)) throw new Error("Your account has no valid workspace role. Contact an administrator.");
-        if (!cancelled) { setProfile(data); setError(""); }
+        if (!cancelled) {
+          let localPrefs = {};
+          if (data?.id && typeof window !== "undefined") {
+            try {
+              const stored = localStorage.getItem(`writecheck_profile_prefs_${data.id}`);
+              if (stored) localPrefs = JSON.parse(stored);
+            } catch {}
+          }
+          const metaAvatar = user?.user_metadata?.avatar_url || "";
+          const metaColor = user?.user_metadata?.avatar_color || "";
+          setProfile({
+            avatarUrl: metaAvatar,
+            avatarColor: metaColor,
+            ...data,
+            ...localPrefs,
+          });
+          setError("");
+        }
       } catch (err) {
         if (!cancelled) { setProfile(null); setError(err.message || "Unable to verify your account."); }
       } finally { running = false; if (!cancelled) setLoading(false); }
