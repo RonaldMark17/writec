@@ -42,6 +42,8 @@ def _send_supabase_request(
         "Content-Type": "application/json",
         "accept-profile": "public",
     }
+    if SUPABASE_KEY.startswith('sb_secret_'):
+        headers.pop('Authorization')
     if prefer:
         headers["Prefer"] = prefer
 

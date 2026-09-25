@@ -159,6 +159,7 @@ async function extractTextFromImageStream(file, signal, onProgress) {
         ...latestResult,
         text: event.text || "",
         lines: latestResult.lines.concat(event.lines ?? []),
+        confidences: latestResult.confidences.concat(event.confidences ?? []),
         boxes: latestResult.boxes.concat(event.boxes ?? []),
         rawBoxes: event.raw_boxes ?? latestResult.rawBoxes,
         detectedLineCount: event.detected_line_count ?? latestResult.detectedLineCount,

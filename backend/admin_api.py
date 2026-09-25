@@ -13,13 +13,20 @@ from starlette.concurrency import run_in_threadpool
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
 
+def supabase_headers(token):
+    # Opaque server keys belong in apikey, not the user JWT header.
+    if token and token.startswith('sb_secret_') and token == os.getenv('SUPABASE_SERVICE_ROLE_KEY'):
+        return {"apikey": token}
+    key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or "sb_publishable_wNxWHuOyc0riOo4VXmsbGQ_jxPZi03s"
+    return {"apikey": key, "Authorization": "Bearer " + token}
+
+
 def supabase_request(path, token, payload=None, method=None):
     url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
-    key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or "sb_publishable_wNxWHuOyc0riOo4VXmsbGQ_jxPZi03s"
     request = urllib.request.Request(
         url + path,
         data=json.dumps(payload).encode() if payload is not None else None,
-        headers={"apikey": key, "Authorization": "Bearer " + token, "Content-Type": "application/json",
+        headers={**supabase_headers(token), "Content-Type": "application/json",
                  "Prefer": "return=representation"},
         method=method or ("POST" if payload is not None else "GET"),
     )

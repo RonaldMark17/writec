@@ -90,9 +90,9 @@ def storage_download(request, key):
     import urllib.request
     import urllib.error
     url = os.getenv('SUPABASE_URL', 'https://qtqvnutcalmmqmmbwueu.supabase.co').rstrip('/')
-    api_key = os.getenv('SUPABASE_ANON_KEY') or os.getenv('SUPABASE_PUBLISHABLE_KEY') or 'sb_publishable_wNxWHuOyc0riOo4VXmsbGQ_jxPZi03s'
+    from admin_api import supabase_headers
     req = urllib.request.Request(f'{url}/storage/v1/object/authenticated/essay-submissions/{quote(key, safe="/")}',
-        headers={'apikey': api_key, 'Authorization': 'Bearer ' + request.state.access_token})
+        headers=supabase_headers(request.state.access_token))
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
             return response.read()

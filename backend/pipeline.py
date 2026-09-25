@@ -4,7 +4,7 @@ WriteCheck OCR Pipeline: YOLO Line Segmentation + Fine-Tuned TrOCR
 Exact implementation matching high-accuracy 'New folder (19)' reference:
 - YOLO Line Detection with iou=0.40
 - Vertical centroid sorting
-- Non-merging overlap filter (never combines lines into tall multi-line crops)
+- Duplicate suppression and ink-supported repair of split line detections
 - Neighbor-bounded adaptive vertical padding (safe_pad_t, safe_pad_b)
 - CLAHE contrast normalization on every crop
 - Tuned TrOCR generation (repetition_penalty=1.2, no_repeat_ngram_size=3, max_new_tokens=64)
@@ -19,6 +19,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from ocr_regions import join_split_lines
 from PIL import Image, ImageOps
 import torch
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
@@ -207,14 +208,14 @@ def preprocess_crop_clahe(crop_pil):
 def extract_adaptive_line_crops(
     raw_img,
     boxes,
-    pad_ratio_vert=0.08,
+    pad_ratio_vert=0.20,
     pad_px_horiz=6,
     save_crops_dir=None,
 ):
     """
     Adaptive line extraction exactly matching New folder (19):
     1. Centroid Y sorting.
-    2. Overlap filter (retains higher confidence, does NOT merge boxes).
+    2. Duplicate suppression followed by ink-supported split-line repair.
     3. Safe vertical padding that cannot bleed into neighboring lines.
     4. CLAHE contrast enhancement.
     """
@@ -255,6 +256,7 @@ def extract_adaptive_line_crops(
         else:
             filtered_boxes.append(b)
 
+    filtered_boxes = join_split_lines(raw_img, filtered_boxes)
     crops = []
     num_boxes = len(filtered_boxes)
 
@@ -405,7 +407,7 @@ class HandwritingOCRPipeline:
         image_path,
         conf=0.25,
         iou=0.40,
-        pad_ratio_vert=0.08,
+        pad_ratio_vert=0.20,
         pad_px_horiz=6,
         batch_size=8,
         num_beams=4,

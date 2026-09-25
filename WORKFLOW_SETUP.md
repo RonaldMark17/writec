@@ -17,12 +17,18 @@ COPYLEAKS_SANDBOX=false
 COPYLEAKS_WEBHOOK_BASE_URL=https://<public-backend-host>
 ```
 
+`SUPABASE_SERVICE_ROLE_KEY` accepts a Supabase secret API key (`sb_secret_...`)
+or a legacy service-role JWT. Keep it in the ignored `backend/.env` file and
+restart the backend after changing it. Publishable keys cannot run the worker.
+
 Use `SUBMISSION_SIMILARITY_MODE=classroom` to run only classroom comparisons without
 an external scan. Reports explicitly state that internet sources were not checked.
 Real Copyleaks checks require configured credentials, credits and a reachable HTTPS
 webhook. Sandbox results are deliberately rejected for submission grading.
 
-Restart the backend with `npm run start:backend` and the frontend with `npm start`.
+Install JavaScript dependencies with `npm install`, then run `npm start` to start
+both the frontend and backend. To run them separately, use `npm run start:backend`
+and `npm run start:frontend` in separate terminals.
 Jobs are processed in a backend worker thread. A crashed worker's lease expires after
 two minutes; a restarted worker resumes the same job. OCR text and provider results
 are checkpointed in Supabase. Network retries reuse the same external scan ID; corrections
@@ -43,6 +49,18 @@ pages use OCR on embedded images. Complex page layouts may need transcription co
 Legacy DOC/RTF formats fail explicitly; convert them to DOCX/PDF/TXT before submitting.
 
 ## Verification
+
+The OCR API repairs adjacent YOLO boxes only when handwriting components cross
+their shared boundary. TrOCR compares original and contrast-enhanced line crops.
+Disagreement or low token likelihood marks a line for review; these scores are
+not calibrated accuracy percentages. Formatting does not substitute memorized
+sample text. No model weights are retrained by these changes.
+
+For a real-model local check, stop the backend to free memory, then run
+`python scripts/check_ocr.py test_internet_sample.jpg --expected-lines 3`.
+This checks JSON/stream consistency using real models without running the cloud
+worker. Compare the output with the image to assess word accuracy, then restart
+the backend with `npm run start:backend`.
 
 ```powershell
 $env:CI='true'

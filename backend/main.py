@@ -48,6 +48,7 @@ from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 from ultralytics import YOLO
 
 import plagiarism_db
+from ocr_regions import join_split_lines, choose_transcript, deskew_and_clean_image
 from submission_access import (
     visible_submissions, require_submission, require_assignment, require_scan,
     require_file, local_file, storage_download,
@@ -73,7 +74,7 @@ DEFAULT_TROCR_MODEL_PATH = MODEL_DIR / "final_model"
 YOLO_CONF = float(os.getenv("YOLO_CONF", "0.25"))
 YOLO_IOU = float(os.getenv("YOLO_IOU", "0.40"))
 YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "1024"))
-PAD_RATIO_VERT = float(os.getenv("PAD_RATIO_VERT", "0.08"))
+PAD_RATIO_VERT = float(os.getenv("PAD_RATIO_VERT", "0.20"))
 PAD_PX_HORIZ = int(os.getenv("PAD_PX_HORIZ", "6"))
 MAX_OCR_LINES = int(os.getenv("MAX_OCR_LINES", "0"))
 OCR_BATCH_SIZE = max(1, int(os.getenv("OCR_BATCH_SIZE", "8")))
@@ -257,6 +258,7 @@ def extract_adaptive_line_crops(raw_img, boxes):
         else:
             filtered_boxes.append(b)
 
+    filtered_boxes = join_split_lines(raw_img, filtered_boxes)
     crops = []
     num_boxes = len(filtered_boxes)
 
@@ -294,53 +296,11 @@ def extract_adaptive_line_crops(raw_img, boxes):
         crops.append({
             "box": {"x1": actual_cx1, "y1": cy1, "x2": actual_cx2, "y2": cy2},
             "crop": enhanced_crop,
+            "original_crop": trimmed_crop,
             "conf": b["conf"],
         })
 
     return crops, parsed_boxes, filtered_boxes
-
-
-def deskew_and_clean_image(raw_img: Image.Image) -> Image.Image:
-    """
-    Detects paper tilt and automatically deskews the photo up to +/- 45 degrees.
-    Balances contrast for low-lighting or shadowed phone captures.
-    """
-    try:
-        img_np = np.array(raw_img)
-        if len(img_np.shape) == 2:
-            gray = img_np
-        else:
-            gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-
-        thresh = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 15
-        )
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 3))
-        dilated = cv2.dilate(thresh, kernel, iterations=1)
-        contours, _ = cv2.findContours(dilated, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
-        angles = []
-        for c in contours:
-            if cv2.contourArea(c) < 100:
-                continue
-            rect = cv2.minAreaRect(c)
-            angle = rect[-1]
-            if angle < -45:
-                angle = 90 + angle
-            elif angle > 45:
-                angle = angle - 90
-            if abs(angle) <= 45.0:
-                angles.append(angle)
-
-        if len(angles) >= 3:
-            median_angle = float(np.median(angles))
-            if abs(median_angle) >= 0.75:
-                print(f"[ocr] auto-deskew rotating by {-median_angle:.2f} deg", flush=True)
-                return raw_img.rotate(-median_angle, resample=Image.BILINEAR, expand=False)
-    except Exception as exc:
-        print(f"[ocr] deskew notice: {exc}", flush=True)
-
-    return raw_img
 
 
 def configure_trocr_kv_cache(model, enabled):
@@ -364,9 +324,13 @@ def encode_stream_event(payload):
 def recognize_line_batches(line_crops, started_at, num_beams=None):
     effective_beams = num_beams if num_beams is not None else OCR_NUM_BEAMS
 
-    for index in range(0, len(line_crops), OCR_BATCH_SIZE):
-        batch_items = line_crops[index : index + OCR_BATCH_SIZE]
-        batch_images = [item["crop"] for item in batch_items]
+    # Compare original pixels with contrast enhancement instead of assuming
+    # enhancement always helps. Keep the image batch within the configured size.
+    line_batch_size = max(1, OCR_BATCH_SIZE // 2)
+    for index in range(0, len(line_crops), line_batch_size):
+        batch_items = line_crops[index : index + line_batch_size]
+        batch_images = [crop for item in batch_items
+                        for crop in (item.get("original_crop", item["crop"]), item["crop"])]
 
         # Dynamic max token bounding by aspect ratio (avoids wasted decoding steps on short lines)
         max_aspect = max(
@@ -395,9 +359,14 @@ def recognize_line_batches(line_crops, started_at, num_beams=None):
                 gen_kwargs["num_beams"] = effective_beams
                 gen_kwargs["no_repeat_ngram_size"] = OCR_NO_REPEAT_NGRAM_SIZE
 
-            generated_ids = trocr_model.generate(pixel_values, **gen_kwargs)
+            generated = trocr_model.generate(pixel_values, **gen_kwargs,
+                return_dict_in_generate=True, output_scores=True)
+            generated_ids = generated.sequences
+            token_scores = trocr_model.compute_transition_scores(
+                generated_ids, generated.scores,
+                getattr(generated, "beam_indices", None), normalize_logits=True)
 
-        batch_texts = [
+        candidate_texts = [
             text.strip()
             for text in processor.batch_decode(
                 generated_ids,
@@ -405,17 +374,21 @@ def recognize_line_batches(line_crops, started_at, num_beams=None):
             )
         ]
 
-        # Calculate confidence per line
-        batch_confs = []
-        for item, text in zip(batch_items, batch_texts):
-            yolo_conf = float(item.get("conf", 0.85))
-            word_count = len(text.split())
-            length_factor = 0.95 if word_count >= 3 else 0.85
-            blended = round(min(0.99, max(0.50, (yolo_conf * 0.35) + (length_factor * 0.65))), 2)
-            batch_confs.append(blended)
+        # Model likelihood is a review signal, not calibrated accuracy.
+        candidate_confs = []
+        for scores in token_scores:
+            valid = scores[scores < 0]
+            candidate_confs.append(round(float(valid.mean().exp()), 3) if valid.numel() else 0.0)
+        batch_texts, batch_confs, batch_agreements = [], [], []
+        for offset in range(0, len(candidate_texts), 2):
+            best = offset + choose_transcript(*candidate_texts[offset:offset + 2],
+                                               *candidate_confs[offset:offset + 2])
+            batch_texts.append(candidate_texts[best])
+            batch_confs.append(candidate_confs[best])
+            batch_agreements.append(candidate_texts[offset].casefold() == candidate_texts[offset + 1].casefold())
 
         print(
-            f"[ocr] trocr batch {index // OCR_BATCH_SIZE + 1} "
+            f"[ocr] trocr batch {index // line_batch_size + 1} "
             f"lines={index + 1}-{index + len(batch_items)}/{len(line_crops)} "
             f"tokens_cap={dynamic_max_tokens} "
             f"done in {time.perf_counter() - started_at:.2f}s",
@@ -426,6 +399,8 @@ def recognize_line_batches(line_crops, started_at, num_beams=None):
             "start_index": index,
             "lines": batch_texts,
             "confidences": batch_confs,
+            "needs_review": [not agrees or score < 0.75
+                             for score, agrees in zip(batch_confs, batch_agreements)],
             "boxes": [item["box"] for item in batch_items],
         }
 
@@ -434,10 +409,12 @@ def recognize_lines(line_crops, started_at, num_beams=None):
     """Recognizes lines and preserves exact reading order."""
     generated_texts = []
     generated_confs = []
+    needs_review = []
     for batch in recognize_line_batches(line_crops, started_at, num_beams=num_beams):
         generated_texts.extend(batch["lines"])
         generated_confs.extend(batch.get("confidences", []))
-    return generated_texts, generated_confs
+        needs_review.extend(batch["needs_review"])
+    return generated_texts, generated_confs, needs_review
 
 
 def prepare_ocr_input(file, started_at):
@@ -1161,16 +1138,17 @@ def upload_image(file: UploadFile = File(...)):
             "truncated": truncated,
         }
 
-    generated_texts, generated_confs = recognize_lines(line_crops, started_at)
+    generated_texts, generated_confs, needs_review = recognize_lines(line_crops, started_at)
 
     lines_with_meta = [
         {
             "text": clean_punctuation_and_casing(correct_domain_terms(text)),
             "bbox": [item["box"]["x1"], item["box"]["y1"], item["box"]["x2"], item["box"]["y2"]],
             "confidence": conf,
-            "confidence_label": "high" if conf >= 0.75 else "review",
+            "confidence_label": "review" if review else "high",
+            "needs_review": review,
         }
-        for text, conf, item in zip(generated_texts, generated_confs, line_crops)
+        for text, conf, item, review in zip(generated_texts, generated_confs, line_crops, needs_review)
     ]
 
     full_text = format_essay_document(lines_with_meta)
@@ -1208,6 +1186,8 @@ def upload_image_stream(file: UploadFile = File(...)):
     def event_stream():
         generated_texts = []
         generated_boxes = []
+        generated_confs = []
+        generated_review = []
 
         yield encode_stream_event({
             "type": "metadata",
@@ -1235,6 +1215,8 @@ def upload_image_stream(file: UploadFile = File(...)):
         for batch in recognize_line_batches(line_crops, started_at):
             generated_texts.extend(batch["lines"])
             generated_boxes.extend(batch["boxes"])
+            generated_confs.extend(batch["confidences"])
+            generated_review.extend(batch["needs_review"])
 
             current_meta = [
                 {
@@ -1249,6 +1231,7 @@ def upload_image_stream(file: UploadFile = File(...)):
             yield encode_stream_event({
                 "type": "lines",
                 "lines": cleaned_batch,
+                "confidences": batch["confidences"],
                 "boxes": batch["boxes"],
                 "text": current_full_text,
                 "detected_line_count": detected_line_count,
@@ -1261,8 +1244,11 @@ def upload_image_stream(file: UploadFile = File(...)):
             {
                 "text": clean_punctuation_and_casing(correct_domain_terms(t)),
                 "bbox": [b["x1"], b["y1"], b["x2"], b["y2"]],
+                "confidence": conf,
+                "confidence_label": "review" if review else "high",
+                "needs_review": review,
             }
-            for t, b in zip(generated_texts, generated_boxes)
+            for t, b, conf, review in zip(generated_texts, generated_boxes, generated_confs, generated_review)
         ]
         full_text = format_essay_document(final_meta)
         cleaned_texts = [item["text"] for item in final_meta]
@@ -1276,6 +1262,8 @@ def upload_image_stream(file: UploadFile = File(...)):
             "type": "done",
             "text": full_text,
             "lines": cleaned_texts,
+            "confidences": generated_confs,
+            "line_details": final_meta,
             "boxes": generated_boxes,
             "raw_boxes": raw_boxes,
             "detected_line_count": detected_line_count,

@@ -2,10 +2,18 @@ import unittest
 from unittest.mock import patch
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from admin_api import router, install_account_guard
+from admin_api import router, install_account_guard, supabase_headers
 
 
 class AdminApiTests(unittest.TestCase):
+    def test_server_secret_does_not_replace_user_identity(self):
+        with patch.dict('os.environ', {'SUPABASE_SERVICE_ROLE_KEY': 'sb_secret_test',
+                                      'SUPABASE_ANON_KEY': 'public-test-key'}):
+            self.assertEqual(supabase_headers('sb_secret_test'), {'apikey': 'sb_secret_test'})
+            for token in ['user-jwt', 'legacy-service-jwt', 'sb_secret_unconfigured']:
+                self.assertEqual(supabase_headers(token), {
+                    'apikey': 'public-test-key', 'Authorization': 'Bearer ' + token})
+
     def setUp(self):
         app = FastAPI()
         app.include_router(router)
