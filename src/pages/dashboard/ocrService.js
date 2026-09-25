@@ -1,6 +1,7 @@
 import { apiFetch } from "../../apiFetch";
 const OCR_ENDPOINT =
-  process.env.REACT_APP_OCR_ENDPOINT || "http://localhost:8000/upload";
+  process.env.REACT_APP_OCR_ENDPOINT ||
+  `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/upload`;
 
 const OCR_STREAM_ENDPOINT =
   process.env.REACT_APP_OCR_STREAM_ENDPOINT ||
@@ -234,7 +235,8 @@ export async function extractTextFromImage(file, options = {}) {
 
 export async function getOcrEngineInfo() {
   try {
-    const response = await apiFetch("http://localhost:8000/health");
+    const backend = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+    const response = await apiFetch(`${backend}/health`);
     if (!response.ok) return null;
     return await response.json();
   } catch {
