@@ -128,7 +128,16 @@ function App() {
           signOutAndExpireToken("/login");
           setSession(null);
         } else {
-          setSession(nextSession);
+          setSession((prev) => {
+            if (
+              prev?.access_token === nextSession?.access_token &&
+              prev?.user?.id === nextSession?.user?.id &&
+              prev?.expires_at === nextSession?.expires_at
+            ) {
+              return prev;
+            }
+            return nextSession;
+          });
         }
         setIsAuthLoading(false);
       }

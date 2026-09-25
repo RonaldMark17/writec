@@ -12,31 +12,42 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const userId = user?.id;
+
   useEffect(() => {
     let cancelled = false;
     let running = false;
-    setLoading(true);
-    setProfile(null);
+
+    // Only show loading spinner on initial mount when there is no profile yet
+    setProfile((prev) => {
+      if (!prev) setLoading(true);
+      return prev;
+    });
+
     async function load() {
       if (running) return;
       running = true;
       try {
-        if (!user) throw new Error("Sign in to continue.");
+        if (!userId) throw new Error("Sign in to continue.");
         let { data, error: profileError } = await supabase.rpc("current_account");
         if (profileError) throw profileError;
         if (!data) {
           // Metadata is only a registration hint; it can never grant admin access.
-          const role = user.user_metadata?.role === "teacher" ? "teacher" : "student";
+          const role = user?.user_metadata?.role === "teacher" ? "teacher" : "student";
           const { error: createError } = await supabase.from("userTable").insert({
-            id: user.id, full_name: user.user_metadata?.full_name || user.email,
-            email: user.email, role,
+            id: userId,
+            full_name: user?.user_metadata?.full_name || user?.email,
+            email: user?.email,
+            role,
           });
           if (createError && createError.code !== "23505") throw createError;
           const response = await supabase.rpc("current_account");
           if (response.error) throw response.error;
           data = response.data;
         }
-        if (!data || !["student", "teacher", "admin"].includes(data.role)) throw new Error("Your account has no valid workspace role. Contact an administrator.");
+        if (!data || !["student", "teacher", "admin"].includes(data.role)) {
+          throw new Error("Your account has no valid workspace role. Contact an administrator.");
+        }
         if (!cancelled) {
           let localPrefs = {};
           if (data?.id && typeof window !== "undefined") {
@@ -47,23 +58,36 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           }
           const metaAvatar = user?.user_metadata?.avatar_url || "";
           const metaColor = user?.user_metadata?.avatar_color || "";
-          setProfile({
+          setProfile((prev) => ({
+            ...(prev || {}),
             avatarUrl: metaAvatar,
             avatarColor: metaColor,
             ...data,
             ...localPrefs,
-          });
+          }));
           setError("");
         }
       } catch (err) {
-        if (!cancelled) { setProfile(null); setError(err.message || "Unable to verify your account."); }
-      } finally { running = false; if (!cancelled) setLoading(false); }
+        if (!cancelled) {
+          setProfile((prev) => {
+            // Only clear profile if we did not already have one
+            if (!prev) setError(err.message || "Unable to verify your account.");
+            return prev;
+          });
+        }
+      } finally {
+        running = false;
+        if (!cancelled) setLoading(false);
+      }
     }
+
     load();
-    const timer = window.setInterval(load, 30000);
-    window.addEventListener("focus", load);
-    return () => { cancelled = true; clearInterval(timer); window.removeEventListener("focus", load); };
-  }, [user, retry]);
+    const timer = window.setInterval(load, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [userId, retry]);
 
   if (loading) return <div className="p-12 text-center">Loading workspace?</div>;
   if (error || !profile || profile.account_status !== "active") return (
