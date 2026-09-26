@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../supabaseClient";
-import { MEMBER_TABLE, getTeacherAvatarTheme, isCustomAvatarUrl } from "./shared";
+import { MEMBER_TABLE, getTeacherAvatarTheme, isCustomAvatarUrl, getAvatarPublicUrl } from "./shared";
 
 /* ─── Helpers ──────────────────────────────────────────────── */
 function initials(name = "") {
@@ -100,7 +100,7 @@ export default function ClassroomRoster({ classroomId, teacher }) {
       id: teacher.id,
       name: (teacher.name && teacher.name !== "Teacher") ? teacher.name : (cached?.name || cached?.full_name || teacher.name || "Teacher"),
       email: teacher.email || cached?.email || "",
-      avatarUrl: teacher.avatarUrl || cached?.avatarUrl || "",
+      avatarUrl: teacher.avatarUrl || cached?.avatarUrl || (teacher.id ? getAvatarPublicUrl(teacher.id) : ""),
       avatarColor: teacher.avatarColor || cached?.avatarColor || "",
     };
   })();

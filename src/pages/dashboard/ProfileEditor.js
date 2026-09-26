@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../supabaseClient";
-import { isCustomAvatarUrl, getTeacherAvatarTheme } from "./shared";
+import { apiFetch, getBackendUrl } from "../../apiFetch";
+import { isCustomAvatarUrl, getTeacherAvatarTheme, getAvatarPublicUrl } from "./shared";
 
 export function ProfileIcon({ className = "h-10 w-10" }) {
   return (
@@ -267,6 +268,28 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
         weeklyDigest,
       };
 
+      // Publish avatar to server & Supabase Storage so students and rosters can display it
+      let publicAvatarUrl = (avatarUrl && !avatarUrl.startsWith("data:")) ? avatarUrl : null;
+      if (avatarUrl && avatarUrl.startsWith("data:") && profile?.id) {
+        try {
+          const backendUrl = getBackendUrl();
+          const avatarResp = await apiFetch(`${backendUrl}/api/users/${profile.id}/avatar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ avatar_data: avatarUrl }),
+          });
+          if (avatarResp.ok) {
+            const avatarResBody = await avatarResp.json();
+            if (avatarResBody?.avatar_url) {
+              publicAvatarUrl = avatarResBody.avatar_url;
+              updatedPrefs.avatarUrl = publicAvatarUrl;
+            }
+          }
+        } catch (avatarErr) {
+          console.warn("Avatar storage upload notice:", avatarErr);
+        }
+      }
+
       if (profile?.id && typeof window !== "undefined") {
         try {
           localStorage.setItem(`writecheck_profile_prefs_${profile.id}`, JSON.stringify(updatedPrefs));
@@ -281,7 +304,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
       // Base64 images inflate the JWT to >11KB, exceeding web server/reverse proxy
       // (Nginx/Cloudflare) header buffer limits and causing "400 Bad Request: Request Header Or Cookie Too Large".
       try {
-        const safeAvatarUrl = (avatarUrl && !avatarUrl.startsWith("data:")) ? avatarUrl : null;
+        const safeAvatarUrl = publicAvatarUrl || ((avatarUrl && !avatarUrl.startsWith("data:")) ? avatarUrl : null);
         await supabase.auth.updateUser({
           data: {
             avatar_url: safeAvatarUrl,

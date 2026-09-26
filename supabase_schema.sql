@@ -289,4 +289,25 @@ CREATE POLICY membership_student_delete ON public."classroomMembers"
   FOR DELETE TO authenticated
   USING (student_id = auth.uid());
 
+-- Section 10: Avatars Storage Bucket & Public Access
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public avatar access" ON storage.objects;
+CREATE POLICY "Public avatar access" ON storage.objects
+  FOR SELECT TO public
+  USING (bucket_id = 'avatars');
+
+DROP POLICY IF EXISTS "Users can upload their own avatar" ON storage.objects;
+CREATE POLICY "Users can upload their own avatar" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'avatars' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '.png'));
+
+DROP POLICY IF EXISTS "Users can update their own avatar" ON storage.objects;
+CREATE POLICY "Users can update their own avatar" ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (bucket_id = 'avatars' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '.png'));
+
 COMMIT;
+

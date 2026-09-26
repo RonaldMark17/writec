@@ -529,9 +529,17 @@ export function normalizeClassroom(row, index = 0, extra = {}) {
     extra.teacher ||
     "Teacher";
 
+  const teacherId = row.teacher_id || row.teacherId;
+  const teacherAvatarUrl =
+    extra.teacherAvatarUrl ||
+    extra.teacherInfo?.avatarUrl ||
+    row.teacher_avatar_url ||
+    row.teacherAvatarUrl ||
+    (teacherId ? getAvatarPublicUrl(teacherId) : "");
+
   return {
     id: row.id,
-    teacherId: row.teacher_id,
+    teacherId,
     name: row.classroom_name || "Untitled classroom",
     section: row.section || "No section",
     subject: row.subject || "No subject",
@@ -541,7 +549,8 @@ export function normalizeClassroom(row, index = 0, extra = {}) {
     submissions: extra.submissions ?? 0,
     teacher: resolvedTeacher,
     teacherName: resolvedTeacher,
-    teacherInfo: extra.teacherInfo || (row.teacher_id ? { id: row.teacher_id, name: resolvedTeacher, email: row.teacher_email || "" } : null),
+    teacherAvatarUrl,
+    teacherInfo: extra.teacherInfo || (teacherId ? { id: teacherId, name: resolvedTeacher, email: row.teacher_email || "", avatarUrl: teacherAvatarUrl } : null),
     accent: getClassroomAccent(row, index),
     isArchived:
       extra.isArchived !== undefined
@@ -957,6 +966,11 @@ export function getTeacherAvatarTheme(identifier = "", avatarColor = "") {
     ring: "ring-[#e8f0fe]",
     dot: "#1a73e8",
   };
+}
+
+export function getAvatarPublicUrl(userId) {
+  if (!userId) return "";
+  return `https://qtqvnutcalmmqmmbwueu.supabase.co/storage/v1/object/public/avatars/${userId}.jpg`;
 }
 
 export function isCustomAvatarUrl(url) {

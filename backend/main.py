@@ -659,6 +659,108 @@ def upload_submission_file(request: Request, file: UploadFile = File(...), assig
     }
 
 
+@app.post("/api/users/{target_user_id}/avatar")
+async def save_user_avatar(target_user_id: str, request: Request):
+    """
+    Saves a user's avatar image to Supabase Storage ('avatars' bucket) and local filesystem backup.
+    Accepts JSON with base64 data URI or raw multipart file.
+    Ensures avatars are publicly accessible to students, teachers, and rosters.
+    """
+    account = authenticated_account(request)
+    if account.get("role") != "admin" and str(account.get("id")).lower() != str(target_user_id).lower():
+        raise HTTPException(403, "You can only update your own avatar.")
+
+    avatar_bytes = None
+    content_type = "image/jpeg"
+
+    # Support JSON base64 body
+    content_type_header = request.headers.get("content-type", "")
+    if "application/json" in content_type_header:
+        body = await request.json()
+        raw_data = body.get("avatar_data", "")
+        if raw_data and "," in raw_data:
+            header, b64_data = raw_data.split(",", 1)
+            if "image/png" in header:
+                content_type = "image/png"
+            elif "image/webp" in header:
+                content_type = "image/webp"
+            try:
+                avatar_bytes = base64.b64decode(b64_data)
+            except Exception:
+                raise HTTPException(400, "Invalid base64 image data.")
+        elif raw_data:
+            try:
+                avatar_bytes = base64.b64decode(raw_data)
+            except Exception:
+                raise HTTPException(400, "Invalid base64 image data.")
+    else:
+        # Multipart form upload
+        form = await request.form()
+        file = form.get("file")
+        if file and hasattr(file, "read"):
+            avatar_bytes = await file.read()
+            if hasattr(file, "content_type") and file.content_type:
+                content_type = file.content_type
+
+    if not avatar_bytes or len(avatar_bytes) < 10:
+        raise HTTPException(400, "No image provided.")
+
+    # 1. Save locally in uploads/avatars/{target_user_id}.jpg
+    avatar_dir = UPLOAD_DIR / "avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    local_path = avatar_dir / f"{target_user_id}.jpg"
+    with open(local_path, "wb") as f:
+        f.write(avatar_bytes)
+
+    # 2. Upload to Supabase Storage 'avatars' bucket via service role key
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    public_url = f"{url}/storage/v1/object/public/avatars/{target_user_id}.jpg"
+
+    if service_key:
+        try:
+            req_upload = urllib.request.Request(
+                f"{url}/storage/v1/object/avatars/{target_user_id}.jpg",
+                data=avatar_bytes,
+                headers={
+                    "apikey": service_key,
+                    "Authorization": f"Bearer {service_key}",
+                    "Content-Type": content_type,
+                    "x-upsert": "true",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req_upload, timeout=10) as resp:
+                pass
+        except Exception as exc:
+            print(f"[avatar] notice: supabase storage upload: {exc}", flush=True)
+
+    return {
+        "success": True,
+        "avatar_url": public_url,
+        "local_avatar_url": f"{str(request.base_url).rstrip('/')}/api/users/{target_user_id}/avatar",
+        "user_id": target_user_id,
+    }
+
+
+@app.get("/api/users/{target_user_id}/avatar")
+def get_user_avatar(target_user_id: str, request: Request):
+    """Publicly serves a user's avatar image without authentication requirements."""
+    local_path = UPLOAD_DIR / "avatars" / f"{target_user_id}.jpg"
+    if local_path.is_file():
+        return FileResponse(
+            str(local_path),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    # Fallback redirect to Supabase Storage public avatar if available
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    public_url = f"{url}/storage/v1/object/public/avatars/{target_user_id}.jpg"
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=public_url, status_code=307)
+
+
 @app.get("/api/submissions/grades")
 def get_submission_grades(request: Request):
     """Read authoritative results through the caller's database permissions."""

@@ -35,6 +35,7 @@ import {
   getInitials,
   getTeacherAvatarTheme,
   isCustomAvatarUrl,
+  getAvatarPublicUrl,
   LeaveIcon,
 } from "./dashboard/shared";
 import {
@@ -381,7 +382,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         : c.teacher_name || cached?.name || cached?.full_name || existing?.name || "Teacher";
       const finalEmail = existing?.email || cached?.email || "";
       const avatarColor = cached?.avatarColor || "";
-      const avatarUrl = cached?.avatarUrl || "";
+      const avatarUrl =
+        (cached?.avatarUrl && isCustomAvatarUrl(cached.avatarUrl))
+          ? cached.avatarUrl
+          : getAvatarPublicUrl(c.teacher_id);
 
       teachersById.set(c.teacher_id, {
         id: c.teacher_id,
@@ -463,11 +467,16 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         }
 
         const resolvedTeacherName = teacherInfo.name || classroom.teacher_name || "Teacher";
+        const teacherAvatarUrl = teacherInfo.avatarUrl || getAvatarPublicUrl(classroom.teacher_id);
         return normalizeClassroom(classroom, index, {
           assignments: assignmentCountByClass[classroom.id] ?? 0,
           submissions: submissionCountByClass[classroom.id] ?? 0,
           teacher: resolvedTeacherName,
-          teacherInfo,
+          teacherInfo: {
+            ...teacherInfo,
+            avatarUrl: teacherAvatarUrl,
+          },
+          teacherAvatarUrl,
           isArchived,
         });
       });
@@ -1315,7 +1324,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         <div
                           className={`flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr ${getTeacherAvatarTheme(classroom.teacherId || classroom.teacher).bg} text-white text-lg font-bold shadow-md ring-4 ring-white transition-all duration-200 group-hover/avatar:scale-105 select-none overflow-hidden`}
                         >
-                          {isCustomAvatarUrl(classroom.teacherAvatarUrl) ? (
+                          {classroom.teacherAvatarUrl ? (
                             <img
                               src={classroom.teacherAvatarUrl}
                               alt={classroom.teacher || "Teacher"}
@@ -1329,7 +1338,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           ) : null}
                           <span
                             className="avatar-initials-fallback flex items-center justify-center"
-                            style={{ display: isCustomAvatarUrl(classroom.teacherAvatarUrl) ? "none" : "flex" }}
+                            style={{ display: classroom.teacherAvatarUrl ? "none" : "flex" }}
                           >
                             {getInitials(classroom.teacher || "Teacher", "TE")}
                           </span>

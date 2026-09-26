@@ -45,6 +45,7 @@ import {
   isCustomAvatarUrl,
   ArchiveIcon,
   UnarchiveIcon,
+  getAvatarPublicUrl,
 } from "./dashboard/shared";
 import HighlightedText from "./HighlightedText";
 import {
@@ -3138,7 +3139,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   const creatorName = profile?.full_name || classroom.teacherName || "Teacher";
                   const creatorInitials = getInitials(creatorName, "T");
                   const creatorTheme = getTeacherAvatarTheme(classroom.teacherId || profile?.id || classroom.teacherName, profile?.avatarColor);
-                  const rawAvatar = (classroom.teacherId === profile?.id || !classroom.teacherId) ? (profile?.avatarUrl || "") : (classroom.teacherAvatarUrl || "");
+                  const rawAvatar = (classroom.teacherId === profile?.id || !classroom.teacherId) ? (profile?.avatarUrl || "") : (classroom.teacherAvatarUrl || (classroom.teacherId ? getAvatarPublicUrl(classroom.teacherId) : ""));
                   const creatorAvatarUrl = isCustomAvatarUrl(rawAvatar) ? rawAvatar : "";
 
                   return (

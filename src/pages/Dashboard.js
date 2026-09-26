@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { supabase, signOutAndExpireToken } from "../supabaseClient";
+import { apiFetch, getBackendUrl } from "../apiFetch";
 import StudentDashboard from "./StudentDashboard";
 import TeacherDashboard from "./TeacherDashboard";
 import AdminDashboard from "./AdminDashboard";
-import { isCustomAvatarUrl } from "./dashboard/shared";
+import { isCustomAvatarUrl, getAvatarPublicUrl } from "./dashboard/shared";
 
 export default function Dashboard({ session: propSession, adminOnly = false }) {
   const location = useLocation();
@@ -116,7 +117,30 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           const metaAvatar = isCustomAvatarUrl(user?.user_metadata?.avatar_url) ? user.user_metadata.avatar_url : "";
           const metaColor = user?.user_metadata?.avatar_color || "";
           const customLocalAvatar = isCustomAvatarUrl(localPrefs?.avatarUrl) ? localPrefs.avatarUrl : "";
-          const finalAvatarUrl = customLocalAvatar || metaAvatar;
+          const publicStorageAvatar = data?.id ? getAvatarPublicUrl(data.id) : "";
+          const finalAvatarUrl = customLocalAvatar || metaAvatar || publicStorageAvatar;
+
+          // If user has a local base64 avatar, automatically sync it to public storage once
+          if (customLocalAvatar && customLocalAvatar.startsWith("data:") && data?.id) {
+            const backendUrl = getBackendUrl();
+            apiFetch(`${backendUrl}/api/users/${data.id}/avatar`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ avatar_data: customLocalAvatar }),
+            })
+              .then((r) => r.json())
+              .then((res) => {
+                if (res?.avatar_url) {
+                  try {
+                    const current = JSON.parse(localStorage.getItem(`writecheck_profile_prefs_${data.id}`) || "{}");
+                    current.avatarUrl = res.avatar_url;
+                    localStorage.setItem(`writecheck_profile_prefs_${data.id}`, JSON.stringify(current));
+                  } catch {}
+                }
+              })
+              .catch(() => {});
+          }
+
           setProfile((prev) => ({
             ...(prev || {}),
             avatarUrl: finalAvatarUrl,
