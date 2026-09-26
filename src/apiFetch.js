@@ -1,9 +1,26 @@
 import { supabase } from "./supabaseClient";
 
+export function getBackendUrl() {
+  if (process.env.REACT_APP_BACKEND_URL) {
+    return process.env.REACT_APP_BACKEND_URL.replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined" && window.location) {
+    const { protocol, hostname, port } = window.location;
+    if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+      if (port === "3000") {
+        return `${protocol}//${hostname}:8000`;
+      }
+      return window.location.origin;
+    }
+  }
+  return "http://localhost:8000";
+}
+
 // Send session credentials only to our backend, never to external file URLs.
 export async function apiFetch(input, options = {}) {
+  const backendUrl = getBackendUrl();
   const url = new URL(input, window.location.origin);
-  const backend = new URL(process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
+  const backend = new URL(backendUrl);
   const ocrOrigin = new URL(process.env.REACT_APP_OCR_ENDPOINT || backend.href).origin;
   if (url.origin !== backend.origin && url.origin !== ocrOrigin) return fetch(input, options);
   const { data, error } = await supabase.auth.getSession();
@@ -14,7 +31,7 @@ export async function apiFetch(input, options = {}) {
 }
 
 export async function adminRequest(path, options = {}) {
-  const backend = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+  const backend = getBackendUrl();
   let response;
   try {
     response = await apiFetch(`${backend}/api/admin/${path}`, options);

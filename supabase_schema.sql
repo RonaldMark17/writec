@@ -221,4 +221,40 @@ CREATE POLICY classroom_teacher_update ON public."classroomTable"
   USING (teacher_id = auth.uid())
   WITH CHECK (teacher_id = auth.uid());
 
+-- 11. RPC for updating classroom archive state (SECURITY DEFINER with ownership check)
+CREATE OR REPLACE FUNCTION public.archive_classroom(target_classroom_id UUID, should_archive BOOLEAN)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  caller_id UUID;
+  caller_role TEXT;
+  affected_rows INT;
+BEGIN
+  caller_id := auth.uid();
+  IF caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  SELECT role INTO caller_role FROM public."userTable" WHERE id = caller_id;
+
+  IF caller_role = 'admin' THEN
+    UPDATE public."classroomTable"
+    SET is_archived = should_archive
+    WHERE id = target_classroom_id;
+    GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  ELSE
+    UPDATE public."classroomTable"
+    SET is_archived = should_archive
+    WHERE id = target_classroom_id AND teacher_id = caller_id;
+    GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  END IF;
+
+  RETURN affected_rows > 0;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.archive_classroom(UUID, BOOLEAN) TO authenticated;
+
 COMMIT;

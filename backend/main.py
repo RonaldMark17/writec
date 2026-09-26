@@ -737,8 +737,19 @@ def archive_classroom_endpoint(
             classroom = classrooms[0]
             if account.get("role") != "admin" and str(classroom.get("teacher_id")).lower() != str(account.get("id")).lower():
                 raise HTTPException(403, "You do not have permission to manage this classroom.")
+    except HTTPException:
+        raise
     except urllib.error.HTTPError as exc:
-        raise HTTPException(exc.code, "Failed to query classroom.")
+        err_msg = "Failed to query classroom."
+        try:
+            body = json.loads(exc.read().decode("utf-8"))
+            if isinstance(body, dict) and "message" in body:
+                err_msg = body["message"]
+        except Exception:
+            pass
+        raise HTTPException(exc.code, err_msg)
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to query classroom: {str(exc)}")
 
     req_patch = urllib.request.Request(
         f"{url}/rest/v1/classroomTable?id=eq.{classroom_id}",
@@ -754,6 +765,8 @@ def archive_classroom_endpoint(
     try:
         with urllib.request.urlopen(req_patch, timeout=10) as resp:
             updated = json.load(resp)
+            if not updated or not isinstance(updated, list) or len(updated) == 0:
+                raise HTTPException(500, "Database update did not modify any rows.")
             return {
                 "success": True,
                 "classroom_id": classroom_id,
@@ -761,8 +774,19 @@ def archive_classroom_endpoint(
                 "classroom_name": classroom.get("classroom_name"),
                 "updated": updated,
             }
+    except HTTPException:
+        raise
     except urllib.error.HTTPError as exc:
-        raise HTTPException(exc.code, "Failed to update classroom archive state.")
+        err_msg = "Failed to update classroom archive state."
+        try:
+            body = json.loads(exc.read().decode("utf-8"))
+            if isinstance(body, dict) and "message" in body:
+                err_msg = body["message"]
+        except Exception:
+            pass
+        raise HTTPException(exc.code, err_msg)
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to update classroom archive state: {str(exc)}")
 
 
 @app.post("/api/submissions/{submission_id}/grade")

@@ -1,5 +1,5 @@
 import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
-import { apiFetch } from "../apiFetch";
+import { apiFetch, getBackendUrl } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -99,7 +99,29 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
   const [classrooms, setClassrooms] =
     useState([]);
-  const [classroomTab, setClassroomTab] = useState("active");
+  const [classroomTab, setClassroomTabState] = useState(() => {
+    if (typeof window !== "undefined") {
+      const urlTab = new URLSearchParams(window.location.search).get("tab");
+      if (urlTab === "active" || urlTab === "archived") return urlTab;
+      try {
+        const saved = sessionStorage.getItem(`writecheck-classroom-tab-${profile?.id || "teacher"}`);
+        if (saved === "active" || saved === "archived") return saved;
+      } catch {}
+    }
+    return "active";
+  });
+
+  const setClassroomTab = useCallback((tab) => {
+    setClassroomTabState(tab);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem(`writecheck-classroom-tab-${profile?.id || "teacher"}`, tab);
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", tab);
+        window.history.replaceState({}, "", url.toString());
+      } catch {}
+    }
+  }, [profile?.id]);
   const [archivingClassroom, setArchivingClassroom] = useState(null);
   const [isArchiving, setIsArchiving] = useState(false);
   const [copyingClassroom, setCopyingClassroom] = useState(null);
@@ -732,14 +754,16 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
   const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, true);
 
-  const loadTeacherData = useCallback(async () => {
+  const loadTeacherData = useCallback(async (silent = false) => {
     const teacherId = profile?.id;
     if (!teacherId) return false;
 
     const requestId = teacherDataRequestRef.current + 1;
     teacherDataRequestRef.current = requestId;
-    setIsLoading(true);
-    setErrorMessage("");
+    if (!silent) {
+      setIsLoading(true);
+      setErrorMessage("");
+    }
 
     let classroomRows = [];
     let classroomError = null;
@@ -784,13 +808,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     } catch {}
 
     // Query backend for archived classrooms (authoritative service-role check from DB)
+    let backendArchivedIds = null;
     try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = getBackendUrl();
       const archResp = await apiFetch(`${backendUrl}/api/classrooms/archived`);
-      if (archResp.ok) {
+      if (archResp && archResp.ok) {
         const archData = await archResp.json();
-        if (Array.isArray(archData?.archived_ids)) {
-          archData.archived_ids.forEach((id) => cachedArchivedSet.add(String(id)));
+        if (archData?.success && Array.isArray(archData?.archived_ids)) {
+          backendArchivedIds = new Set(archData.archived_ids.map(String));
         }
       }
     } catch {}
@@ -937,12 +962,30 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
     const nextClassrooms =
       (classroomRows ?? []).map((classroom, index) => {
-        const isArchived = Boolean(
-          classroom.is_archived === true || cachedArchivedSet.has(String(classroom.id))
-        );
-        if (classroom.is_archived === true) {
-          cachedArchivedSet.add(String(classroom.id));
+        const classIdStr = String(classroom.id);
+        let isArchived = false;
+
+        // Authoritative resolution:
+        // 1. Authoritative check from backend service role DB query:
+        if (backendArchivedIds !== null) {
+          isArchived = backendArchivedIds.has(classIdStr);
         }
+        // 2. Direct database column value if returned by Supabase query:
+        else if (typeof classroom.is_archived === "boolean") {
+          isArchived = classroom.is_archived;
+        }
+        // 3. Fallback to cached set only if database column was missing:
+        else {
+          isArchived = cachedArchivedSet.has(classIdStr);
+        }
+
+        // Keep local cache strictly in sync with authoritative database value:
+        if (isArchived) {
+          cachedArchivedSet.add(classIdStr);
+        } else {
+          cachedArchivedSet.delete(classIdStr);
+        }
+
         return normalizeClassroom(classroom, index, {
           students: memberCountByClass[classroom.id] ?? 0,
           assignments: assignmentCountByClass[classroom.id] ?? 0,
@@ -955,6 +998,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       const storageKeys = [
         `writecheck_archived_classes_${teacherId}`,
         "writecheck_archived_classes_teacher",
+        "writecheck_archived_classes_global",
       ];
       storageKeys.forEach((key) => {
         localStorage.setItem(key, JSON.stringify(Array.from(cachedArchivedSet)));
@@ -1080,9 +1124,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   useEffect(() => {
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.id) {
-        loadTeacherData();
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Do not refetch on TOKEN_REFRESHED (which fires on tab switch / window focus)
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        if (session?.user?.id) {
+          loadTeacherData();
+        }
       }
     });
 
@@ -1124,15 +1171,97 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setErrorMessage("");
     const classIdStr = String(classroomId);
 
+    // Save snapshot of previous state for reliable rollback on failure
+    const previousClassrooms = classrooms;
+    const previousTab = classroomTab;
+
     try {
-      // 1. Immediately update local state so UI is responsive
+      // 1. Optimistically update local state so UI is immediately responsive
       setClassrooms((prev) =>
         prev.map((c) =>
           String(c.id) === classIdStr ? { ...c, isArchived: archive } : c
         )
       );
 
-      // 2. Persist to localStorage cache immediately across all keys
+      // When restoring, switch immediately to "active" tab so the user sees the restored class
+      if (!archive) {
+        setClassroomTab("active");
+      }
+
+      // 2. Persist to backend service role endpoint (guaranteed to persist is_archived in Supabase Postgres)
+      let backendUpdated = false;
+      let failureReason = "";
+
+      try {
+        const backendUrl = getBackendUrl();
+        const response = await apiFetch(`${backendUrl}/api/classrooms/${classroomId}/archive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_archived: archive }),
+        });
+        const resBody = await response.json().catch(() => ({}));
+        if (response.ok && resBody?.success) {
+          backendUpdated = true;
+        } else {
+          failureReason =
+            resBody?.detail ||
+            resBody?.message ||
+            resBody?.error ||
+            `Server responded with HTTP ${response.status}`;
+          console.warn("Backend archive response not ok:", response.status, resBody);
+        }
+      } catch (backendErr) {
+        failureReason = backendErr.message || "Unable to reach backend server";
+        console.warn("Backend archive call failed, trying direct Supabase:", backendErr);
+      }
+
+      // 3. Fallback: Try direct Supabase RPC archive_classroom (SECURITY DEFINER with teacher ownership check)
+      if (!backendUpdated) {
+        try {
+          const { data: rpcSuccess, error: rpcErr } = await supabase.rpc("archive_classroom", {
+            target_classroom_id: classroomId,
+            should_archive: archive,
+          });
+          if (!rpcErr && rpcSuccess === true) {
+            backendUpdated = true;
+          } else if (rpcErr) {
+            console.warn("archive_classroom RPC notice:", rpcErr);
+          }
+        } catch (rpcEx) {
+          console.warn("archive_classroom RPC call notice:", rpcEx);
+        }
+      }
+
+      // 4. Fallback: Try direct Supabase table update with row count verification
+      if (!backendUpdated) {
+        try {
+          const { data: updatedRows, error: sbErr } = await supabase
+            .from(CLASSROOM_TABLE)
+            .update({ is_archived: archive })
+            .eq("id", classroomId)
+            .select("id, is_archived");
+          if (!sbErr && Array.isArray(updatedRows) && updatedRows.length > 0) {
+            backendUpdated = true;
+          } else if (sbErr) {
+            console.warn("Direct Supabase update notice:", sbErr);
+          }
+        } catch (sbErr) {
+          console.warn("Direct Supabase update notice:", sbErr);
+        }
+      }
+
+      // 5. If all persistence attempts failed, ROLLBACK optimistic state and alert the user
+      if (!backendUpdated) {
+        setClassrooms(previousClassrooms);
+        setClassroomTab(previousTab);
+        throw new Error(
+          archive
+            ? `Could not archive classroom on server: ${failureReason || "Database update failed. Please check your backend connection."}`
+            : `Could not restore classroom on server: ${failureReason || "Database update failed. Please check your backend connection."}`
+        );
+      }
+
+      // 6. Confirmed server persistence: update localStorage cache across all keys
       const storageKeys = [
         `writecheck_archived_classes_${profile?.id || "teacher"}`,
         "writecheck_archived_classes_teacher",
@@ -1161,42 +1290,20 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         );
       }
 
-      // 3. Persist to backend service role endpoint (guaranteed to persist is_archived in Supabase Postgres)
-      let backendUpdated = false;
-      try {
-        const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-        const response = await apiFetch(`${backendUrl}/api/classrooms/${classroomId}/archive`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_archived: archive }),
-        });
-        if (response.ok) {
-          backendUpdated = true;
-        } else {
-          const errBody = await response.json().catch(() => ({}));
-          console.warn("Backend archive response not ok:", response.status, errBody);
-        }
-      } catch (backendErr) {
-        console.warn("Backend archive call failed, trying direct Supabase:", backendErr);
-      }
-
-      // 4. Also try direct Supabase update (in case backend is unavailable)
-      try {
-        await supabase
-          .from(CLASSROOM_TABLE)
-          .update({ is_archived: archive })
-          .eq("id", classroomId);
-      } catch (sbErr) {
-        console.warn("Direct Supabase update notice:", sbErr);
-      }
-
-      const target = classrooms.find((c) => String(c.id) === classIdStr);
+      const target = previousClassrooms.find((c) => String(c.id) === classIdStr);
       const targetName = target?.name || "Classroom";
       setSuccessMessage(
         archive
           ? `Classroom "${targetName}" archived. You can find it in the Archived classes tab.`
           : `Classroom "${targetName}" restored to active classes.`
       );
+
+      // 7. Silently refresh teacher data from DB to guarantee tab counts and lists are completely synced
+      try {
+        await loadTeacherData(true);
+      } catch (syncErr) {
+        console.warn("Silent teacher data sync notice:", syncErr);
+      }
     } catch (err) {
       setErrorMessage(err.message || "Failed to update classroom archive status.");
     } finally {

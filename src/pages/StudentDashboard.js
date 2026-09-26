@@ -1,5 +1,5 @@
 import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
-import { apiFetch } from "../apiFetch";
+import { apiFetch, getBackendUrl } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -101,8 +101,29 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   const [classrooms, setClassrooms] =
     useState([]);
 
-  const [classroomTab, setClassroomTab] =
-    useState("active"); // "active" | "archived"
+  const [classroomTab, setClassroomTabState] = useState(() => {
+    if (typeof window !== "undefined") {
+      const urlTab = new URLSearchParams(window.location.search).get("tab");
+      if (urlTab === "active" || urlTab === "archived") return urlTab;
+      try {
+        const saved = sessionStorage.getItem(`writecheck-student-classroom-tab-${profile?.id || "student"}`);
+        if (saved === "active" || saved === "archived") return saved;
+      } catch {}
+    }
+    return "active";
+  });
+
+  const setClassroomTab = useCallback((tab) => {
+    setClassroomTabState(tab);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem(`writecheck-student-classroom-tab-${profile?.id || "student"}`, tab);
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", tab);
+        window.history.replaceState({}, "", url.toString());
+      } catch {}
+    }
+  }, [profile?.id]);
 
   const activeClassrooms = useMemo(
     () => classrooms.filter((classroom) => !classroom.isArchived),
@@ -394,12 +415,14 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     });
 
     // Query backend for archived classrooms (authoritative service-role check from DB)
+    let backendArchivedIds = null;
     try {
+      const backendUrl = getBackendUrl();
       const archResp = await apiFetch(`${backendUrl}/api/classrooms/archived`);
       if (archResp && archResp.ok) {
         const archData = await archResp.json();
         if (Array.isArray(archData?.archived_ids)) {
-          archData.archived_ids.forEach((id) => cachedArchivedSet.add(String(id)));
+          backendArchivedIds = new Set(archData.archived_ids.map(String));
         }
       }
     } catch (err) {
@@ -413,12 +436,24 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           name: classroom.teacher_name || "Teacher",
           email: "",
         };
-        const isArchived = Boolean(
-          classroom.is_archived === true || cachedArchivedSet.has(String(classroom.id))
-        );
-        if (classroom.is_archived === true) {
-          cachedArchivedSet.add(String(classroom.id));
+        const classIdStr = String(classroom.id);
+        let isArchived = false;
+
+        // Authoritative resolution:
+        if (backendArchivedIds !== null) {
+          isArchived = backendArchivedIds.has(classIdStr);
+        } else if (typeof classroom.is_archived === "boolean") {
+          isArchived = classroom.is_archived;
+        } else {
+          isArchived = cachedArchivedSet.has(classIdStr);
         }
+
+        if (isArchived) {
+          cachedArchivedSet.add(classIdStr);
+        } else {
+          cachedArchivedSet.delete(classIdStr);
+        }
+
         const resolvedTeacherName = teacherInfo.name || classroom.teacher_name || "Teacher";
         return normalizeClassroom(classroom, index, {
           assignments: assignmentCountByClass[classroom.id] ?? 0,
@@ -533,9 +568,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   useEffect(() => {
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.id) {
-        loadStudentData();
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Do not refetch on TOKEN_REFRESHED (which fires on tab switch / window focus)
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        if (session?.user?.id) {
+          loadStudentData();
+        }
       }
     });
 
