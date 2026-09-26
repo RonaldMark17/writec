@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { supabase } from "../../supabaseClient";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { isCustomAvatarUrl, getTeacherAvatarTheme, getAvatarPublicUrl } from "./shared";
-
+import { Link } from "react-router-dom";
 export function ProfileIcon({ className = "h-10 w-10" }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
@@ -209,7 +209,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
           window.dispatchEvent(new CustomEvent("writecheck:profile_updated", {
             detail: { profileId: profile.id, avatarUrl: processed }
           }));
-        } catch {}
+        } catch { }
       }
       setMessage("Photo uploaded! Click 'Save profile' to keep all changes.");
     } catch (err) {
@@ -231,7 +231,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
         window.dispatchEvent(new CustomEvent("writecheck:profile_updated", {
           detail: { profileId: profile.id, avatarUrl: "" }
         }));
-      } catch {}
+      } catch { }
     }
     setMessage("Photo removed. Initial avatar theme is now active.");
   }
@@ -500,33 +500,30 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
             <button
               type="button"
               onClick={() => setActiveTab("profile")}
-              className={`flex-1 pb-2.5 text-xs sm:text-sm font-semibold transition border-b-2 ${
-                activeTab === "profile"
+              className={`flex-1 pb-2.5 text-xs sm:text-sm font-semibold transition border-b-2 ${activeTab === "profile"
                   ? "border-[#137333] text-[#137333]"
                   : "border-transparent text-[#5f6368] hover:text-[#202124]"
-              }`}
+                }`}
             >
               Profile & Info
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("preferences")}
-              className={`flex-1 pb-2.5 text-xs sm:text-sm font-semibold transition border-b-2 ${
-                activeTab === "preferences"
+              className={`flex-1 pb-2.5 text-xs sm:text-sm font-semibold transition border-b-2 ${activeTab === "preferences"
                   ? "border-[#137333] text-[#137333]"
                   : "border-transparent text-[#5f6368] hover:text-[#202124]"
-              }`}
+                }`}
             >
               AI & Preferences
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("security")}
-              className={`flex-1 pb-2.5 text-xs sm:text-sm font-semibold transition border-b-2 ${
-                activeTab === "security"
+              className={`flex-1 pb-2.5 text-xs sm:text-sm font-semibold transition border-b-2 ${activeTab === "security"
                   ? "border-[#137333] text-[#137333]"
                   : "border-transparent text-[#5f6368] hover:text-[#202124]"
-              }`}
+                }`}
             >
               Security
             </button>
@@ -605,9 +602,8 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                         key={theme.id}
                         type="button"
                         onClick={() => setAvatarColor(theme.id)}
-                        className={`h-7 w-7 rounded-full bg-gradient-to-tr ${theme.bg} transition transform hover:scale-110 flex items-center justify-center shadow-xs ${
-                          avatarColor === theme.id ? `ring-2 ring-offset-2 ring-[${theme.dot}] scale-110` : ""
-                        }`}
+                        className={`h-7 w-7 rounded-full bg-gradient-to-tr ${theme.bg} transition transform hover:scale-110 flex items-center justify-center shadow-xs ${avatarColor === theme.id ? `ring-2 ring-offset-2 ring-[${theme.dot}] scale-110` : ""
+                          }`}
                         title={theme.label}
                       >
                         {avatarColor === theme.id && (
