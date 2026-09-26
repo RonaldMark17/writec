@@ -37,14 +37,36 @@ describe("classroom archive normalization and icons", () => {
     expect(normalizedExplicitFalse.isArchived).toBe(false);
   });
 
-  test("normalizeClassroom respects isArchived passed in extra", () => {
+  test("normalizeClassroom respects isArchived passed in extra even when row.is_archived is false", () => {
     const row = {
       id: "cls-3",
       classroom_name: "Biology 101",
       classroom_code: "BIO101",
+      is_archived: false,
     };
 
+    // Even if row.is_archived is false from DB, extra.isArchived must be respected
     const normalized = normalizeClassroom(row, 0, { isArchived: true });
+    expect(normalized.isArchived).toBe(true);
+
+    const normalizedFalse = normalizeClassroom({ ...row, is_archived: true }, 0, { isArchived: false });
+    expect(normalizedFalse.isArchived).toBe(false);
+  });
+
+  test("resolves isArchived properly on reload using cache when database returns false", () => {
+    const cachedArchivedSet = new Set(["cls-cached"]);
+
+    const rowFromDb = {
+      id: "cls-cached",
+      classroom_name: "Art History",
+      is_archived: false,
+    };
+
+    const isArchived = Boolean(
+      rowFromDb.is_archived === true || cachedArchivedSet.has(String(rowFromDb.id))
+    );
+
+    const normalized = normalizeClassroom(rowFromDb, 0, { isArchived });
     expect(normalized.isArchived).toBe(true);
   });
 

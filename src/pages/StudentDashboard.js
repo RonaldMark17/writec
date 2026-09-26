@@ -101,6 +101,22 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   const [classrooms, setClassrooms] =
     useState([]);
 
+  const [classroomTab, setClassroomTab] =
+    useState("active"); // "active" | "archived"
+
+  const activeClassrooms = useMemo(
+    () => classrooms.filter((classroom) => !classroom.isArchived),
+    [classrooms]
+  );
+
+  const archivedClassrooms = useMemo(
+    () => classrooms.filter((classroom) => Boolean(classroom.isArchived)),
+    [classrooms]
+  );
+
+  const visibleClassrooms =
+    classroomTab === "active" ? activeClassrooms : archivedClassrooms;
+
   const [assignments, setAssignments] =
     useState([]);
 
@@ -361,6 +377,35 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         return counts;
       }, {});
 
+    const cachedArchivedSet = new Set();
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+
+    [
+      `writecheck_archived_classes_${studentId}`,
+      "writecheck_archived_classes_teacher",
+      "writecheck_archived_classes_global",
+    ].forEach((key) => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(key) || "[]");
+        if (Array.isArray(stored)) {
+          stored.forEach((id) => cachedArchivedSet.add(String(id)));
+        }
+      } catch {}
+    });
+
+    // Query backend for archived classrooms (authoritative service-role check from DB)
+    try {
+      const archResp = await apiFetch(`${backendUrl}/api/classrooms/archived`);
+      if (archResp && archResp.ok) {
+        const archData = await archResp.json();
+        if (Array.isArray(archData?.archived_ids)) {
+          archData.archived_ids.forEach((id) => cachedArchivedSet.add(String(id)));
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch archived IDs from backend service:", err);
+    }
+
     const nextClassrooms =
       (classroomRows ?? []).map((classroom, index) => {
         const teacherInfo = teachersById.get(classroom.teacher_id) || {
@@ -368,14 +413,30 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           name: classroom.teacher_name || "Teacher",
           email: "",
         };
+        const isArchived = Boolean(
+          classroom.is_archived === true || cachedArchivedSet.has(String(classroom.id))
+        );
+        if (classroom.is_archived === true) {
+          cachedArchivedSet.add(String(classroom.id));
+        }
         const resolvedTeacherName = teacherInfo.name || classroom.teacher_name || "Teacher";
         return normalizeClassroom(classroom, index, {
           assignments: assignmentCountByClass[classroom.id] ?? 0,
           submissions: submissionCountByClass[classroom.id] ?? 0,
           teacher: resolvedTeacherName,
           teacherInfo,
+          isArchived,
         });
       });
+
+    if (studentId) {
+      try {
+        localStorage.setItem(
+          `writecheck_archived_classes_${studentId}`,
+          JSON.stringify(Array.from(cachedArchivedSet))
+        );
+      } catch {}
+    }
 
     const classroomsById =
       new Map(nextClassrooms.map((classroom) => [classroom.id, classroom]));
@@ -452,6 +513,22 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       loadStudentData();
     }
   }, [profile?.id, loadStudentData]);
+
+  useEffect(() => {
+    function handleClassroomArchived(event) {
+      const { classroomId, isArchived } = event?.detail || {};
+      if (!classroomId) return;
+      setClassrooms((prev) =>
+        prev.map((c) =>
+          String(c.id) === String(classroomId) ? { ...c, isArchived: Boolean(isArchived) } : c
+        )
+      );
+    }
+    window.addEventListener("writecheck:classroom_archived", handleClassroomArchived);
+    return () => {
+      window.removeEventListener("writecheck:classroom_archived", handleClassroomArchived);
+    };
+  }, []);
 
   useEffect(() => {
     const {
@@ -946,20 +1023,64 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
               </button>
             </div>
 
+            {/* Active vs Archived Filter Tabs */}
+            <div className="flex items-center gap-2 border-b border-[#dadce0]">
+              <button
+                type="button"
+                onClick={() => setClassroomTab("active")}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${
+                  classroomTab === "active"
+                    ? "border-[#137333] text-[#137333] font-semibold"
+                    : "border-transparent text-[#5f6368] hover:text-[#202124]"
+                }`}
+              >
+                <span>Active classes</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    classroomTab === "active"
+                      ? "bg-[#e6f4ea] text-[#137333]"
+                      : "bg-[#f1f3f4] text-[#5f6368]"
+                  }`}
+                >
+                  {activeClassrooms.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setClassroomTab("archived")}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${
+                  classroomTab === "archived"
+                    ? "border-amber-600 text-amber-800 font-semibold"
+                    : "border-transparent text-[#5f6368] hover:text-[#202124]"
+                }`}
+              >
+                <ArchiveIcon className="h-4 w-4" />
+                <span>Archived classes</span>
+                {archivedClassrooms.length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    {archivedClassrooms.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
             {isLoading ? (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {[1, 2].map((n) => (
                   <div key={n} className="h-64 rounded-xl border border-[#dadce0] bg-white animate-pulse" />
                 ))}
               </div>
-            ) : classrooms.length === 0 ? (
+            ) : classroomTab === "active" && activeClassrooms.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
                   <DoorIcon className="h-7 w-7" />
                 </div>
-                <h3 className="mt-4 text-lg font-medium text-[#202124]">No classes yet</h3>
+                <h3 className="mt-4 text-lg font-medium text-[#202124]">No active classes</h3>
                 <p className="mt-1 text-sm text-[#5f6368]">
-                  Ask your teacher for the class code to join your first classroom.
+                  {archivedClassrooms.length > 0
+                    ? "All your enrolled classes are currently archived. View past work in the Archived classes tab or ask your teacher for a new class code."
+                    : "Ask your teacher for the class code to join your first classroom."}
                 </p>
                 <button
                   type="button"
@@ -973,12 +1094,24 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   <span>Join class</span>
                 </button>
               </div>
+            ) : classroomTab === "archived" && archivedClassrooms.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+                  <ArchiveIcon className="h-7 w-7" />
+                </div>
+                <h3 className="mt-4 text-lg font-medium text-[#202124]">No archived classes</h3>
+                <p className="mt-1 text-sm text-[#5f6368]">
+                  Classes archived by your teachers will appear here in read-only mode for your records.
+                </p>
+              </div>
             ) : (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {classrooms.map((classroom) => (
+                {visibleClassrooms.map((classroom) => (
                   <article
                     key={classroom.id}
-                    className="group flex flex-col rounded-xl border border-[#dadce0] bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200"
+                    className={`group flex flex-col rounded-xl border bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200 ${
+                      classroom.isArchived ? "border-amber-300 ring-1 ring-amber-200" : "border-[#dadce0]"
+                    }`}
                   >
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
@@ -1025,6 +1158,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         <div className="flex items-center justify-between text-xs text-[#5f6368]">
                           <span>{classroom.assignments} assignments</span>
                         </div>
+                        {classroom.isArchived && (
+                          <div className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-amber-800 bg-amber-50 rounded-lg px-2.5 py-1.5 border border-amber-200">
+                            <ArchiveIcon className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                            <span>Class is archived (read-only)</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-[#e0e0e0] flex items-center justify-between text-xs font-medium">
@@ -1039,7 +1178,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       </div>
                       <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
                         className="mt-4 border-t border-gray-200 pt-3 text-left text-sm font-medium text-[#137333] hover:underline">
-                        Open classroom
+                        {classroom.isArchived ? "View archived classroom" : "Open classroom"}
                       </button>
                     </div>
                   </article>

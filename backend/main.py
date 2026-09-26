@@ -7,6 +7,8 @@ import shutil
 import sys
 import time
 import uuid
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -668,6 +670,99 @@ def return_submission_endpoint(submission_id: str, request: Request):
     result = supabase_request('/rest/v1/rpc/return_submission', request.state.access_token,
                               {'submission_key': submission_id})
     return {"success": True, "submission": result}
+
+
+class ArchiveClassroomRequest(BaseModel):
+    is_archived: bool = True
+
+
+@app.get("/api/classrooms/archived")
+def get_archived_classrooms_endpoint(request: Request):
+    """
+    Returns list of archived classroom IDs.
+    Queries using service role key to ensure consistent persistence for both teachers and students.
+    """
+    authenticated_account(request)
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    if not service_key:
+        raise HTTPException(500, "SUPABASE_SERVICE_ROLE_KEY is not configured.")
+
+    req = urllib.request.Request(
+        f"{url}/rest/v1/classroomTable?is_archived=eq.true&select=id",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            rows = json.load(resp)
+            return {"success": True, "archived_ids": [str(r["id"]) for r in rows if "id" in r]}
+    except Exception as exc:
+        return {"success": False, "archived_ids": [], "error": str(exc)}
+
+
+@app.post("/api/classrooms/{classroom_id}/archive")
+def archive_classroom_endpoint(
+    classroom_id: str,
+    payload: ArchiveClassroomRequest,
+    request: Request,
+):
+    """
+    Archives or restores a classroom on behalf of the authenticated teacher.
+    Uses the service role key to reliably persist the is_archived column in Supabase.
+    """
+    account = authenticated_account(request)
+    if account.get("role") not in ("teacher", "admin"):
+        raise HTTPException(403, "Only teachers can archive classrooms.")
+
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    if not service_key:
+        raise HTTPException(500, "SUPABASE_SERVICE_ROLE_KEY is not configured.")
+
+    req_check = urllib.request.Request(
+        f"{url}/rest/v1/classroomTable?id=eq.{classroom_id}&select=id,teacher_id,classroom_name",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req_check, timeout=10) as resp:
+            classrooms = json.load(resp)
+            if not classrooms:
+                raise HTTPException(404, "Classroom not found.")
+            classroom = classrooms[0]
+            if account.get("role") != "admin" and str(classroom.get("teacher_id")).lower() != str(account.get("id")).lower():
+                raise HTTPException(403, "You do not have permission to manage this classroom.")
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(exc.code, "Failed to query classroom.")
+
+    req_patch = urllib.request.Request(
+        f"{url}/rest/v1/classroomTable?id=eq.{classroom_id}",
+        data=json.dumps({"is_archived": payload.is_archived}).encode("utf-8"),
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        method="PATCH",
+    )
+    try:
+        with urllib.request.urlopen(req_patch, timeout=10) as resp:
+            updated = json.load(resp)
+            return {
+                "success": True,
+                "classroom_id": classroom_id,
+                "is_archived": payload.is_archived,
+                "classroom_name": classroom.get("classroom_name"),
+                "updated": updated,
+            }
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(exc.code, "Failed to update classroom archive state.")
 
 
 @app.post("/api/submissions/{submission_id}/grade")

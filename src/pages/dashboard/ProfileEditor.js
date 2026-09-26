@@ -104,16 +104,22 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
     }
   })();
 
+  const isTeacher = profile?.role === "teacher" || profile?.role === "admin";
+  const isStudent = !isTeacher;
+
   const [activeTab, setActiveTab] = useState("profile");
   const [name, setName] = useState(profile?.full_name || "");
   const [academicTitle, setAcademicTitle] = useState(savedPrefs.academicTitle || (profile?.full_name?.startsWith("Prof") ? "Professor" : profile?.full_name?.startsWith("Dr") ? "Doctor" : ""));
-  const [institution, setInstitution] = useState(savedPrefs.institution || (profile?.role === "teacher" ? "Department of Academic Integrity" : ""));
-  const [department, setDepartment] = useState(savedPrefs.department || (profile?.role === "teacher" ? "Language Arts & Writing" : ""));
+  const [gradeLevel, setGradeLevel] = useState(savedPrefs.gradeLevel || "");
+  const [courseTrack, setCourseTrack] = useState(savedPrefs.courseTrack || (!isTeacher ? savedPrefs.department || "" : ""));
+  const [institution, setInstitution] = useState(savedPrefs.institution || (isTeacher ? "Department of Academic Integrity" : ""));
+  const [department, setDepartment] = useState(savedPrefs.department || (isTeacher ? "Language Arts & Writing" : ""));
   const [bio, setBio] = useState(savedPrefs.bio || "");
   const [avatarColor, setAvatarColor] = useState(savedPrefs.avatarColor || "emerald");
   const [avatarUrl, setAvatarUrl] = useState(savedPrefs.avatarUrl || profile?.avatarUrl || "");
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
   const [plagiarismSensitivity, setPlagiarismSensitivity] = useState(savedPrefs.plagiarismSensitivity || "standard");
+  const [studentReportView, setStudentReportView] = useState(savedPrefs.studentReportView || "detailed");
   const [peerCrossCheck, setPeerCrossCheck] = useState(savedPrefs.peerCrossCheck ?? true);
   const [notifyOnSubmissions, setNotifyOnSubmissions] = useState(savedPrefs.notifyOnSubmissions ?? true);
   const [weeklyDigest, setWeeklyDigest] = useState(savedPrefs.weeklyDigest ?? false);
@@ -244,13 +250,16 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
       if (!data?.length) throw new Error("Your profile could not be saved.");
 
       const updatedPrefs = {
-        academicTitle,
+        academicTitle: isTeacher ? academicTitle : "",
+        gradeLevel: isStudent ? gradeLevel : "",
+        courseTrack: isStudent ? courseTrack : "",
         institution,
-        department,
+        department: isTeacher ? department : courseTrack,
         bio,
         avatarColor,
         avatarUrl,
         plagiarismSensitivity,
+        studentReportView,
         peerCrossCheck,
         notifyOnSubmissions,
         weeklyDigest,
@@ -298,7 +307,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
     .toUpperCase();
 
   const rawFullName = name || profile?.full_name || "Your profile";
-  const displayTitleAndName = academicTitle && !rawFullName.toLowerCase().startsWith(academicTitle.toLowerCase())
+  const displayTitleAndName = isTeacher && academicTitle && !rawFullName.toLowerCase().startsWith(academicTitle.toLowerCase())
     ? `${academicTitle} ${rawFullName}`
     : rawFullName;
 
@@ -437,6 +446,16 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                 <span className="h-1.5 w-1.5 rounded-full bg-[#137333]" />
                 {profile?.role ? `${profile.role} Workspace` : "Workspace"}
               </span>
+              {isStudent && gradeLevel && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f0fe] px-2.5 py-0.5 text-[11px] font-medium text-[#1a73e8]">
+                  {gradeLevel}
+                </span>
+              )}
+              {isStudent && courseTrack && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#fef7e0] px-2.5 py-0.5 text-[11px] font-medium text-[#b06000]">
+                  {courseTrack}
+                </span>
+              )}
               {institution && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#f1f3f4] px-2.5 py-0.5 text-[11px] font-medium text-[#5f6368]">
                   {institution}
@@ -591,177 +610,358 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                       maxLength={120}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g. Professor X"
+                      placeholder={isTeacher ? "e.g. Professor X" : "e.g. Alex Johnson"}
                       className="h-11 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] pl-10 pr-3.5 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
                     />
                   </div>
                 </div>
 
-                {/* Title & Department Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="academic-title" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                      Academic title / Prefix
-                    </label>
-                    <select
-                      id="academic-title"
-                      value={academicTitle}
-                      onChange={(e) => setAcademicTitle(e.target.value)}
-                      className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                    >
-                      <option value="">None</option>
-                      <option value="Professor">Professor</option>
-                      <option value="Dr.">Dr.</option>
-                      <option value="Mr.">Mr.</option>
-                      <option value="Ms.">Ms.</option>
-                      <option value="Mrs.">Mrs.</option>
-                      <option value="Instructor">Instructor</option>
-                    </select>
-                  </div>
+                {isTeacher ? (
+                  <>
+                    {/* Title & Department Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="academic-title" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                          Academic title / Prefix
+                        </label>
+                        <select
+                          id="academic-title"
+                          value={academicTitle}
+                          onChange={(e) => setAcademicTitle(e.target.value)}
+                          className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                        >
+                          <option value="">None</option>
+                          <option value="Professor">Professor</option>
+                          <option value="Dr.">Dr.</option>
+                          <option value="Mr.">Mr.</option>
+                          <option value="Ms.">Ms.</option>
+                          <option value="Mrs.">Mrs.</option>
+                          <option value="Instructor">Instructor</option>
+                        </select>
+                      </div>
 
-                  <div>
-                    <label htmlFor="academic-dept" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                      Subject / Department
-                    </label>
-                    <input
-                      id="academic-dept"
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="e.g. English Literature"
-                      className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                    />
-                  </div>
-                </div>
+                      <div>
+                        <label htmlFor="academic-dept" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                          Subject / Department
+                        </label>
+                        <input
+                          id="academic-dept"
+                          value={department}
+                          onChange={(e) => setDepartment(e.target.value)}
+                          placeholder="e.g. English Literature"
+                          className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                        />
+                      </div>
+                    </div>
 
-                {/* School / Institution */}
-                <div>
-                  <label htmlFor="institution-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                    School / Institution
-                  </label>
-                  <input
-                    id="institution-input"
-                    value={institution}
-                    onChange={(e) => setInstitution(e.target.value)}
-                    placeholder="e.g. Greenwood High School / University"
-                    className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                  />
-                </div>
+                    {/* School / Institution */}
+                    <div>
+                      <label htmlFor="institution-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                        School / Institution
+                      </label>
+                      <input
+                        id="institution-input"
+                        value={institution}
+                        onChange={(e) => setInstitution(e.target.value)}
+                        placeholder="e.g. Greenwood High School / University"
+                        className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                      />
+                    </div>
 
-                {/* Bio / Teacher Note */}
-                <div>
-                  <label htmlFor="bio-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                    Bio / Note to Students
-                  </label>
-                  <textarea
-                    id="bio-input"
-                    rows={2}
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    placeholder="Write a brief intro, office hours, or guidance on writing submissions..."
-                    className="w-full rounded-xl border border-[#dadce0] bg-[#fafafa] p-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                  />
-                </div>
+                    {/* Bio / Teacher Note */}
+                    <div>
+                      <label htmlFor="bio-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                        Bio / Note to Students
+                      </label>
+                      <textarea
+                        id="bio-input"
+                        rows={2}
+                        value={bio}
+                        onChange={(e) => setBio(e.target.value)}
+                        placeholder="Write a brief intro, office hours, or guidance on writing submissions..."
+                        className="w-full rounded-xl border border-[#dadce0] bg-[#fafafa] p-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Grade Level & Course/Strand Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="student-grade-level" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                          Grade / Year Level
+                        </label>
+                        <select
+                          id="student-grade-level"
+                          value={gradeLevel}
+                          onChange={(e) => setGradeLevel(e.target.value)}
+                          className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                        >
+                          <option value="">Select level...</option>
+                          <optgroup label="Junior & Senior High">
+                            <option value="Grade 7">Grade 7</option>
+                            <option value="Grade 8">Grade 8</option>
+                            <option value="Grade 9">Grade 9</option>
+                            <option value="Grade 10">Grade 10</option>
+                            <option value="Grade 11 (SHS)">Grade 11 (SHS)</option>
+                            <option value="Grade 12 (SHS)">Grade 12 (SHS)</option>
+                          </optgroup>
+                          <optgroup label="College / University">
+                            <option value="1st Year College">1st Year College</option>
+                            <option value="2nd Year College">2nd Year College</option>
+                            <option value="3rd Year College">3rd Year College</option>
+                            <option value="4th Year College">4th Year College</option>
+                            <option value="Graduate Studies">Graduate Studies</option>
+                          </optgroup>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label htmlFor="student-course-track" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                          Course / Program / Strand
+                        </label>
+                        <input
+                          id="student-course-track"
+                          value={courseTrack}
+                          onChange={(e) => setCourseTrack(e.target.value)}
+                          placeholder="e.g. BS Information Technology, STEM"
+                          className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* School / College / University */}
+                    <div>
+                      <label htmlFor="institution-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                        School / College / University
+                      </label>
+                      <input
+                        id="institution-input"
+                        value={institution}
+                        onChange={(e) => setInstitution(e.target.value)}
+                        placeholder="e.g. Laguna State Polytechnic University"
+                        className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                      />
+                    </div>
+
+                    {/* Bio / About Me */}
+                    <div>
+                      <label htmlFor="bio-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                        Bio / About Me
+                      </label>
+                      <textarea
+                        id="bio-input"
+                        rows={2}
+                        value={bio}
+                        onChange={(e) => setBio(e.target.value)}
+                        placeholder="Share a brief intro about yourself, academic interests, or writing goals..."
+                        className="w-full rounded-xl border border-[#dadce0] bg-[#fafafa] p-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
             {/* TAB 2: AI & Preferences */}
             {activeTab === "preferences" && (
               <div className="space-y-4 animate-fadeIn">
-                {/* Plagiarism Engine Config */}
-                <div className="rounded-2xl border border-[#dadce0] bg-[#f8f9fa] p-3.5 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="grid h-7 w-7 place-items-center rounded-lg bg-[#e6f4ea] text-[#137333]">
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                        </svg>
+                {isTeacher ? (
+                  <>
+                    {/* Teacher: Plagiarism Engine Config */}
+                    <div className="rounded-2xl border border-[#dadce0] bg-[#f8f9fa] p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="grid h-7 w-7 place-items-center rounded-lg bg-[#e6f4ea] text-[#137333]">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-[#202124]">Copyleaks Plagiarism Engine</p>
+                            <p className="text-[11px] text-[#5f6368]">Web authenticity & academic cross-check</p>
+                          </div>
+                        </div>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-2 py-0.5 text-[10px] font-bold text-[#137333]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#137333] animate-pulse" /> Connected
+                        </span>
                       </div>
+
                       <div>
-                        <p className="text-xs font-bold text-[#202124]">Copyleaks Plagiarism Engine</p>
-                        <p className="text-[11px] text-[#5f6368]">Web authenticity & academic cross-check</p>
+                        <label htmlFor="plagiarism-sensitivity" className="block text-[11px] font-semibold text-[#444746] mb-1">
+                          Detection Sensitivity Threshold
+                        </label>
+                        <select
+                          id="plagiarism-sensitivity"
+                          value={plagiarismSensitivity}
+                          onChange={(e) => setPlagiarismSensitivity(e.target.value)}
+                          className="h-9 w-full rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs text-[#202124] outline-none focus:border-[#137333]"
+                        >
+                          <option value="standard">Standard (10% similarity alert — Recommended)</option>
+                          <option value="strict">Strict (5% similarity alert — Flags minor paraphrases)</option>
+                          <option value="permissive">Permissive (20% similarity alert — Verbatim focus)</option>
+                        </select>
                       </div>
                     </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-2 py-0.5 text-[10px] font-bold text-[#137333]">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#137333] animate-pulse" /> Connected
-                    </span>
-                  </div>
 
-                  <div>
-                    <label htmlFor="plagiarism-sensitivity" className="block text-[11px] font-semibold text-[#444746] mb-1">
-                      Detection Sensitivity Threshold
-                    </label>
-                    <select
-                      id="plagiarism-sensitivity"
-                      value={plagiarismSensitivity}
-                      onChange={(e) => setPlagiarismSensitivity(e.target.value)}
-                      className="h-9 w-full rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs text-[#202124] outline-none focus:border-[#137333]"
-                    >
-                      <option value="standard">Standard (10% similarity alert — Recommended)</option>
-                      <option value="strict">Strict (5% similarity alert — Flags minor paraphrases)</option>
-                      <option value="permissive">Permissive (20% similarity alert — Verbatim focus)</option>
-                    </select>
-                  </div>
-                </div>
+                    {/* YOLO26x + TrOCR Engine Info */}
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#137333] text-white shadow-2xs">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-[#0d652d]">Handwriting AI OCR</p>
+                          <p className="text-[11px] text-[#137333]">YOLO26x Line Detector + TrOCR Transformer</p>
+                        </div>
+                      </div>
+                      <span className="rounded bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-900">
+                        Active
+                      </span>
+                    </div>
 
-                {/* YOLO26x + TrOCR Engine Info */}
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#137333] text-white shadow-2xs">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-[#0d652d]">Handwriting AI OCR</p>
-                      <p className="text-[11px] text-[#137333]">YOLO26x Line Detector + TrOCR Transformer</p>
-                    </div>
-                  </div>
-                  <span className="rounded bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-900">
-                    Active
-                  </span>
-                </div>
+                    {/* Teacher Toggles */}
+                    <div className="space-y-3 pt-1">
+                      <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
+                        <div>
+                          <p className="text-xs font-semibold text-[#202124]">Peer-to-Peer Cross Check</p>
+                          <p className="text-[11px] text-[#5f6368]">Compare student essays against classmates' submissions</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={peerCrossCheck}
+                          onChange={(e) => setPeerCrossCheck(e.target.checked)}
+                          className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
+                        />
+                      </label>
 
-                {/* Toggles */}
-                <div className="space-y-3 pt-1">
-                  <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
-                    <div>
-                      <p className="text-xs font-semibold text-[#202124]">Peer-to-Peer Cross Check</p>
-                      <p className="text-[11px] text-[#5f6368]">Compare student essays against classmates' submissions</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={peerCrossCheck}
-                      onChange={(e) => setPeerCrossCheck(e.target.checked)}
-                      className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
-                    />
-                  </label>
+                      <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
+                        <div>
+                          <p className="text-xs font-semibold text-[#202124]">Submission Email Notifications</p>
+                          <p className="text-[11px] text-[#5f6368]">Receive notifications when students turn in work</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={notifyOnSubmissions}
+                          onChange={(e) => setNotifyOnSubmissions(e.target.checked)}
+                          className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
+                        />
+                      </label>
 
-                  <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
-                    <div>
-                      <p className="text-xs font-semibold text-[#202124]">Submission Email Notifications</p>
-                      <p className="text-[11px] text-[#5f6368]">Receive notifications when students turn in work</p>
+                      <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
+                        <div>
+                          <p className="text-xs font-semibold text-[#202124]">Weekly Integrity Digest</p>
+                          <p className="text-[11px] text-[#5f6368]">Receive a weekly summary report of scan scores</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={weeklyDigest}
+                          onChange={(e) => setWeeklyDigest(e.target.checked)}
+                          className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
+                        />
+                      </label>
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={notifyOnSubmissions}
-                      onChange={(e) => setNotifyOnSubmissions(e.target.checked)}
-                      className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
-                    />
-                  </label>
+                  </>
+                ) : (
+                  <>
+                    {/* Student: Copyleaks Engine Transparency */}
+                    <div className="rounded-2xl border border-[#dadce0] bg-[#f8f9fa] p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="grid h-7 w-7 place-items-center rounded-lg bg-[#e6f4ea] text-[#137333]">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-[#202124]">Copyleaks Originality Engine</p>
+                            <p className="text-[11px] text-[#5f6368]">Real-time citation check & web authenticity</p>
+                          </div>
+                        </div>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-2 py-0.5 text-[10px] font-bold text-[#137333]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#137333] animate-pulse" /> Connected
+                        </span>
+                      </div>
 
-                  <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
-                    <div>
-                      <p className="text-xs font-semibold text-[#202124]">Weekly Integrity Digest</p>
-                      <p className="text-[11px] text-[#5f6368]">Receive a weekly summary report of scan scores</p>
+                      <div>
+                        <label htmlFor="student-report-view" className="block text-[11px] font-semibold text-[#444746] mb-1">
+                          Originality Report View
+                        </label>
+                        <select
+                          id="student-report-view"
+                          value={studentReportView}
+                          onChange={(e) => setStudentReportView(e.target.value)}
+                          className="h-9 w-full rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs text-[#202124] outline-none focus:border-[#137333]"
+                        >
+                          <option value="detailed">Detailed Match Highlighting (Identifies matched sources & quotes)</option>
+                          <option value="summary">Summary Only (Overall similarity percentage)</option>
+                        </select>
+                      </div>
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={weeklyDigest}
-                      onChange={(e) => setWeeklyDigest(e.target.checked)}
-                      className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
-                    />
-                  </label>
-                </div>
+
+                    {/* YOLO26x + TrOCR Engine Info */}
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#137333] text-white shadow-2xs">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-[#0d652d]">Handwriting AI OCR</p>
+                          <p className="text-[11px] text-[#137333]">Automatic handwriting-to-text digitization</p>
+                        </div>
+                      </div>
+                      <span className="rounded bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-900">
+                        Active
+                      </span>
+                    </div>
+
+                    {/* Student Toggles */}
+                    <div className="space-y-3 pt-1">
+                      <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
+                        <div>
+                          <p className="text-xs font-semibold text-[#202124]">Submission Confirmation Receipts</p>
+                          <p className="text-[11px] text-[#5f6368]">Receive an email receipt whenever you turn in an essay</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={notifyOnSubmissions}
+                          onChange={(e) => setNotifyOnSubmissions(e.target.checked)}
+                          className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
+                        <div>
+                          <p className="text-xs font-semibold text-[#202124]">Grade & Feedback Alerts</p>
+                          <p className="text-[11px] text-[#5f6368]">Get notified when your teacher returns reviewed papers and comments</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={peerCrossCheck}
+                          onChange={(e) => setPeerCrossCheck(e.target.checked)}
+                          className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
+                        <div>
+                          <p className="text-xs font-semibold text-[#202124]">Weekly Writing Progress Digest</p>
+                          <p className="text-[11px] text-[#5f6368]">Receive a weekly recap of your submissions, originality scores, and returned grades</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={weeklyDigest}
+                          onChange={(e) => setWeeklyDigest(e.target.checked)}
+                          className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
+                        />
+                      </label>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

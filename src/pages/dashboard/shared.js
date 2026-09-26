@@ -524,7 +524,10 @@ export function normalizeClassroom(row, index = 0, extra = {}) {
     teacherName: resolvedTeacher,
     teacherInfo: extra.teacherInfo || (row.teacher_id ? { id: row.teacher_id, name: resolvedTeacher, email: row.teacher_email || "" } : null),
     accent: getClassroomAccent(row, index),
-    isArchived: Boolean(row.is_archived ?? row.isArchived ?? extra.isArchived ?? false),
+    isArchived:
+      extra.isArchived !== undefined
+        ? Boolean(extra.isArchived)
+        : Boolean(row.is_archived ?? row.isArchived ?? false),
   };
 }
 
@@ -547,6 +550,7 @@ export function normalizeAssignment(row, classroomsById = new Map(), extra = {})
     submissions: extra.submissions ?? 0,
     submitted: extra.submitted ?? false,
     submission: extra.submission ?? null,
+    isArchived: Boolean(classroom?.isArchived || extra.isArchived || false),
     acceptLateSubmissions: row.accept_late_submissions ?? true,
   };
 }
@@ -637,7 +641,7 @@ export function filterAndSortTodoAssignments(
 ) {
   const filtered = selectedClassroomId
     ? assignments.filter((a) => a.classroomId === selectedClassroomId)
-    : assignments;
+    : assignments.filter((a) => !a.isArchived);
 
   // Unsubmitted assignments
   const todoList = filtered.filter((a) => !a.submitted);

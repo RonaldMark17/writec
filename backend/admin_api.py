@@ -53,7 +53,26 @@ def authenticated_account(request: Request):
         raise HTTPException(401, "Sign in to continue.")
     token = token.strip()
     user = supabase_request("/auth/v1/user", token)
-    account = supabase_request("/rest/v1/rpc/current_account", token, {})
+    account = None
+    try:
+        account = supabase_request("/rest/v1/rpc/current_account", token, {})
+    except Exception:
+        pass
+    if not account or account.get("id") != user.get("id"):
+        service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if service_key and user.get("id"):
+            url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+            req_u = urllib.request.Request(
+                f"{url}/rest/v1/userTable?id=eq.{user.get('id')}&select=id,full_name,email,role,account_status,registered_at",
+                headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+            )
+            try:
+                with urllib.request.urlopen(req_u, timeout=5) as u_resp:
+                    rows = json.load(u_resp)
+                    if rows:
+                        account = rows[0]
+            except Exception:
+                pass
     if not account or account.get("id") != user.get("id"):
         raise HTTPException(403, "Account profile not found.")
     if account.get("account_status") != "active":

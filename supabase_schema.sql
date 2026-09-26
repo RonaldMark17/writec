@@ -214,4 +214,11 @@ CREATE POLICY "teachers_readable_by_authenticated" ON public."userTable"
 ALTER TABLE public."classroomTable"
   ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false;
 
+-- Allow teachers to update their classrooms (including archiving)
+DROP POLICY IF EXISTS classroom_teacher_update ON public."classroomTable";
+CREATE POLICY classroom_teacher_update ON public."classroomTable"
+  FOR UPDATE TO authenticated
+  USING (teacher_id = auth.uid())
+  WITH CHECK (teacher_id = auth.uid());
+
 COMMIT;
