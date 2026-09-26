@@ -275,11 +275,16 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
         }
       }
 
-      // Best effort sync with Supabase Auth metadata
+      // Best effort sync with Supabase Auth metadata.
+      // CRITICAL: Never store base64 data URLs in Supabase Auth user_metadata.
+      // Supabase serializes user_metadata into the JWT on every session mint.
+      // Base64 images inflate the JWT to >11KB, exceeding web server/reverse proxy
+      // (Nginx/Cloudflare) header buffer limits and causing "400 Bad Request: Request Header Or Cookie Too Large".
       try {
+        const safeAvatarUrl = (avatarUrl && !avatarUrl.startsWith("data:")) ? avatarUrl : null;
         await supabase.auth.updateUser({
           data: {
-            avatar_url: avatarUrl,
+            avatar_url: safeAvatarUrl,
             avatar_color: avatarColor,
           },
         });

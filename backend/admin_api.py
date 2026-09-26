@@ -135,6 +135,8 @@ def install_account_guard(app):
     @app.middleware("http")
     async def guard(request, call_next):
         path = request.url.path
+        if path in ("/health", "/api/health"):
+            return await call_next(request)
         protected = path.startswith("/api/") or path in ("/upload", "/upload-stream") or path.startswith("/uploads/")
         # Preserve the existing provider callback contract; it has no user JWT.
         callback = path.startswith("/api/plagiarism/webhook/")

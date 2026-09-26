@@ -614,6 +614,7 @@ def proxy_storage_file(request: Request, path: str = Query(...)):
 # ==========================================
 
 
+@app.get("/api/health")
 @app.get("/health")
 async def health():
     return {
@@ -1282,6 +1283,7 @@ def simulate_complete_scan(scan_id: str, request: Request):
     return {"success": True, "record": updated}
 
 
+@app.post("/api/upload")
 @app.post("/upload")
 def upload_image(file: UploadFile = File(...)):
     started_at = time.perf_counter()
@@ -1339,6 +1341,7 @@ def upload_image(file: UploadFile = File(...)):
     }
 
 
+@app.post("/api/upload-stream")
 @app.post("/upload-stream")
 def upload_image_stream(file: UploadFile = File(...)):
     started_at = time.perf_counter()

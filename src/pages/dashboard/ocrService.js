@@ -1,11 +1,20 @@
-import { apiFetch } from "../../apiFetch";
-const OCR_ENDPOINT =
-  process.env.REACT_APP_OCR_ENDPOINT ||
-  `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/upload`;
+import { apiFetch, getBackendUrl } from "../../apiFetch";
 
-const OCR_STREAM_ENDPOINT =
-  process.env.REACT_APP_OCR_STREAM_ENDPOINT ||
-  OCR_ENDPOINT.replace(/\/upload$/, "/upload-stream");
+export function getOcrEndpoint() {
+  if (process.env.REACT_APP_OCR_ENDPOINT) {
+    return process.env.REACT_APP_OCR_ENDPOINT;
+  }
+  const backend = getBackendUrl();
+  return `${backend}/api/upload`;
+}
+
+export function getOcrStreamEndpoint() {
+  if (process.env.REACT_APP_OCR_STREAM_ENDPOINT) {
+    return process.env.REACT_APP_OCR_STREAM_ENDPOINT;
+  }
+  const backend = getBackendUrl();
+  return `${backend}/api/upload-stream`;
+}
 
 const OCR_TIMEOUT_MS = 1200000;
 
@@ -31,9 +40,10 @@ async function extractTextFromImageJson(file, signal) {
 
   let response;
 
+  const endpoint = getOcrEndpoint();
   try {
     response =
-      await apiFetch(OCR_ENDPOINT, {
+      await apiFetch(endpoint, {
         method: "POST",
         body: formData,
         signal,
@@ -46,7 +56,7 @@ async function extractTextFromImageJson(file, signal) {
     }
 
     throw new Error(
-      `Could not reach the OCR server at ${OCR_ENDPOINT}. Start FastAPI with "uvicorn main:app --reload --port 8000", then try again.`
+      `Could not reach the OCR server at ${endpoint}. Start FastAPI with "uvicorn main:app --reload --port 8000", then try again.`
     );
   }
 
@@ -84,9 +94,10 @@ async function extractTextFromImageStream(file, signal, onProgress) {
 
   let response;
 
+  const streamEndpoint = getOcrStreamEndpoint();
   try {
     response =
-      await apiFetch(OCR_STREAM_ENDPOINT, {
+      await apiFetch(streamEndpoint, {
         method: "POST",
         body: formData,
         signal,
@@ -99,7 +110,7 @@ async function extractTextFromImageStream(file, signal, onProgress) {
     }
 
     throw new Error(
-      `Could not reach the OCR server at ${OCR_STREAM_ENDPOINT}. Start FastAPI with "uvicorn main:app --reload --port 8000", then try again.`
+      `Could not reach the OCR server at ${streamEndpoint}. Start FastAPI with "uvicorn main:app --reload --port 8000", then try again.`
     );
   }
 
@@ -235,8 +246,8 @@ export async function extractTextFromImage(file, options = {}) {
 
 export async function getOcrEngineInfo() {
   try {
-    const backend = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-    const response = await apiFetch(`${backend}/health`);
+    const backend = getBackendUrl();
+    const response = await apiFetch(`${backend}/api/health`);
     if (!response.ok) return null;
     return await response.json();
   } catch {
