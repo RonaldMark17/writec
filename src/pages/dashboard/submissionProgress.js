@@ -7,12 +7,22 @@ export function processingLabel(state) {
 
 export function applySubmissionResult(row, result, progress, teacher) {
   const visible = teacher || Boolean(result.returned_at);
-  return { ...row, status: result.status, returnedAt: result.returned_at,
+  const isReady = (progress?.state === "ready") || Boolean(result.scan_result) || Boolean(result.transcribed_text);
+  return {
+    ...row,
+    status: result.status,
+    returnedAt: result.returned_at,
     grade: visible ? (result.grade ?? "") : "",
     feedback: visible ? (result.feedback ?? "") : "",
-    transcribedText: visible ? (result.transcribed_text ?? "") : "",
-    scanResult: visible ? (result.scan_result ?? null) : null,
-    processingState: progress?.state || "submitted", processingError: teacher ? progress?.error : null };
+    transcribedText: teacher ? (result.transcribed_text ?? "") : (isReady ? (result.transcribed_text ?? "") : ""),
+    scanResult: teacher ? (result.scan_result ?? null) : null,
+    processingState: progress?.state || (isReady ? "ready" : "submitted"),
+    processingError: teacher ? progress?.error : null,
+    hasUploaded: true,
+    hasTranscribed: isReady || Boolean(result.transcribed_text),
+    hasRecorded: isReady || Boolean(result.transcribed_text),
+    hasPlagiarismChecked: isReady || Boolean(result.scan_result),
+  };
 }
 
 export function useSubmissionProgress(userId, setSubmissions, teacher = false) {

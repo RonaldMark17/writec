@@ -18,6 +18,7 @@ import {
   MEMBER_TABLE,
   Header,
   ImageIcon,
+  ArchiveIcon,
   PlusIcon,
   StatusMessage,
   UploadIcon,
@@ -233,11 +234,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     let { data: classroomRows, error: classroomError } =
       await supabase
         .from(CLASSROOM_TABLE)
-        .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section, teacher_name")
+        .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section, teacher_name, is_archived")
         .in("id", classroomIds)
         .order("created_at", { ascending: false });
 
-    if (classroomError && (classroomError.message?.includes("teacher_name") || classroomError.code === "42703" || classroomError.code === "PGRST204")) {
+    if (classroomError && (classroomError.message?.includes("is_archived") || classroomError.message?.includes("teacher_name") || classroomError.code === "42703" || classroomError.code === "PGRST204")) {
       const fallback = await supabase
         .from(CLASSROOM_TABLE)
         .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section")
@@ -414,10 +415,14 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           status: submission.status || "submitted",
           grade: submission.returned_at ? (submission.grade ?? "") : "",
           feedback: submission.returned_at ? (submission.feedback ?? "") : "",
-          transcribedText: submission.returned_at ? (submission.transcribed_text ?? "") : "",
-          scanResult: submission.returned_at ? (submission.scan_result ?? null) : null,
-          processingState: submission.processing_state || "ready",
-          processingError: submission.processing_error || null,
+          transcribedText: submission.transcribed_text ?? "",
+          scanResult: null, // Plagiarism detection results are never exposed to the student
+          processingState: submission.processing_state || (submission.transcribed_text ? "ready" : "submitted"),
+          processingError: null,
+          hasUploaded: true,
+          hasTranscribed: Boolean(submission.transcribed_text || submission.processing_state === "ready"),
+          hasRecorded: Boolean(submission.transcribed_text || submission.processing_state === "ready"),
+          hasPlagiarismChecked: Boolean(submission.scan_result || submission.processing_state === "ready"),
         };
       });
 
@@ -670,6 +675,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
+    const assignmentClassroom = classrooms.find((c) => c.id === selectedAssignment.classroomId);
+    if (assignmentClassroom?.isArchived) {
+      setErrorMessage("This classroom is archived. Submissions are closed.");
+      return;
+    }
+
     if (selectedAssignment.dueInfo?.isOverdue && selectedAssignment.acceptLateSubmissions === false) {
       setErrorMessage("Submissions are closed. Your teacher has disabled late submissions for this assignment.");
       return;
@@ -787,7 +798,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         return;
       }
 
-      setSuccessMessage(savedSubmission?.already_submitted ? "This assignment was already saved. Your existing submission is available below." : "Assignment submitted and queued for processing. Results remain private until your teacher returns them.");
+      setSuccessMessage(
+        savedSubmission?.already_submitted
+          ? "This assignment was already saved. Your existing submission is available below."
+          : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for plagiarism. Confirmation status will update below."
+      );
       resetSubmissionDraft();
       setActivePage("submissions");
       await loadStudentData();
@@ -968,13 +983,21 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 pr-14">
-                          <h3>
-                            <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
-                              className="text-left text-xl font-medium tracking-tight text-white hover:underline break-words"
-                              title={classroom.name}>
-                              {classroom.name}
-                            </button>
-                          </h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3>
+                              <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
+                                className="text-left text-xl font-medium tracking-tight text-white hover:underline break-words"
+                                title={classroom.name}>
+                                {classroom.name}
+                              </button>
+                            </h3>
+                            {classroom.isArchived && (
+                              <span className="inline-flex items-center gap-1 rounded bg-amber-900/70 border border-amber-300/40 px-2 py-0.5 text-[11px] font-semibold text-amber-100 shadow-xs">
+                                <ArchiveIcon className="h-3 w-3" />
+                                Archived
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs font-normal text-white/90 truncate mt-0.5">
                             Section {classroom.section} • {classroom.teacher}
                           </p>
@@ -1216,6 +1239,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                             <FileIcon className="h-3.5 w-3.5 text-[#5f6368]" />
                             <span>View submission</span>
                           </button>
+                        ) : classrooms.find((c) => c.id === assignment.classroomId)?.isArchived ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3.5 py-1.5 text-xs font-semibold text-amber-800">
+                            <ArchiveIcon className="h-3.5 w-3.5" />
+                            <span>Class is archived (Submissions closed)</span>
+                          </span>
                         ) : assignment.dueInfo.isOverdue && assignment.acceptLateSubmissions === false ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-xs font-semibold text-red-700">
                             <AlertCircleIcon className="h-3.5 w-3.5" />
@@ -1430,7 +1458,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   Submissions
                 </h2>
                 <p className="mt-1 text-xs sm:text-sm text-[#5f6368]">
-                  Review your turned in assignments, teacher feedback, and OCR/plagiarism scan reports.
+                  Review your turned in assignments, automated submission processing status, and teacher feedback.
                 </p>
               </div>
 
@@ -1659,19 +1687,21 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                 {submission.returnedAt ? "Returned" : submission.processingState && submission.processingState !== "ready" ? processingLabel(submission.processingState) : submission.status === "graded" ? "Graded" : "Turned in"}
                               </span>
                             </div>
-                            {submission.scanResult && (
-                              <div>
-                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                  (submission.scanResult.plagiarism_score ?? submission.scanResult.score ?? 0) >= 50
-                                    ? "bg-red-50 text-red-700"
-                                    : (submission.scanResult.plagiarism_score ?? submission.scanResult.score ?? 0) >= 20
-                                      ? "bg-amber-50 text-amber-700"
-                                      : "bg-emerald-50 text-emerald-700"
-                                }`}>
-                                  {Math.round(submission.scanResult.plagiarism_score ?? submission.scanResult.score ?? 0)}% similarity
-                                </span>
-                              </div>
-                            )}
+                            <div>
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                submission.processingState === "ready" || submission.hasPlagiarismChecked || submission.returnedAt || submission.status === "graded"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : submission.processingState === "failed"
+                                    ? "bg-red-50 text-red-700 border border-red-200"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                              }`}>
+                                {submission.processingState === "ready" || submission.hasPlagiarismChecked || submission.returnedAt || submission.status === "graded"
+                                  ? "Plagiarism Checked"
+                                  : submission.processingState === "failed"
+                                    ? "Needs attention"
+                                    : "Transcribing & Checking..."}
+                              </span>
+                            </div>
                           </div>
 
                           {/* Action Button */}
@@ -1830,182 +1860,181 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   )}
                 </div>
 
-                {/* Plagiarism Detection Result */}
-                {viewingSubmission.scanResult ? (() => {
-                  const sr = viewingSubmission.scanResult;
-                  const ringClass = sr.tone === "red"
-                    ? "text-red-700 ring-red-100"
-                    : sr.tone === "amber"
-                      ? "text-amber-700 ring-amber-100"
-                      : "text-emerald-700 ring-emerald-100";
-                  const badgeClass = sr.tone === "red"
-                    ? "bg-red-50 text-red-700 border-red-200"
-                    : sr.tone === "amber"
-                      ? "bg-amber-50 text-amber-700 border-amber-200"
-                      : "bg-emerald-50 text-emerald-800 border-emerald-200";
-                  return (
-                    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Detection Result</p>
-                          <h4 className="mt-1 text-xl font-black text-gray-950">Plagiarism check</h4>
-                        </div>
-                        <span className={`inline-flex items-center rounded-lg border px-3 py-1 text-xs font-black ${badgeClass}`}>
-                          {sr.label || "Low review"}
+                {/* Submission Confirmation & Automated Processing Status */}
+                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-wider text-emerald-700">
+                        Submission Pipeline Status
+                      </p>
+                      <h4 className="mt-1 text-lg font-black text-gray-950">
+                        Automated Processing Confirmation
+                      </h4>
+                    </div>
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-extrabold text-emerald-800">
+                      {viewingSubmission.processingState === "ready" || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                        ? "Processing Complete"
+                        : viewingSubmission.processingState === "failed"
+                          ? "Processing Needs Attention"
+                          : "Processing In Progress"}
+                    </span>
+                  </div>
+
+                  <p className="mt-3 text-xs font-medium text-gray-500">
+                    Your handwritten submission is automatically processed through our YOLO line-detection and TrOCR handwriting transcription pipeline, followed by automatic plagiarism checking.
+                  </p>
+
+                  {/* 4-Step Verification Workflow Display */}
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {/* Step 1: Upload */}
+                    <div className="flex items-start gap-3 rounded-lg border border-emerald-100 bg-emerald-50/60 p-3.5">
+                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-600 text-white">
+                        <CheckIcon className="h-4 w-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-extrabold text-emerald-950">
+                          1. Work Uploaded Successfully
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-emerald-700">
+                          Handwritten work image safely received and stored.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 2: YOLO -> TrOCR Transcription */}
+                    <div className={`flex items-start gap-3 rounded-lg border p-3.5 ${
+                      viewingSubmission.processingState === "ready" || viewingSubmission.hasTranscribed || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                        ? "border-emerald-100 bg-emerald-50/60"
+                        : viewingSubmission.processingState === "failed"
+                          ? "border-red-100 bg-red-50/60"
+                          : "border-amber-100 bg-amber-50/60"
+                    }`}>
+                      <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black ${
+                        viewingSubmission.processingState === "ready" || viewingSubmission.hasTranscribed || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                          ? "bg-emerald-600 text-white"
+                          : viewingSubmission.processingState === "failed"
+                            ? "bg-red-600 text-white"
+                            : "bg-amber-500 text-white"
+                      }`}>
+                        {viewingSubmission.processingState === "ready" || viewingSubmission.hasTranscribed || viewingSubmission.returnedAt || viewingSubmission.status === "graded" ? "✓" : "2"}
+                      </div>
+                      <div>
+                        <p className="text-xs font-extrabold text-gray-900">
+                          2. Handwritten Text Transcribed
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-gray-600">
+                          {viewingSubmission.processingState === "ready" || viewingSubmission.hasTranscribed || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                            ? "YOLO detected handwriting lines & TrOCR converted to text."
+                            : "YOLO line detection & TrOCR transcription in progress..."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 3: Transcribed Text Recorded */}
+                    <div className={`flex items-start gap-3 rounded-lg border p-3.5 ${
+                      viewingSubmission.processingState === "ready" || viewingSubmission.hasRecorded || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                        ? "border-emerald-100 bg-emerald-50/60"
+                        : viewingSubmission.processingState === "failed"
+                          ? "border-red-100 bg-red-50/60"
+                          : "border-amber-100 bg-amber-50/60"
+                    }`}>
+                      <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black ${
+                        viewingSubmission.processingState === "ready" || viewingSubmission.hasRecorded || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                          ? "bg-emerald-600 text-white"
+                          : viewingSubmission.processingState === "failed"
+                            ? "bg-red-600 text-white"
+                            : "bg-amber-500 text-white"
+                      }`}>
+                        {viewingSubmission.processingState === "ready" || viewingSubmission.hasRecorded || viewingSubmission.returnedAt || viewingSubmission.status === "graded" ? "✓" : "3"}
+                      </div>
+                      <div>
+                        <p className="text-xs font-extrabold text-gray-900">
+                          3. Transcribed Text Recorded
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-gray-600">
+                          {viewingSubmission.processingState === "ready" || viewingSubmission.hasRecorded || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                            ? "Transcribed text formatted and securely stored."
+                            : "Recording transcribed text to submission record..."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 4: Plagiarism Check */}
+                    <div className={`flex items-start gap-3 rounded-lg border p-3.5 ${
+                      viewingSubmission.processingState === "ready" || viewingSubmission.hasPlagiarismChecked || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                        ? "border-emerald-100 bg-emerald-50/60"
+                        : viewingSubmission.processingState === "failed"
+                          ? "border-red-100 bg-red-50/60"
+                          : "border-amber-100 bg-amber-50/60"
+                    }`}>
+                      <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black ${
+                        viewingSubmission.processingState === "ready" || viewingSubmission.hasPlagiarismChecked || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                          ? "bg-emerald-600 text-white"
+                          : viewingSubmission.processingState === "failed"
+                            ? "bg-red-600 text-white"
+                            : "bg-amber-500 text-white"
+                      }`}>
+                        {viewingSubmission.processingState === "ready" || viewingSubmission.hasPlagiarismChecked || viewingSubmission.returnedAt || viewingSubmission.status === "graded" ? "✓" : "4"}
+                      </div>
+                      <div>
+                        <p className="text-xs font-extrabold text-gray-900">
+                          4. Plagiarism Check Processed
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-gray-600">
+                          {viewingSubmission.processingState === "ready" || viewingSubmission.hasPlagiarismChecked || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
+                            ? "Submission has gone through the plagiarism checking process."
+                            : "Running automatic plagiarism analysis..."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Confidentiality Notice */}
+                  <div className="mt-4 flex items-center gap-2.5 rounded-lg border border-blue-100 bg-blue-50/80 px-4 py-3 text-xs font-semibold text-blue-900">
+                    <svg className="h-4 w-4 shrink-0 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    <span>
+                      Plagiarism detection results and similarity metrics are confidential and sent directly to your teacher's evaluation workspace.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Transcribed Text Display (without plagiarism highlights) */}
+                {viewingSubmission.transcribedText && (
+                  <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-black text-gray-900">
+                          Transcribed handwritten text
+                        </p>
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
+                          YOLO + TrOCR
                         </span>
                       </div>
-
-                      {/* Score ring + stats FIRST */}
-                      <div className="mt-5 grid gap-4 sm:grid-cols-[140px_1fr]">
-                        <div className={`grid aspect-square place-items-center rounded-lg bg-white text-center ring-8 ${ringClass}`}>
-                          <div>
-                            <strong className="block text-4xl font-black">{sr.score}%</strong>
-                            <span className="mt-1 block text-xs font-extrabold uppercase tracking-normal text-gray-500">Plagiarism score</span>
-                          </div>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-lg bg-gray-50 p-3">
-                            <p className="text-2xl font-black text-gray-950">{sr.wordCount ?? 0}</p>
-                            <p className="mt-1 text-xs font-bold text-gray-500">Total words</p>
-                          </div>
-                          <div className="rounded-lg bg-gray-50 p-3">
-                            <p className="text-2xl font-black text-gray-950">{sr.identicalWords ?? 0}</p>
-                            <p className="mt-1 text-xs font-bold text-gray-500">Matched / identical words</p>
-                          </div>
-                          <div className="rounded-lg bg-gray-50 p-3">
-                            <p className="text-xl font-black text-emerald-800">{sr.scanStatus || "Completed"}</p>
-                            <p className="mt-1 text-xs font-bold text-gray-500">Scan status</p>
-                          </div>
-                          <div className="rounded-lg bg-gray-50 p-3">
-                            <p className="text-2xl font-black text-gray-950">{sr.matchedSources?.length ?? 0}</p>
-                            <p className="mt-1 text-xs font-bold text-gray-500">Matching sources</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Transcribed text SECOND */}
-                      {viewingSubmission.transcribedText && (
-                        <div className="mt-5">
-                          <div className="flex items-center justify-between pb-3">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-black text-gray-900">Transcribed handwriting</p>
-                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">YOLO26x + TrOCR</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await navigator.clipboard.writeText(viewingSubmission.transcribedText);
-                                  setStudentCopySuccess(true);
-                                  setTimeout(() => setStudentCopySuccess(false), 2000);
-                                } catch {}
-                              }}
-                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
-                            >
-                              {studentCopySuccess ? (
-                                <><CheckIcon className="h-3.5 w-3.5 text-emerald-600" /><span>Copied!</span></>
-                              ) : (
-                                <><CopyIcon className="h-3.5 w-3.5" /><span>Copy</span></>
-                              )}
-                            </button>
-                          </div>
-                          <HighlightedText text={viewingSubmission.transcribedText} scanResult={sr} />
-                        </div>
-                      )}
-
-                      {/* Classroom Peer-to-Peer Similarity Section */}
-                      {sr.peerSimilarity && (
-                        <div className="mt-5 rounded-lg border border-indigo-200 bg-indigo-50/70 p-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div className="flex items-center gap-2.5">
-                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-black shadow-xs">
-                                👥
-                              </span>
-                              <div>
-                                <h4 className="text-xs font-black text-indigo-950 uppercase tracking-wide">
-                                  Classroom Peer Similarity
-                                </h4>
-                                <p className="text-xs text-indigo-700">
-                                  Cross-checked with classmates
-                                </p>
-                              </div>
-                            </div>
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-black ${
-                              sr.peerSimilarity.has_peer_match
-                                ? "bg-red-100 text-red-800"
-                                : "bg-emerald-100 text-emerald-800"
-                            }`}>
-                              {sr.peerSimilarity.peer_similarity_score}% Match
-                              {sr.peerSimilarity.has_peer_match ? " (Peer Match)" : " (Original)"}
-                            </span>
-                          </div>
-
-                          {sr.peerSimilarity.matching_snippets?.length > 0 && (
-                            <div className="mt-3 space-y-1 border-t border-indigo-200/60 pt-2.5 text-xs">
-                              <p className="font-extrabold text-indigo-900">Matching consecutive phrases:</p>
-                              {sr.peerSimilarity.matching_snippets.map((snip, idx) => (
-                                <blockquote key={idx} className="rounded border-l-2 border-indigo-500 bg-white px-2.5 py-1 text-gray-800 italic">
-                                  "{snip}"
-                                </blockquote>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Matched sources */}
-                      {sr.matchedSources && sr.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length > 0 && (
-                        <div className="mt-5">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-extrabold text-gray-800">Matching sources ({sr.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length})</p>
-                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">Copyleaks Database</span>
-                          </div>
-                          <div className="mt-3 space-y-2">
-                            {sr.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).map((source, idx) => (
-                              <div key={source.id || idx} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm">
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <p className="font-extrabold text-gray-900 truncate">{source.title || "Matched source"}</p>
-                                    <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                                      {source.source_type || "Copyleaks Database"}
-                                    </span>
-                                  </div>
-                                  {source.url && (
-                                    <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-700 hover:underline truncate block mt-0.5">
-                                      {source.url}
-                                    </a>
-                                  )}
-                                </div>
-                                <span className="shrink-0 rounded bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
-                                  {source.matched_words || source.identical_words || 0} matched words
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Review signals */}
-                      {sr.flags && sr.flags.length > 0 && (
-                        <div className="mt-5">
-                          <p className="text-sm font-extrabold text-gray-800">Review signals</p>
-                          <div className="mt-3 space-y-2">
-                            {sr.flags.map((flag, idx) => (
-                              <p key={idx} className="rounded-lg border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-600">{flag}</p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <p className="mt-5 text-xs font-semibold leading-6 text-gray-500">
-                        {sr.summary || "Scanned via Copyleaks Authenticity API."}
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(viewingSubmission.transcribedText);
+                          setStudentCopySuccess(true);
+                          setTimeout(() => setStudentCopySuccess(false), 2000);
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
+                      >
+                        {studentCopySuccess ? (
+                          <>
+                            <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <CopyIcon className="h-3.5 w-3.5" />
+                            <span>Copy text</span>
+                          </>
+                        )}
+                      </button>
                     </div>
-                  );
-                })() : (
-                  <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 p-5 text-center">
-                    <p className="text-xs font-black uppercase tracking-wider text-gray-400">Detection Result</p>
-                    <p className="mt-1 text-sm font-semibold text-gray-500">No plagiarism scan result yet. Your teacher will review your submission.</p>
+                    <div className="mt-3 rounded-lg bg-gray-50 p-4 text-sm font-medium leading-relaxed text-gray-800 whitespace-pre-wrap font-sans border border-gray-200">
+                      {viewingSubmission.transcribedText}
+                    </div>
                   </div>
                 )}
 

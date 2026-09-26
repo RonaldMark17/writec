@@ -351,6 +351,27 @@ export function AlertCircleIcon({ className = "h-5 w-5" }) {
   );
 }
 
+export function ArchiveIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="3" width="20" height="4" rx="1" />
+      <path d="M4 7v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
+
+export function UnarchiveIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="3" width="20" height="4" rx="1" />
+      <path d="M4 7v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7" />
+      <polyline points="10 14 12 12 14 14" />
+      <line x1="12" y1="12" x2="12" y2="18" />
+    </svg>
+  );
+}
+
 export function CalendarIcon({ className = "h-5 w-5" }) {
   return (
     <svg
@@ -503,6 +524,7 @@ export function normalizeClassroom(row, index = 0, extra = {}) {
     teacherName: resolvedTeacher,
     teacherInfo: extra.teacherInfo || (row.teacher_id ? { id: row.teacher_id, name: resolvedTeacher, email: row.teacher_email || "" } : null),
     accent: getClassroomAccent(row, index),
+    isArchived: Boolean(row.is_archived ?? row.isArchived ?? extra.isArchived ?? false),
   };
 }
 

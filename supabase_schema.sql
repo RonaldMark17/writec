@@ -210,4 +210,8 @@ CREATE POLICY "teachers_readable_by_authenticated" ON public."userTable"
   FOR SELECT TO authenticated
   USING (role = 'teacher' OR id = auth.uid());
 
+-- 10. Add is_archived column to classroomTable for archiving classrooms
+ALTER TABLE public."classroomTable"
+  ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false;
+
 COMMIT;

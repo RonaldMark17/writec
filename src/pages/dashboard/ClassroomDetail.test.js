@@ -31,3 +31,31 @@ test("provides an empty state and teacher create action", () => {
   fireEvent.click(screen.getByRole("button", { name: "Create assignment" }));
   expect(create).toHaveBeenCalled();
 });
+
+test("supports archive banner and restore action", () => {
+  const toggle = jest.fn();
+  render(
+    <ClassroomDetail
+      classroom={{ id: "c1", name: "English", isArchived: true }}
+      assignments={[]}
+      onToggleArchive={toggle}
+    />
+  );
+  expect(screen.getByText(/This classroom is archived/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Restore to active/i }));
+  expect(toggle).toHaveBeenCalledWith("c1", false);
+});
+
+test("allows archiving an active classroom from the detail header button", () => {
+  const toggle = jest.fn();
+  render(
+    <ClassroomDetail
+      classroom={{ id: "c2", name: "Math", isArchived: false }}
+      assignments={[]}
+      onToggleArchive={toggle}
+    />
+  );
+  expect(screen.queryByText(/This classroom is archived/i)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Archive class/i }));
+  expect(toggle).toHaveBeenCalledWith("c2", true);
+});
