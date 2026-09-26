@@ -42,6 +42,7 @@ import {
   DownloadIcon,
   getInitials,
   getTeacherAvatarTheme,
+  isCustomAvatarUrl,
   ArchiveIcon,
   UnarchiveIcon,
 } from "./dashboard/shared";
@@ -3135,9 +3136,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {visibleClassrooms.map((classroom) => {
                   const creatorName = profile?.full_name || classroom.teacherName || "Teacher";
-                  const creatorInitials = getInitials(creatorName, "PX");
-                  const creatorTheme = getTeacherAvatarTheme(profile?.id || classroom.teacherId, profile?.avatarColor || "blue");
-                  const creatorAvatarUrl = (classroom.teacherId === profile?.id || !classroom.teacherId) ? (profile?.avatarUrl || "") : "";
+                  const creatorInitials = getInitials(creatorName, "T");
+                  const creatorTheme = getTeacherAvatarTheme(classroom.teacherId || profile?.id || classroom.teacherName, profile?.avatarColor);
+                  const rawAvatar = (classroom.teacherId === profile?.id || !classroom.teacherId) ? (profile?.avatarUrl || "") : (classroom.teacherAvatarUrl || "");
+                  const creatorAvatarUrl = isCustomAvatarUrl(rawAvatar) ? rawAvatar : "";
 
                   return (
                   <article
@@ -3178,10 +3180,23 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           className={`flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr ${creatorTheme.bg} text-white text-lg font-bold shadow-md ring-4 ring-white transition-all duration-200 group-hover/avatar:scale-105 select-none overflow-hidden`}
                         >
                           {creatorAvatarUrl ? (
-                            <img src={creatorAvatarUrl} alt={creatorName} className="h-full w-full object-cover" />
-                          ) : (
-                            creatorInitials
-                          )}
+                            <img
+                              src={creatorAvatarUrl}
+                              alt={creatorName}
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                const span = e.currentTarget.parentElement?.querySelector(".avatar-initials-fallback");
+                                if (span) span.style.display = "flex";
+                              }}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
+                          <span
+                            className="avatar-initials-fallback flex items-center justify-center"
+                            style={{ display: creatorAvatarUrl ? "none" : "flex" }}
+                          >
+                            {creatorInitials}
+                          </span>
                         </div>
                       </div>
                     </div>

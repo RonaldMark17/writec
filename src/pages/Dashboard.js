@@ -4,6 +4,7 @@ import { supabase, signOutAndExpireToken } from "../supabaseClient";
 import StudentDashboard from "./StudentDashboard";
 import TeacherDashboard from "./TeacherDashboard";
 import AdminDashboard from "./AdminDashboard";
+import { isCustomAvatarUrl } from "./dashboard/shared";
 
 export default function Dashboard({ session: propSession, adminOnly = false }) {
   const location = useLocation();
@@ -112,14 +113,17 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
               if (stored) localPrefs = JSON.parse(stored);
             } catch {}
           }
-          const metaAvatar = user?.user_metadata?.avatar_url || "";
+          const metaAvatar = isCustomAvatarUrl(user?.user_metadata?.avatar_url) ? user.user_metadata.avatar_url : "";
           const metaColor = user?.user_metadata?.avatar_color || "";
+          const customLocalAvatar = isCustomAvatarUrl(localPrefs?.avatarUrl) ? localPrefs.avatarUrl : "";
+          const finalAvatarUrl = customLocalAvatar || metaAvatar;
           setProfile((prev) => ({
             ...(prev || {}),
-            avatarUrl: metaAvatar,
+            avatarUrl: finalAvatarUrl,
             avatarColor: metaColor,
             ...data,
             ...localPrefs,
+            avatarUrl: finalAvatarUrl,
           }));
           setError("");
         }

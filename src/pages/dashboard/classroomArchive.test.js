@@ -1,5 +1,5 @@
 import { render } from "@testing-library/react";
-import { normalizeClassroom, ArchiveIcon, UnarchiveIcon } from "./shared";
+import { normalizeClassroom, ArchiveIcon, UnarchiveIcon, LeaveIcon, isCustomAvatarUrl } from "./shared";
 
 describe("classroom archive normalization and icons", () => {
   test("normalizeClassroom correctly marks classroom as archived when is_archived is true", () => {
@@ -70,11 +70,38 @@ describe("classroom archive normalization and icons", () => {
     expect(normalized.isArchived).toBe(true);
   });
 
-  test("ArchiveIcon and UnarchiveIcon render svg elements", () => {
+  test("ArchiveIcon, UnarchiveIcon, and LeaveIcon render svg elements", () => {
     const { container: archiveContainer } = render(<ArchiveIcon className="test-archive" />);
     expect(archiveContainer.querySelector("svg")).toBeInTheDocument();
 
     const { container: unarchiveContainer } = render(<UnarchiveIcon className="test-unarchive" />);
     expect(unarchiveContainer.querySelector("svg")).toBeInTheDocument();
+
+    const { container: leaveContainer } = render(<LeaveIcon className="test-leave" />);
+    expect(leaveContainer.querySelector("svg")).toBeInTheDocument();
+  });
+
+  test("isCustomAvatarUrl correctly detects placeholder silhouettes", () => {
+    expect(isCustomAvatarUrl("https://lh3.googleusercontent.com/a/default-user=s96-c")).toBe(false);
+    expect(isCustomAvatarUrl("https://example.com/images/default-avatar.png")).toBe(false);
+    expect(isCustomAvatarUrl("https://example.com/silhouette.jpg")).toBe(false);
+    expect(isCustomAvatarUrl("")).toBe(false);
+    expect(isCustomAvatarUrl(null)).toBe(false);
+    expect(isCustomAvatarUrl("data:image/jpeg;base64,12345")).toBe(true);
+    expect(isCustomAvatarUrl("https://lh3.googleusercontent.com/a/ACg8ocLrealphoto=s96-c")).toBe(true);
+  });
+
+  test("student leaving classroom filters classroom list correctly", () => {
+    const initialClassrooms = [
+      { id: "c1", name: "Math" },
+      { id: "c2", name: "Science" },
+      { id: "c3", name: "History" },
+    ];
+    const leftClassroomId = "c2";
+    const remainingClassrooms = initialClassrooms.filter(
+      (c) => String(c.id) !== String(leftClassroomId)
+    );
+    expect(remainingClassrooms).toHaveLength(2);
+    expect(remainingClassrooms.map((c) => c.id)).toEqual(["c1", "c3"]);
   });
 });

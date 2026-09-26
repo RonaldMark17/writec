@@ -257,4 +257,36 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.archive_classroom(UUID, BOOLEAN) TO authenticated;
 
+-- 12. RPC for student to leave / unenroll from a classroom (SECURITY DEFINER with student check)
+CREATE OR REPLACE FUNCTION public.leave_classroom(target_classroom_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  caller_id UUID;
+  affected_rows INT;
+BEGIN
+  caller_id := auth.uid();
+  IF caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  DELETE FROM public."classroomMembers"
+  WHERE classroom_id = target_classroom_id
+    AND student_id = caller_id;
+
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  RETURN affected_rows > 0;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.leave_classroom(UUID) TO authenticated;
+
+-- Allow students to delete their own membership (leave classroom)
+DROP POLICY IF EXISTS membership_student_delete ON public."classroomMembers";
+CREATE POLICY membership_student_delete ON public."classroomMembers"
+  FOR DELETE TO authenticated
+  USING (student_id = auth.uid());
+
 COMMIT;

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
+import { isCustomAvatarUrl, getTeacherAvatarTheme } from "./shared";
 
 export function ProfileIcon({ className = "h-10 w-10" }) {
   return (
@@ -115,8 +115,10 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
   const [institution, setInstitution] = useState(savedPrefs.institution || (isTeacher ? "Department of Academic Integrity" : ""));
   const [department, setDepartment] = useState(savedPrefs.department || (isTeacher ? "Language Arts & Writing" : ""));
   const [bio, setBio] = useState(savedPrefs.bio || "");
-  const [avatarColor, setAvatarColor] = useState(savedPrefs.avatarColor || "emerald");
-  const [avatarUrl, setAvatarUrl] = useState(savedPrefs.avatarUrl || profile?.avatarUrl || "");
+  const defaultTheme = getTeacherAvatarTheme(profile?.id || profile?.full_name || "teacher");
+  const [avatarColor, setAvatarColor] = useState(savedPrefs.avatarColor || profile?.avatarColor || defaultTheme.id);
+  const rawSavedAvatar = savedPrefs.avatarUrl !== undefined ? savedPrefs.avatarUrl : (profile?.avatarUrl || "");
+  const [avatarUrl, setAvatarUrl] = useState(() => (isCustomAvatarUrl(rawSavedAvatar) ? rawSavedAvatar : ""));
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
   const [plagiarismSensitivity, setPlagiarismSensitivity] = useState(savedPrefs.plagiarismSensitivity || "standard");
   const [studentReportView, setStudentReportView] = useState(savedPrefs.studentReportView || "detailed");
@@ -372,6 +374,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                   <img
                     src={avatarUrl}
                     alt={displayTitleAndName}
+                    onError={() => setAvatarUrl("")}
                     className="h-full w-full object-cover"
                   />
                 ) : (

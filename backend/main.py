@@ -789,6 +789,53 @@ def archive_classroom_endpoint(
         raise HTTPException(500, f"Failed to update classroom archive state: {str(exc)}")
 
 
+@app.post("/api/classrooms/{classroom_id}/leave")
+def leave_classroom_endpoint(classroom_id: str, request: Request):
+    """
+    Allows a student to leave (unenroll from) a classroom.
+    Deletes the membership record from classroomMembers using the service role key.
+    """
+    account = authenticated_account(request)
+    student_id = str(account.get("id"))
+    if not student_id:
+        raise HTTPException(401, "Sign in to continue.")
+
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    if not service_key:
+        raise HTTPException(500, "SUPABASE_SERVICE_ROLE_KEY is not configured.")
+
+    req_delete = urllib.request.Request(
+        f"{url}/rest/v1/classroomMembers?classroom_id=eq.{classroom_id}&student_id=eq.{student_id}",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Prefer": "return=representation",
+        },
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(req_delete, timeout=10) as resp:
+            deleted = json.load(resp)
+            return {
+                "success": True,
+                "classroom_id": classroom_id,
+                "student_id": student_id,
+                "deleted": deleted,
+            }
+    except urllib.error.HTTPError as exc:
+        err_msg = "Failed to leave classroom."
+        try:
+            body = json.loads(exc.read().decode("utf-8"))
+            if isinstance(body, dict) and "message" in body:
+                err_msg = body["message"]
+        except Exception:
+            pass
+        raise HTTPException(exc.code, err_msg)
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to leave classroom: {str(exc)}")
+
+
 @app.post("/api/submissions/{submission_id}/grade")
 async def save_submission_grade_endpoint(submission_id: str, request: Request):
     """Saves or updates the grade and feedback for a student submission."""

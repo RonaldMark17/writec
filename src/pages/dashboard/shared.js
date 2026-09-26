@@ -105,6 +105,25 @@ export function DoorIcon({ className = "h-5 w-5" }) {
   );
 }
 
+export function LeaveIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
 export function FileSearchIcon({ className = "h-5 w-5" }) {
   return (
     <svg
@@ -940,8 +959,20 @@ export function getTeacherAvatarTheme(identifier = "", avatarColor = "") {
   };
 }
 
+export function isCustomAvatarUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  // Ignore Google OAuth default-user placeholder silhouettes:
+  if (/default-user/i.test(trimmed)) return false;
+  // Ignore generic placeholder / silhouette keywords:
+  if (/(silhouette|placeholder|default[-_]avatar|avatar[-_]default)/i.test(trimmed)) return false;
+  return true;
+}
+
 export function Header({ workspace, pages, activePage, onPageChange, profile, onProfileUpdated }) {
   const [editingProfile, setEditingProfile] = useState(false);
+  const [headerImgError, setHeaderImgError] = useState(false);
   const [localPrefs, setLocalPrefs] = useState(() => {
     if (!profile?.id || typeof window === "undefined") return {};
     try {
@@ -958,7 +989,10 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
       if (e?.detail?.profileId && e.detail.profileId !== profile.id) return;
       try {
         const s = localStorage.getItem(`writecheck_profile_prefs_${profile.id}`);
-        if (s) setLocalPrefs(JSON.parse(s));
+        if (s) {
+          setLocalPrefs(JSON.parse(s));
+          setHeaderImgError(false);
+        }
       } catch {}
     };
     window.addEventListener("writecheck:profile_updated", handler);
@@ -969,15 +1003,12 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
     await signOutAndExpireToken("/login");
   };
 
-  const avatarUrl = profile?.avatarUrl || localPrefs.avatarUrl || "";
-  const avatarColorId = profile?.avatarColor || localPrefs.avatarColor || "blue";
-  const selectedTheme = (AVATAR_THEMES || []).find((t) => t.id === avatarColorId) || {
-    bg: "from-[#1a73e8] to-[#1557b0]",
-    ring: "ring-[#e8f0fe]",
-    dot: "#1a73e8",
-  };
-
+  const rawAvatarUrl = localPrefs.avatarUrl !== undefined ? localPrefs.avatarUrl : (profile?.avatarUrl || "");
+  const avatarUrl = isCustomAvatarUrl(rawAvatarUrl) ? rawAvatarUrl : "";
+  const avatarColorId = profile?.avatarColor || localPrefs.avatarColor || "";
   const displayName = profile?.full_name || "Teacher";
+  const selectedTheme = getTeacherAvatarTheme(profile?.id || displayName, avatarColorId);
+
   const initials = displayName
     .split(" ")
     .filter(Boolean)
@@ -1024,7 +1055,10 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
               profile={{ ...profile, ...localPrefs }}
               onSaved={(upd) => {
                 if (onProfileUpdated) onProfileUpdated(upd);
-                if (upd) setLocalPrefs((prev) => ({ ...prev, ...upd }));
+                if (upd) {
+                  setLocalPrefs((prev) => ({ ...prev, ...upd }));
+                  setHeaderImgError(false);
+                }
               }}
               onClose={() => setEditingProfile(false)}
             />
@@ -1045,8 +1079,13 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
                 <div
                   className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr ${selectedTheme.bg} text-white text-xs sm:text-sm font-bold shadow-xs transition group-hover:scale-105 overflow-hidden ring-1 ring-black/5`}
                 >
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover rounded-full" />
+                  {avatarUrl && !headerImgError ? (
+                    <img
+                      src={avatarUrl}
+                      alt={displayName}
+                      onError={() => setHeaderImgError(true)}
+                      className="h-full w-full object-cover rounded-full"
+                    />
                   ) : (
                     initials
                   )}

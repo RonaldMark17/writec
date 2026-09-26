@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../supabaseClient";
-import { MEMBER_TABLE, getTeacherAvatarTheme } from "./shared";
+import { MEMBER_TABLE, getTeacherAvatarTheme, isCustomAvatarUrl } from "./shared";
 
 /* ─── Helpers ──────────────────────────────────────────────── */
 function initials(name = "") {
@@ -11,11 +11,13 @@ function initials(name = "") {
 }
 
 function Avatar({ id, name, size = "h-10 w-10", text = "text-sm", avatarUrl = "", avatarColor = "" }) {
-  if (avatarUrl) {
+  const [hasError, setHasError] = useState(false);
+  if (isCustomAvatarUrl(avatarUrl) && !hasError) {
     return (
       <img
         src={avatarUrl}
         alt={name}
+        onError={() => setHasError(true)}
         className={`${size} shrink-0 rounded-full object-cover select-none ring-2 ring-white`}
       />
     );

@@ -34,6 +34,8 @@ import {
   SearchIcon,
   getInitials,
   getTeacherAvatarTheme,
+  isCustomAvatarUrl,
+  LeaveIcon,
 } from "./dashboard/shared";
 import {
   ACCEPTED_CHECK_FILE_TYPES,
@@ -174,6 +176,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     useState(false);
 
   const [isSubmittingEssay, setIsSubmittingEssay] =
+    useState(false);
+
+  const [leavingClassroom, setLeavingClassroom] =
+    useState(null);
+
+  const [isLeaving, setIsLeaving] =
     useState(false);
 
   const [errorMessage, setErrorMessage] =
@@ -748,6 +756,82 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     await loadStudentData();
   };
 
+  const handleConfirmLeaveClassroom = async () => {
+    if (!leavingClassroom?.id || !profile?.id) return;
+    setIsLeaving(true);
+    setErrorMessage("");
+
+    const targetClassroomId = leavingClassroom.id;
+    const targetName = leavingClassroom.name || "Classroom";
+
+    try {
+      let left = false;
+      let failureReason = "";
+
+      // 1. Try backend endpoint
+      try {
+        const backendUrl = getBackendUrl();
+        const response = await apiFetch(`${backendUrl}/api/classrooms/${targetClassroomId}/leave`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        const resBody = await response.json().catch(() => ({}));
+        if (response.ok && resBody?.success) {
+          left = true;
+        } else {
+          failureReason = resBody?.detail || resBody?.message || resBody?.error;
+        }
+      } catch (backendErr) {
+        failureReason = backendErr.message || "Failed to reach server";
+      }
+
+      // 2. Fallback: Direct Supabase RPC
+      if (!left) {
+        try {
+          const { data: rpcRes, error: rpcErr } = await supabase.rpc("leave_classroom", {
+            target_classroom_id: targetClassroomId,
+          });
+          if (!rpcErr && rpcRes === true) {
+            left = true;
+          }
+        } catch (rpcEx) {}
+      }
+
+      // 3. Fallback: Direct table DELETE
+      if (!left) {
+        try {
+          const { error: delErr } = await supabase
+            .from(MEMBER_TABLE)
+            .delete()
+            .eq("classroom_id", targetClassroomId)
+            .eq("student_id", profile.id);
+          if (!delErr) {
+            left = true;
+          }
+        } catch (delEx) {}
+      }
+
+      if (!left) {
+        throw new Error(failureReason || "Could not leave classroom. Please try again.");
+      }
+
+      // Optimistically update local state
+      setClassrooms((prev) => prev.filter((c) => String(c.id) !== String(targetClassroomId)));
+      setAssignments((prev) => prev.filter((a) => String(a.classroomId) !== String(targetClassroomId)));
+      if (String(openedClassroomId) === String(targetClassroomId)) {
+        setOpenedClassroomId(null);
+      }
+      setLeavingClassroom(null);
+      setSuccessMessage(`You have left "${targetName}".`);
+
+      await loadStudentData();
+    } catch (err) {
+      setErrorMessage(err.message || "Failed to leave classroom.");
+    } finally {
+      setIsLeaving(false);
+    }
+  };
+
   const handleViewClassroomAssignments = (classroomId) => {
     setSelectedClassroomId(classroomId);
     resetSubmissionDraft();
@@ -1018,6 +1102,54 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           </div>
         )}
 
+        {/* Leave Classroom Confirmation Modal */}
+        {leavingClassroom && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leave-modal-title"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          >
+            <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 border border-red-100">
+                  <LeaveIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 id="leave-modal-title" className="text-lg font-semibold text-[#202124]">
+                    Leave classroom?
+                  </h3>
+                  <p className="mt-1 text-sm text-[#5f6368] leading-relaxed">
+                    Are you sure you want to unenroll and leave <span className="font-semibold text-[#202124]">"{leavingClassroom.name}"</span>?
+                  </p>
+                  <p className="mt-2 text-xs text-[#5f6368]">
+                    You will no longer see this class or its assignments. You can rejoin at any time with class code: <code className="font-mono font-bold text-[#202124] bg-gray-100 px-1.5 py-0.5 rounded">{leavingClassroom.code}</code>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#dadce0]">
+                <button
+                  type="button"
+                  onClick={() => setLeavingClassroom(null)}
+                  disabled={isLeaving}
+                  className="rounded-full px-4 py-2 text-sm font-medium text-[#5f6368] hover:bg-[#f1f3f4] transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmLeaveClassroom}
+                  disabled={isLeaving}
+                  className="rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 shadow-xs transition disabled:opacity-50"
+                >
+                  {isLeaving ? "Leaving..." : "Leave class"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {activePage === "classrooms" && openedClassroomId && classrooms.some((c) => c.id === openedClassroomId) && (() => {
           const cls = classrooms.find((c) => c.id === openedClassroomId);
           return (
@@ -1027,10 +1159,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
               assignments={assignments}
               teacher={cls?.teacherInfo || { id: cls?.teacherId, name: cls?.teacher || "Teacher", email: "" }}
               onBack={() => setOpenedClassroomId(null)}
-                onOpenAssignment={(assignment) => {
-                  handleViewClassroomAssignments(openedClassroomId);
-                  handleOpenSubmissionDraft(assignment);
-                }}
+              onLeaveClassroom={(classroom) => setLeavingClassroom(classroom)}
+              onOpenAssignment={(assignment) => {
+                handleViewClassroomAssignments(openedClassroomId);
+                handleOpenSubmissionDraft(assignment);
+              }}
             />
           );
         })()}
@@ -1182,11 +1315,24 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         <div
                           className={`flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr ${getTeacherAvatarTheme(classroom.teacherId || classroom.teacher).bg} text-white text-lg font-bold shadow-md ring-4 ring-white transition-all duration-200 group-hover/avatar:scale-105 select-none overflow-hidden`}
                         >
-                          {classroom.teacherAvatarUrl ? (
-                            <img src={classroom.teacherAvatarUrl} alt={classroom.teacher || "Teacher"} className="h-full w-full object-cover" />
-                          ) : (
-                            getInitials(classroom.teacher || "Teacher", "TE")
-                          )}
+                          {isCustomAvatarUrl(classroom.teacherAvatarUrl) ? (
+                            <img
+                              src={classroom.teacherAvatarUrl}
+                              alt={classroom.teacher || "Teacher"}
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                const span = e.currentTarget.parentElement?.querySelector(".avatar-initials-fallback");
+                                if (span) span.style.display = "flex";
+                              }}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
+                          <span
+                            className="avatar-initials-fallback flex items-center justify-center"
+                            style={{ display: isCustomAvatarUrl(classroom.teacherAvatarUrl) ? "none" : "flex" }}
+                          >
+                            {getInitials(classroom.teacher || "Teacher", "TE")}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1214,10 +1360,26 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           <span>View classwork</span>
                         </button>
                       </div>
-                      <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
-                        className="mt-4 border-t border-gray-200 pt-3 text-left text-sm font-medium text-[#137333] hover:underline">
-                        {classroom.isArchived ? "View archived classroom" : "Open classroom"}
-                      </button>
+
+                      <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between text-xs gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setOpenedClassroomId(classroom.id)}
+                          className="font-medium text-[#137333] hover:underline shrink-0"
+                        >
+                          {classroom.isArchived ? "View classroom" : "Open classroom"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setLeavingClassroom(classroom)}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-600 transition"
+                          title="Unenroll and leave this classroom"
+                        >
+                          <LeaveIcon className="h-3.5 w-3.5 text-gray-400 hover:text-red-600" />
+                          <span>Leave</span>
+                        </button>
+                      </div>
                     </div>
                   </article>
                 ))}

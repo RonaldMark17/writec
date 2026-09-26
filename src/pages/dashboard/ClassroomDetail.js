@@ -1,6 +1,6 @@
 import { useState } from "react";
 import ClassroomRoster from "./ClassroomRoster";
-import { formatDateTime, ArchiveIcon, UnarchiveIcon, CopyIcon, DownloadIcon } from "./shared";
+import { formatDateTime, ArchiveIcon, UnarchiveIcon, CopyIcon, DownloadIcon, LeaveIcon } from "./shared";
 
 export default function ClassroomDetail({
   classroom,
@@ -12,6 +12,7 @@ export default function ClassroomDetail({
   onToggleArchive,
   onCopyClassroom,
   onExportCSV,
+  onLeaveClassroom,
 }) {
   const [tab, setTab] = useState("homework");
   const homework = assignments.filter((assignment) => assignment.classroomId === classroom.id);
@@ -67,6 +68,17 @@ export default function ClassroomDetail({
                   <span>Archive classroom</span>
                 </>
               )}
+            </button>
+          )}
+          {onLeaveClassroom && (
+            <button
+              type="button"
+              onClick={() => onLeaveClassroom(classroom)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition"
+              title="Unenroll and leave this classroom"
+            >
+              <LeaveIcon className="h-3.5 w-3.5 text-gray-500 hover:text-red-600" />
+              <span>Leave class</span>
             </button>
           )}
         </div>
