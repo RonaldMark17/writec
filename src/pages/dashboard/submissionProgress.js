@@ -30,6 +30,7 @@ export function applySubmissionResult(row, result, progress, teacher) {
     transcribedText: teacher ? (result.transcribed_text ?? "") : ((visible || isReady) ? (result.transcribed_text ?? "") : ""),
     scanResult: teacher ? (result.scan_result ?? null) : null,
     processingState: progress?.state || (result.scan_result ? "ready" : "submitted"),
+    processingJobId: progress?.job_id || null,
     processingError: teacher ? progress?.error : null,
     hasUploaded: true,
     hasTranscribed: isReady || Boolean(result.transcribed_text),

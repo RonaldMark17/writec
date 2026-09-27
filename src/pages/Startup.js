@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import AuthModal from "./AuthModal";
+import { useTheme } from "../theme";
 
 import {
   ACCEPTED_CHECK_FILE_TYPES,
@@ -260,22 +261,7 @@ const darkTheme = {
   "--card-shadow": "0 2px 6px rgba(0, 0, 0, 0.4)",
 };
 
-function getInitialDarkMode() {
-  if (typeof window === "undefined") {
-    return false;
-  }
 
-  const savedTheme = window.localStorage.getItem("writecheck-theme");
-
-  if (savedTheme) {
-    return savedTheme === "dark";
-  }
-
-  return (
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-  );
-}
 
 const stats = [
   ["YOLO26x + TrOCR", "Handwriting OCR engine"],
@@ -337,7 +323,7 @@ const features = [
 export default function Startup({ initialAuthModal = null }) {
   const navigate = useNavigate();
   const [authModal, setAuthModal] = useState(initialAuthModal);
-  const [isDark, setIsDark] = useState(getInitialDarkMode);
+  const { isDark, toggleTheme } = useTheme();
   const [activeSection, setActiveSection] = useState("home");
   const [demoMode, setDemoMode] = useState("picture");
   const [demoFiles, setDemoFiles] = useState([]);
@@ -362,9 +348,7 @@ export default function Startup({ initialAuthModal = null }) {
     setAuthModal(mode);
   };
 
-  useEffect(() => {
-    window.localStorage.setItem("writecheck-theme", isDark ? "dark" : "light");
-  }, [isDark]);
+
 
   useEffect(() => {
     const updateActiveSection = () => {
@@ -522,10 +506,9 @@ export default function Startup({ initialAuthModal = null }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <Link to="/transcribe" className="rounded-lg px-3 py-2 text-sm font-semibold text-emerald-600 hover:underline">Transcribe handwriting</Link>
             <button
               type="button"
-              onClick={() => setIsDark((current) => !current)}
+              onClick={toggleTheme}
               className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--border-soft)] hover:text-[var(--page-text)] transition"
               aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
               aria-pressed={isDark}

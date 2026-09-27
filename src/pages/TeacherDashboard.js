@@ -51,7 +51,6 @@ import {
 import HighlightedText from "./HighlightedText";
 import {
   ACCEPTED_CHECK_FILE_TYPES,
-  analyzePlagiarismInput,
   checkPlagiarismViaBackend,
   fetchUserPlagiarismScans,
   formatFileSize,
@@ -1943,19 +1942,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             },
           });
         } catch (scanErr) {
-          console.warn("Copyleaks scan error, falling back to local analysis:", scanErr);
+          throw scanErr;
         }
       }
 
-      const localResult = analyzePlagiarismInput({
-        text: combinedText,
-        files: manualCheckFiles,
-      });
-
-      const finalScore =
-        scanResult?.plagiarism_score !== undefined
-          ? Math.round(scanResult.plagiarism_score)
-          : localResult.score;
+      if (scanResult?.status !== "completed" || scanResult?.result_data?.provider !== "copyleaks") {
+        throw new Error("No verified Copyleaks result is available. Please run a new check.");
+      }
+      const finalScore = scanResult.plagiarism_score;
 
       const finalTone =
         finalScore >= 50 ? "red" : finalScore >= 20 ? "amber" : "emerald";
@@ -1968,14 +1962,17 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             : "Low review";
 
       setManualCheckResult({
-        ...localResult,
+        flags: [],
+        repeatedPhrases: [],
         title: manualCheckTitle.trim() || "Plagiarism check",
         score: finalScore,
         tone: finalTone,
         label: finalLabel,
-        wordCount: scanResult?.total_words || localResult.wordCount,
+        wordCount: scanResult.total_words ?? 0,
         identicalWords: scanResult?.identical_words ?? 0,
-        scanStatus: scanResult?.status === "completed" ? "Completed" : "Completed",
+        scanStatus: "Completed",
+        provider: "copyleaks",
+        scanId: scanResult.scan_id,
         matchedSources: scanResult?.result_data?.matched_sources || [],
         extractedText: fileText.extractedText,
         extractedImages: fileText.extractedImages,
@@ -1985,9 +1982,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           manualImagePreview ||
           (manualCheckFiles[0]?.name ? `${resolveBackendUrl()}/uploads/${manualCheckFiles[0].name}` : ""),
         imageName: manualCheckFiles[0]?.name || manualCheckTitle || "Submission image",
-        summary: scanResult
-          ? "Scanned via Copyleaks Authenticity API. Comprehensive database and source matching completed."
-          : localResult.summary,
+        summary: "Verified Copyleaks API result.",
       });
     } catch (error) {
       setManualCheckError(error.message || "Could not scan the selected material.");
@@ -4337,7 +4332,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                           <div className="rounded-lg bg-gray-50 p-4">
                             <p className="text-2xl font-black text-gray-950">
-                              {manualCheckResult.matchedSources?.filter(s => !s.url?.includes("wikipedia.org")).length ?? 0}
+                              {manualCheckResult.matchedSources?.length ?? 0}
                             </p>
                             <p className="mt-1 text-sm font-bold text-gray-500">
                               Matching sources
@@ -4491,18 +4486,18 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         )}
                       </div>
 
-                      {manualCheckResult.matchedSources && manualCheckResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length > 0 && (
+                      {manualCheckResult.matchedSources && manualCheckResult.matchedSources.length > 0 && (
                         <div className="mt-6">
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-extrabold text-gray-800">
-                              Matching sources ({manualCheckResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length})
+                              Matching sources ({manualCheckResult.matchedSources.length})
                             </p>
                             <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
                               Copyleaks Database
                             </span>
                           </div>
                           <div className="mt-3 space-y-2">
-                            {manualCheckResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).map((source, sIdx) => (
+                            {manualCheckResult.matchedSources.map((source, sIdx) => (
                               <div
                                 key={source.id || sIdx}
                                 className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm"

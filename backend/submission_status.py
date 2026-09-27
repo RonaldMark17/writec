@@ -18,7 +18,11 @@ def verified_status(row, job):
     checkpoint = (job or {}).get('checkpoint') or {}
     state = (job or {}).get('state') or ('ready' if report else 'submitted')
     error = (job or {}).get('error')
-    mode = checkpoint.get('mode') or report.get('mode') or ('copyleaks' if report else None)
+    mode = checkpoint.get('mode') or ('copyleaks' if report else None)
+    if state == 'ready' and (mode not in ('copyleaks', 'classroom')
+                             or (mode == 'classroom' and report.get('mode') != 'classroom')):
+        state = 'failed'
+        error = 'The stored report does not match a verified processing mode. Recheck this submission.'
     if mode == 'copyleaks' and state == 'ready':
         payload = (job or {}).get('provider_result')
         try:

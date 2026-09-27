@@ -6,6 +6,52 @@ submission processing, plagiarism reports, grading, and result release. This is
 not a completed browser acceptance test with live accounts. No deployment or
 shared database migration was performed.
 
+## Implementation status after follow-up
+
+The manual fallback/source-replacement paths have been removed in local backend and
+frontend code. Manual failures and polling timeouts now remain errors; authenticated
+callbacks supply completed reports. The unknown-route page is implemented.
+`submission_provenance.sql` adds release and student-read verification, with explicit
+classroom-only support; the migration is tested locally but not applied to production.
+See `IMPLEMENTATION_COMPLETION_REPORT.md` for changes, validation and remaining live
+acceptance/configuration work. The follow-up review below records the findings that
+led to these changes, not the current implementation status.
+
+## Follow-up review incorporating live HTTPS results
+
+The user confirms that the live HTTPS server receives plagiarism-checker API
+results. This review accepts that operational observation; it did not independently
+inspect production callbacks or run a paid scan. The earlier zero-credit observation
+is historical, not evidence of the current production balance or an API outage.
+Local worker isolation is a development-test concern, not a prerequisite for the
+already working live HTTPS integration.
+
+The automatic workflow in `backend/submission_checker.py` requires a successful
+provider payload with the expected scan ID and a valid aggregate score. The separate
+manual endpoints in `backend/main.py` still contain fallback completion and source
+replacement logic. Those branches have no localhost-only guard, so HTTPS alone does
+not prevent them from affecting manual reports. Preserve the working callback path
+while removing fabricated completion and preserving provider scores and sources.
+
+Next actionable work:
+
+1. Make manual submission errors explicit and keep pending scans pending until a
+   verified provider result arrives; do not replace empty or Wikipedia matches with
+   locally found sources. Add regression coverage for delayed and failed scans.
+2. Strengthen database return guards to require verified provider provenance for
+   Copyleaks-mode jobs, preserving explicit classroom-only checks. Test legacy-ready,
+   missing/mismatched callbacks and valid callbacks before applying the migration.
+3. Verify a live returned assignment end to end using the working HTTPS deployment:
+   match the job scan ID, callback score/sources and teacher report, then confirm
+   grade/feedback release to the correct student. This review did not perform it.
+4. Add a useful unknown-route page. Finish SMTP delivery and representative mixed
+   PDF/browser acceptance checks described in `MEDIUM_PRIORITY_SETUP.md`.
+
+Follow-up validation: 16 focused checker/status unit tests passed
+(`python -m unittest test_submission_checker test_submission_status`, from `backend`).
+These tests use mocks and do not establish current live API behavior. This follow-up
+changes documentation only; no deployment or database migration was performed.
+
 ## Medium-priority implementation update
 
 The medium findings below describe the original audit. They have now been
@@ -15,33 +61,33 @@ PDFs OCR embedded images alongside text, and an opt-in SMTP notification worker
 provides submission emails and weekly count digests with persistent receipts.
 SMTP remains unconfigured and disabled; live delivery is not verified. Complex
 PDF layout reconstruction is still limited. See `MEDIUM_PRIORITY_SETUP.md` for
-behavior, configuration and limitations. Critical/high findings remain open.
+behavior, configuration and limitations. Critical/high follow-up implementation status is recorded above; production rollout remains pending.
 Validation after these changes: 83 backend tests and 74 frontend tests passed;
 production build succeeded with existing warnings. A read-only live lookup
 confirmed the backend can retrieve the assignment teacher's preferences.
 
-## Confirmed incomplete behavior
+## Original findings and follow-up status
 
 | Priority | Area | Finding and consequence | Evidence |
 | --- | --- | --- | --- |
-| Critical | Manual plagiarism checking | API submission failures create a successful local fallback report; polling fabricates completion after three seconds and can replace real sources/scores. Manual reports cannot currently be trusted as live Copyleaks output. | `backend/main.py`: `check_plagiarism`, `get_plagiarism_scan`, and `save_submission_scan_endpoint` |
-| High | Report release integrity | The teacher status endpoint validates provider provenance, but database release guards check job state only. A legacy job marked ready can still qualify for release through the RPC even when the local teacher view rejects its report. Student results use the database result RPC without the teacher endpoint's provenance validation. | `backend/submission_status.py`, `submission_processing.sql`: `guard_processing_review`, `submission_release.sql`: `list_submission_results` and `return_submission` |
-| High | Local API acceptance testing | Prior live inspection found zero Copyleaks credits. The local and deployed workers share a queue, and callbacks point to the deployed server. A successful local scan is not yet independently demonstrated. | `WORKFLOW_SETUP.md`, previous read-only API/queue inspection; credentials omitted |
-| Medium | Detection settings | Sensitivity and peer cross-check preferences are stored but no processing code consumes them. Changing these controls does not change checks. | `src/pages/dashboard/ProfileEditor.js`; repository-wide reference search |
-| Medium | Notifications | Submission-email and weekly-digest controls store preferences only; no sender or scheduler consumes them. | `src/pages/dashboard/ProfileEditor.js`; repository-wide reference search |
-| Medium | Service status | Profile badges say Copyleaks is connected and OCR is active without querying service readiness. | `src/pages/dashboard/ProfileEditor.js` |
-| Medium | Profile persistence | Institution, department, biography and most preferences are browser-local. They do not reliably follow the account across devices. Name is saved through an RPC; avatar metadata sync is best effort. | `src/pages/dashboard/ProfileEditor.js`: `save`; `src/pages/Dashboard.js` |
-| Medium | PDF coverage | OCR runs only when a page has no extracted text. A page containing both selectable text and a handwritten image can silently omit the handwriting. Image-only processing uses embedded images, not a rendered page, so complex layouts need acceptance testing. | `backend/document_text.py`: `extract_document` |
-| Low | Unknown routes | There is no catch-all route, so an unrecognized URL renders no useful not-found page. | `src/App.js` |
+| Critical ? fixed locally | Manual plagiarism checking | Removed fabricated completion, frontend error fallback, parser/source replacement and Wikipedia filtering. Unverified historical manual reports require a new scan. Deployment pending. | `backend/main.py`: `check_plagiarism`, `get_plagiarism_scan`, and `save_submission_scan_endpoint` |
+| High ? migration prepared | Report release integrity | Added `submission_provenance.sql`: validates durable job, callback identity, successful status and matching valid score before return; hides unverified returned results at RPC/RLS student-read boundaries. Explicit classroom-only mode remains supported. Production migration pending. | `submission_provenance.sql`, `backend/submission_status.py` |
+| Verification | Local API acceptance testing | User confirms live HTTPS API results work. The earlier zero-credit observation is historical. Shared local/deployed queue handling still needs isolation for independent local acceptance; it does not establish a production failure. | `WORKFLOW_SETUP.md`, previous read-only API/queue inspection; credentials omitted |
+| Medium ? implemented locally | Detection settings | Automatic processing consumes sensitivity and peer-check preferences; live behavior acceptance remains. | `src/pages/dashboard/ProfileEditor.js`; repository-wide reference search |
+| Medium ? configuration pending | Notifications | Opt-in SMTP worker and persistent receipts exist; SMTP delivery remains unconfigured and unverified. | `src/pages/dashboard/ProfileEditor.js`; repository-wide reference search |
+| Medium ? implemented locally | Service status | Badges now query real readiness; production acceptance remains. | `src/pages/dashboard/ProfileEditor.js` |
+| Medium ? implemented locally | Profile persistence | Preferences and profile details persist through Auth metadata; cross-device browser acceptance remains. | `src/pages/dashboard/ProfileEditor.js`: `save`; `src/pages/Dashboard.js` |
+| Medium ? partially verified | PDF coverage | Mixed-content extraction now OCRs embedded images alongside text. Complex layouts and representative handwriting still need acceptance testing. | `backend/document_text.py`: `extract_document` |
+| Low ? fixed locally | Unknown routes | Catch-all page explains the missing route and links home. Deployment pending. | `src/App.js` |
 
 ## Features absent from the current user interface
 
 These are scope decisions, not necessarily defects in the agreed workflow:
 
-- Student replacement/resubmission of already submitted work: explicitly blocked.
-- Teacher classroom archiving/deletion and member removal; student leaving a class.
+- Student replacement after failed processing is implemented locally (`student_resubmission.sql`); graded, returned, pending and ready work remain locked. Production rollout is pending.
+- Teacher classroom deletion and member removal. Archive/restore and student leave-class controls already exist; live acceptance remains to be verified.
 - Assignment deletion/archiving.
-- Gradebook/report export or bulk return actions.
+- Bulk return actions and broader report export. Archived-class CSV export already exists in `TeacherDashboard.js` (`handleExportClassroomCSV`).
 
 Evidence: action handlers and controls in `StudentDashboard.js`,
 `TeacherDashboard.js`, `ClassroomDetail.js`, `ClassroomRoster.js`, and
@@ -68,11 +114,11 @@ Evidence: action handlers and controls in `StudentDashboard.js`,
 - Disposable PostgreSQL integration checks passed: RPCs, RLS, private results, return controls, atomic queueing, duplicate retries, lease recovery, stale-worker rejection, and repeat migrations. PGlite was installed outside the repository in a temporary directory.
 - Production build passed with existing unused-variable and hook-dependency warnings. This does not establish live account or API acceptance.
 
-## Recommended implementation order
+## Remaining rollout and acceptance work
 
-1. Remove fabricated manual results and use the same verified provider contract everywhere.
-2. Enforce provider provenance at release/result-read boundaries, preserving explicit classroom-only mode.
-3. Isolate local queue/callback handling and enable a real credited API acceptance test.
-4. Wire up advertised settings/notifications and truthful service status, or clearly mark them unavailable.
-5. Address mixed-content PDF extraction and profile persistence.
-6. Choose required classroom/submission lifecycle and export features, then run live role-based acceptance.
+1. Deploy the reviewed backend/frontend and apply `submission_provenance.sql` last.
+2. Verify a test assignment through the working live HTTPS provider callback, teacher
+   review and release to the correct student; confirm cross-account isolation.
+3. Configure SMTP for an intended test recipient and verify opt-in delivery/digests.
+4. Run representative PDF/image/DOCX/TXT and cross-device profile acceptance checks.
+5. Choose whether to add the remaining optional lifecycle and bulk-action features.

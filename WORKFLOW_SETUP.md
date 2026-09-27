@@ -2,6 +2,11 @@
 
 Apply `submission_processing.sql` in the Supabase SQL Editor after the existing
 `submission_security.sql` and `submission_release.sql`. The migration is repeatable.
+Apply `submission_provenance.sql` last, after `submission_processing.sql`, including
+when older migrations are rerun. It validates provider scan identity and score at
+return time and hides already-returned unverified results from students. Deploy the
+updated backend and frontend together; see `IMPLEMENTATION_COMPLETION_REPORT.md`.
+
 New submissions enqueue in the same transaction as the submission insert. Existing
 submissions are left alone; the classroom teacher can queue them from the review window.
 
@@ -175,3 +180,20 @@ PDF extraction reference: [pypdf page text and images](https://pypdf.readthedocs
    - Plagiarism API results (plagiarism score, word counts, matched sources, peer similarity, sentence highlights).
 2. The teacher does **NOT** need to click "Check Plagiarism" to trigger the process. The check has already executed automatically.
 3. If a teacher edits or corrects the OCR transcription, an optional "Recheck with corrected text" button is available to recalculate similarity with the updated text.
+
+
+## Student replacement after processing failure
+
+Apply `student_resubmission.sql` after `submission_provenance.sql`, then deploy the
+updated backend/frontend. The student submission list offers **Resubmit failed work**
+only for failed, ungraded work. Students choose a replacement file/image or paste
+text, review it, and submit. Ownership, enrollment, active account, current failed
+job, no saved grade (including zero), no return, open deadline and active classroom
+are checked in an atomic database transaction. Queued/processing/ready work cannot
+be replaced. A new job ID prevents an older callback from completing the new check.
+The existing submission ID is retained; old uploaded files are not deleted.
+A provider outage can still cause the new check to fail; resubmission does not bypass
+Copyleaks or fabricate results.
+
+The homepage transcription link is removed. `/transcribe` remains a local test tool;
+student submission OCR remains available in the signed-in workspace.

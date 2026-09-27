@@ -966,32 +966,17 @@ async def save_submission_scan_endpoint(submission_id: str, request: Request):
     if body.get('assignment_id') and str(body['assignment_id']) != assignment_id:
         raise HTTPException(400, "Assignment does not match this submission.")
 
-    # Enrich with Copyleaks matched sources if missing or containing Wikipedia/dummy placeholder
-    if isinstance(scan_result, dict):
-        sources = scan_result.get("matchedSources") or scan_result.get("matched_sources") or []
-        has_invalid = any(
-            "wikipedia" in str(s.get("url", "")).lower()
-            or "wikipedia" in str(s.get("title", "")).lower()
-            or "Academic_integrity" in str(s.get("url", ""))
-            or "Online Reference" in str(s.get("title", ""))
-            for s in sources
-        )
-        if not sources or has_invalid:
-            from source_finder import find_copyleaks_sources
-            real_sources = find_copyleaks_sources(transcribed_text)
-            scan_result["matchedSources"] = real_sources
-            scan_result["matched_sources"] = real_sources
-            if "result_data" in scan_result and isinstance(scan_result["result_data"], dict):
-                scan_result["result_data"]["matched_sources"] = real_sources
-
-        # Attach highlighted_sentences for visual sentence and word plagiarism highlighting
-        sources_to_use = scan_result.get("matchedSources") or scan_result.get("matched_sources") or []
-        peer_snippets = (scan_result.get("peerSimilarity") or {}).get("matching_snippets") or []
-        from source_finder import extract_plagiarism_highlights
-        highlights = extract_plagiarism_highlights(transcribed_text, sources_to_use, peer_snippets)
-        scan_result["highlighted_sentences"] = highlights
-        if "result_data" in scan_result and isinstance(scan_result["result_data"], dict):
-            scan_result["result_data"]["highlighted_sentences"] = highlights
+    if scan_result is not None:
+        scan_id = scan_result.get("scanId") if isinstance(scan_result, dict) else None
+        record = require_scan(request, plagiarism_db.get_scan(scan_id)) if scan_id else None
+        data = (record or {}).get("result_data") or {}
+        if (record or {}).get("status") != "completed" or data.get("provider") != "copyleaks" or data.get("sandbox"):
+            raise HTTPException(409, "A verified completed Copyleaks scan is required. Run a new check.")
+        if (record.get("submitted_text") or "") != transcribed_text:
+            raise HTTPException(409, "The scan does not match the saved text. Run a new check.")
+        scan_result = {"scanId": scan_id, "mode": "copyleaks", "provider": "copyleaks",
+                       "score": data["plagiarism_score"], "matchedSources": data["matched_sources"],
+                       "scanStatus": "Completed"}
 
     saved = save_results(request, submission_id, {
         "transcribed_text": transcribed_text, "scan_result": scan_result,
@@ -1051,7 +1036,7 @@ async def check_plagiarism(
     file_bytes = None
     filename = None
     user_id = authenticated_account(request)["id"]
-    sandbox = None
+    sandbox = False
 
     if file:
         file_bytes = await file.read()
@@ -1064,7 +1049,7 @@ async def check_plagiarism(
         text = body.get("text", "")
         filename = body.get("filename", "essay.txt")
         # Scan ownership always comes from the verified session.
-        sandbox = body.get("sandbox")
+        sandbox = False
 
     if not text and not file_bytes:
         raise HTTPException(
@@ -1097,58 +1082,7 @@ async def check_plagiarism(
         safe_filename = submission["filename"]
         is_sandbox = submission["sandbox"]
     except Exception as exc:
-        print(f"[plagiarism] Copyleaks submission notice: {exc} - activating internal similarity engine fallback", flush=True)
-        scan_id = f"local-{int(time.time())}-{uuid.uuid4().hex[:12]}"
-        safe_filename = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", (filename or "essay.txt")).strip() or "essay.txt"
-        if not safe_filename.endswith(".txt"):
-            safe_filename += ".txt"
-
-        internal_res = {"max_similarity": 0, "matches": []}  # Peer comparisons use the authorized assignment endpoint.
-        max_sim = float(internal_res.get("max_similarity", 0.0))
-        from source_finder import find_copyleaks_sources, extract_plagiarism_highlights
-        real_sources = find_copyleaks_sources(text or "")
-        highlighted = extract_plagiarism_highlights(text or "", real_sources)
-        total_w = len((text or "").split())
-        unique_matched = set()
-        for h in highlighted:
-            for w in h.get("matched_words", []):
-                if len(w) >= 3:
-                    unique_matched.add(w.lower())
-        identical = len(unique_matched)
-        score = round(min(100.0, (identical / max(1, total_w)) * 100.0), 1) if total_w > 0 and identical > 0 else round(max_sim * 100, 1)
-
-        scan_record = plagiarism_db.create_scan(
-            user_id=user_id,
-            scan_id=scan_id,
-            filename=safe_filename,
-            status="completed",
-            submitted_text=text,
-        )
-        resolved_data = {
-            "total_words": total_w,
-            "identical_words": identical,
-            "plagiarism_score": score,
-            "matched_sources": real_sources,
-            "highlighted_sentences": highlighted,
-        }
-        plagiarism_db.update_scan_completed(
-            scan_id=scan_id,
-            total_words=total_w,
-            plagiarism_score=score,
-            identical_words=identical,
-            result_data=resolved_data,
-        )
-        return {
-            "success": True,
-            "scan_id": scan_id,
-            "status": "completed",
-            "score": score,
-            "filename": safe_filename,
-            "sandbox": True,
-            "is_local_fallback": True,
-            "created_at": scan_record.get("created_at"),
-            "result_data": resolved_data,
-        }
+        raise HTTPException(502, "Copyleaks could not accept the scan. Please retry later.") from exc
 
     word_count = len(text.split()) if text else 0
 
@@ -1209,7 +1143,11 @@ async def copyleaks_webhook(status: str, request: Request):
         return {"status": "ignored", "message": "Missing scanId in payload"}
 
     if status_lower == "completed":
-        parsed = copyleaks_service.parse_completed_payload(payload)
+        try:
+            parsed = copyleaks_service.parse_completed_payload(payload)
+        except (ValueError, TypeError, KeyError):
+            plagiarism_db.update_scan_failed(scan_id=scan_id, error_message="Invalid Copyleaks completion payload.")
+            raise HTTPException(422, "Invalid Copyleaks completion payload.")
         updated = plagiarism_db.update_scan_completed(
             scan_id=scan_id,
             total_words=parsed["total_words"],
@@ -1241,96 +1179,12 @@ def get_plagiarism_scan(scan_id: str, request: Request):
     if not record:
         raise HTTPException(status_code=404, detail="Plagiarism scan not found.")
 
-    # 1. Attempt live check directly from Copyleaks Scans Result API if still processing
-    if record.get("status") == "processing":
-        try:
-            live_result = copyleaks_service.get_scan_results(scan_id)
-            if live_result and (live_result.get("matched_sources") or live_result.get("total_words", 0) > 0):
-                record = plagiarism_db.update_scan_completed(
-                    scan_id=scan_id,
-                    total_words=live_result["total_words"],
-                    plagiarism_score=live_result["plagiarism_score"],
-                    identical_words=live_result["identical_words"],
-                    result_data=live_result,
-                )
-        except Exception as e:
-            print(f"[get_plagiarism_scan] live copyleaks polling error: {e}", flush=True)
-
-    # 2. Graceful resolution for local development when running on localhost without an external webhook tunnel
-    if record.get("status") == "processing":
-        try:
-            created_dt = datetime.fromisoformat(record["created_at"])
-            elapsed = (datetime.now(timezone.utc) - created_dt).total_seconds()
-        except Exception:
-            elapsed = 0
-
-        if elapsed >= 3:
-            submitted_text = record.get("submitted_text") or ""
-            total_words = int(record.get("total_words") or len(submitted_text.split()) or 120)
-            from source_finder import find_copyleaks_sources, extract_plagiarism_highlights
-            matched_sources = find_copyleaks_sources(submitted_text)
-            highlighted = extract_plagiarism_highlights(submitted_text, matched_sources)
-
-            # Calculate actual count of unique matched words in highlighted passages
-            unique_matched = set()
-            for h in highlighted:
-                for w in h.get("matched_words", []):
-                    if len(w) >= 3:
-                        unique_matched.add(w.lower())
-
-            identical = len(unique_matched)
-            if total_words > 0 and identical > 0:
-                score = round(min(100.0, (identical / total_words) * 100.0), 1)
-            else:
-                score = 0.0
-
-            resolved_data = {
-                "total_words": total_words,
-                "identical_words": identical,
-                "plagiarism_score": score,
-                "matched_sources": matched_sources,
-                "highlighted_sentences": highlighted,
-            }
-            record = plagiarism_db.update_scan_completed(
-                scan_id=scan_id,
-                total_words=total_words,
-                plagiarism_score=score,
-                identical_words=identical,
-                result_data=resolved_data,
-            )
-
-    # 3. If already stored, check if it has Wikipedia or dummy sources that must be purged
-    res_data = record.get("result_data")
-    if isinstance(res_data, dict):
-        matched = res_data.get("matched_sources") or []
-        has_invalid = any(
-            "wikipedia" in str(s.get("url", "")).lower()
-            or "wikipedia" in str(s.get("title", "")).lower()
-            or "Academic_integrity" in str(s.get("url", ""))
-            or "Online Reference" in str(s.get("title", ""))
-            or str(s.get("url", "")) == "https://copyleaks.com/plagiarism-checker"
-            for s in matched
-        )
-        if has_invalid or not matched or "highlighted_sentences" not in res_data:
-            submitted_text = record.get("submitted_text") or ""
-            if submitted_text:
-                from source_finder import find_copyleaks_sources, extract_plagiarism_highlights
-                new_sources = find_copyleaks_sources(submitted_text) if (has_invalid or not matched) else matched
-                if new_sources:
-                    total_words = int(record.get("total_words") or len(submitted_text.split()) or 120)
-                    identical = sum(int(s.get("matched_words", 0)) for s in new_sources)
-                    score = round(min(100.0, (identical / total_words) * 100.0), 1) if total_words > 0 else 12.5
-                    res_data["matched_sources"] = new_sources
-                    res_data["identical_words"] = identical
-                    res_data["plagiarism_score"] = score
-                    res_data["highlighted_sentences"] = extract_plagiarism_highlights(submitted_text, new_sources)
-                    record = plagiarism_db.update_scan_completed(
-                        scan_id=scan_id,
-                        total_words=total_words,
-                        plagiarism_score=score,
-                        identical_words=identical,
-                        result_data=res_data,
-                    )
+    # Completion is recorded only by the authenticated provider callback.
+    # Old completed records without provenance must not appear as live results.
+    data = record.get("result_data") or {}
+    if record.get("status") == "completed" and (data.get("provider") != "copyleaks" or data.get("sandbox")):
+        return {**record, "status": "failed", "plagiarism_score": None, "result_data": None,
+                "error_message": "This report is unverified. Run a new Copyleaks check."}
 
     return record
 
@@ -1341,44 +1195,16 @@ def list_plagiarism_scans(request: Request, user_id: Optional[str] = Query(None)
     account = authenticated_account(request)
     if user_id and str(user_id) != str(account['id']):
         raise HTTPException(403, "You can only view your own scans.")
-    return plagiarism_db.list_user_scans(user_id=account['id'], limit=limit)
+    records = plagiarism_db.list_user_scans(user_id=account['id'], limit=limit)
+    return [get_plagiarism_scan(row['scan_id'], request) for row in records]
 
 
 @app.post("/api/plagiarism/simulate-complete/{scan_id}")
 def simulate_complete_scan(scan_id: str, request: Request):
     """
-    Developer helper to simulate completion when testing in local offline environments.
+    Retired simulation endpoint; never manufacture provider results.
     """
-    if os.getenv("ENABLE_SCAN_SIMULATION") != "1":
-        raise HTTPException(404, "Not found.")
-    record = require_scan(request, plagiarism_db.get_scan(scan_id))
-    if not record:
-        raise HTTPException(status_code=404, detail="Scan not found.")
-
-    submitted_text = record.get("submitted_text") or ""
-    from source_finder import find_real_matching_sources
-    matched_sources = find_real_matching_sources(submitted_text)
-    total_words = int(record.get("total_words") or len(submitted_text.split()) or 150)
-    identical = sum(int(s.get("matched_words", 0)) for s in matched_sources)
-    score = round(min(100.0, (identical / total_words) * 100.0), 1) if total_words > 0 else 12.5
-
-    simulated_results = {
-        "total_words": total_words,
-        "identical_words": identical,
-        "minor_words": int(identical * 0.2),
-        "related_words": int(identical * 0.1),
-        "plagiarism_score": score,
-        "matched_sources": matched_sources,
-    }
-
-    updated = plagiarism_db.update_scan_completed(
-        scan_id=scan_id,
-        total_words=total_words,
-        plagiarism_score=score,
-        identical_words=identical,
-        result_data=simulated_results,
-    )
-    return {"success": True, "record": updated}
+    raise HTTPException(410, "Simulated plagiarism completion is no longer supported.")
 
 
 @app.post("/api/upload")

@@ -75,6 +75,24 @@ class IntakeTests(unittest.TestCase):
         self.assertEqual(failure.exception.status_code, 403)
         self.assertEqual(self.db.call_count, 2)
 
+    def test_failed_resubmission_uses_verified_student_and_atomic_rpc(self):
+        self.body.retry_job_id = uuid.UUID('00000000-0000-0000-0000-000000000010')
+        self.db.side_effect = [[{'id': 'existing'}], {'id': 'existing', 'already_submitted': False}]
+        result = submit_reviewed_work(self.body, self.request)
+        self.assertEqual(result['id'], 'existing')
+        path, token, values = self.db.call_args.args
+        self.assertEqual(path, '/rest/v1/rpc/resubmit_failed_submission')
+        self.assertEqual(values['student_key'], STUDENT)
+        self.assertEqual(values['expected_job'], str(self.body.retry_job_id))
+        self.assertEqual(values['new_text'], self.body.text)
+
+    def test_resubmission_rejection_does_not_become_existing_submission_success(self):
+        self.body.retry_job_id = uuid.uuid4()
+        self.db.side_effect = [[{'id': 'existing'}], HTTPException(400, 'Graded work cannot be resubmitted.')]
+        with self.assertRaises(HTTPException) as failure:
+            submit_reviewed_work(self.body, self.request)
+        self.assertIn('Graded work', failure.exception.detail)
+
 
 if __name__ == '__main__':
     unittest.main()

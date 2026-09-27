@@ -52,6 +52,19 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(state['state'], 'processing')
         self.assertIsNone(row['scan_result'])
 
+    def test_report_cannot_claim_classroom_mode_without_server_checkpoint(self):
+        row = self.row()
+        row['scan_result']['mode'] = 'classroom'
+        _, state = verified_status(row, self.job(checkpoint={}))
+        self.assertEqual(state['state'], 'failed')
+
+    def test_explicit_classroom_job_preserves_classroom_report(self):
+        row = self.row()
+        row['scan_result']['mode'] = 'classroom'
+        verified, state = verified_status(row, self.job(checkpoint={'mode': 'classroom'}))
+        self.assertEqual(state['state'], 'ready')
+        self.assertEqual(verified['scan_result']['mode'], 'classroom')
+
     @patch('submission_status.supabase_request')
     @patch('submission_status.authenticated_account', return_value={'role': 'student'})
     def test_student_cannot_read_private_job_diagnostics(self, auth, db):

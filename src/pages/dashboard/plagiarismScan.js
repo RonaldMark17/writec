@@ -487,7 +487,7 @@ export async function pollPlagiarismScanResult(
 
         if (scan.status === "failed") {
           const errMsg =
-            scan.result_data?.error || "Plagiarism scan could not be completed.";
+            scan.error_message || scan.result_data?.error || "Plagiarism scan could not be completed.";
           throw new Error(errMsg);
         }
       }
@@ -503,7 +503,11 @@ export async function pollPlagiarismScanResult(
   // If still processing after timeout, try one last check
   const finalRes = await apiFetch(`${getBackend()}/api/plagiarism/scans/${scanId}`);
   if (finalRes.ok) {
-    return finalRes.json();
+    const scan = await finalRes.json();
+    if (scan.status === "completed") return scan;
+    if (scan.status === "failed") {
+      throw new Error(scan.error_message || scan.result_data?.error || "Plagiarism scan could not be completed.");
+    }
   }
 
   throw new Error("Plagiarism scan timed out. Please check back shortly.");

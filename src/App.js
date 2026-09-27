@@ -3,6 +3,7 @@ import {
   Routes,
   Route,
   Navigate,
+  Link,
 } from "react-router-dom";
 
 import { useEffect, useState } from "react";
@@ -19,6 +20,7 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Startup from "./pages/Startup";
 import Transcribe from "./pages/Transcribe";
+import ThemeToggle from "./ThemeToggle";
 
 function ProtectedDashboard({ session, isAuthLoading, adminOnly = false }) {
   if (isAuthLoading) {
@@ -190,6 +192,7 @@ function App() {
         v7_startTransition: true,
       }}
     >
+      <ThemeToggle />
       {recovering && <Navigate to="/reset-password" replace />}
       <Routes>
         <Route path="/transcribe" element={<Transcribe />} />
@@ -221,6 +224,13 @@ function App() {
             <ProtectedDashboard session={session} isAuthLoading={isAuthLoading} />
           }
         />
+        <Route path="*" element={
+          <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f8f9fa] p-6 text-center">
+            <h1 className="text-3xl font-bold">Page not found</h1>
+            <p>The page you requested does not exist or has moved.</p>
+            <Link to="/" className="font-semibold text-[#137333] underline">Go to home</Link>
+          </main>
+        } />
       </Routes>
     </BrowserRouter>
   );

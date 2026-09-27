@@ -3,17 +3,18 @@ import { MemoryRouter } from "react-router-dom";
 import StudentDashboard from "./StudentDashboard";
 import { supabase } from "../supabaseClient";
 import { apiFetch } from "../apiFetch";
+import { useSubmissionProgress } from "./dashboard/submissionProgress";
 import { extractTextFromImage } from "./dashboard/ocrService";
 
 jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.fn(), storage: { from: jest.fn() } } }));
 jest.mock("../apiFetch", () => ({ apiFetch: jest.fn() }));
 jest.mock("./dashboard/ocrService", () => ({ extractTextFromImage: jest.fn() }));
 jest.mock("./dashboard/submissionProgress", () => ({
-  ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: () => "",
+  ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: jest.fn(() => ""),
 }));
 jest.mock("./dashboard/shared", () => ({
   ...jest.requireActual("./dashboard/shared"),
-  Header: ({ onPageChange }) => <button onClick={() => onPageChange("assignments")}>Assignments tab</button>,
+  Header: ({ onPageChange }) => <><button onClick={() => onPageChange("assignments")}>Assignments tab</button><button onClick={() => onPageChange("submissions")}>Submissions tab</button></>,
 }));
 
 const student = "00000000-0000-0000-0000-000000000003";
@@ -61,4 +62,43 @@ test("student reviews streamed text before saving the original image and correct
   expect(upload.mock.invocationCallOrder[0]).toBeLessThan(apiFetch.mock.invocationCallOrder[0]);
   expect(extractTextFromImage).toHaveBeenCalledTimes(1);
   await waitFor(() => expect(screen.queryByLabelText("Essay transcription")).not.toBeInTheDocument());
+});
+
+
+test("failed ungraded work can be replaced, but a rejected retry is not mistaken for the old saved submission", async () => {
+  jest.clearAllMocks();
+  let setRows;
+  useSubmissionProgress.mockImplementation((id, setter) => { setRows = setter; return ""; });
+  supabase.storage.from.mockReturnValue({ upload: jest.fn().mockResolvedValue({ error: null }) });
+  supabase.rpc.mockResolvedValue({ data: [{ id: "failed-work", assignment_id: assignment, student_id: student,
+    classroom_id: "class", essay_title: "Original essay", status: "submitted" }], error: null });
+  supabase.from.mockImplementation((table) => {
+    const data = table === "classroomMembers" ? [{ id: "member", classroom_id: "class", student_id: student }]
+      : table === "classroomTable" ? [{ id: "class", classroom_name: "English", classroom_code: "ENG1" }]
+      : table === "assignmentTable" ? [{ id: assignment, classroom_id: "class", title: "My assignment", accept_late_submissions: true }] : [];
+    const query = { then: resolve => Promise.resolve({ data, error: null }).then(resolve) };
+    for (const method of ["select", "eq", "in", "order"]) query[method] = () => query;
+    return query;
+  });
+  apiFetch.mockResolvedValue({ ok: false, json: async () => ({ detail: "Graded work cannot be resubmitted." }) });
+  render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <StudentDashboard profile={{ id: student, full_name: "Alex", role: "student" }} />
+  </MemoryRouter>);
+  fireEvent.click(screen.getByRole("button", { name: "Submissions tab" }));
+  await screen.findByText("Original essay");
+  act(() => setRows(rows => rows.map(row => ({ ...row, processingState: "failed", processingJobId: "job-1" }))));
+  fireEvent.click(screen.getByRole("button", { name: "Resubmit failed work" }));
+  fireEvent.click(screen.getByRole("button", { name: "Paste" }));
+  fireEvent.change(screen.getByLabelText("Paste text"), { target: { value: "Replacement reviewed essay text" } });
+  fireEvent.click(screen.getByRole("button", { name: "Resubmit assignment" }));
+  await screen.findAllByText("Graded work cannot be resubmitted.");
+  expect(screen.getByLabelText("Paste text")).toHaveValue("Replacement reviewed essay text");
+  expect(JSON.parse(apiFetch.mock.calls[0][1].body).retry_job_id).toBe("job-1");
+  expect(supabase.rpc).not.toHaveBeenCalledWith("accessible_submissions");
+  apiFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "failed-work", already_submitted: false }) });
+  fireEvent.click(screen.getByRole("button", { name: "Resubmit assignment" }));
+  await screen.findAllByText("Work resubmitted. Processing has been queued again.");
+  expect(screen.queryByLabelText("Paste text")).not.toBeInTheDocument();
+  act(() => setRows(rows => rows.map(row => ({ ...row, status: "graded", grade: "" }))));
+  expect(screen.queryByRole("button", { name: "Resubmit failed work" })).not.toBeInTheDocument();
 });

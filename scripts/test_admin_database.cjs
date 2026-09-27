@@ -24,8 +24,8 @@ async function main() {
       CREATE TABLE public."assignmentTable"(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), classroom_id uuid REFERENCES public."classroomTable", teacher_id uuid REFERENCES public."userTable", title text, instructions text, due_date timestamptz, created_at timestamptz DEFAULT now());
       CREATE TABLE public."submissionTable"(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), classroom_id uuid REFERENCES public."classroomTable", assignment_id uuid REFERENCES public."assignmentTable", student_id uuid REFERENCES public."userTable", file_url text, grade text, feedback text, status text, essay_title text, created_at timestamptz DEFAULT now());
       CREATE TABLE storage.objects(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text, name text);
-      CREATE TABLE storage.buckets(id text PRIMARY KEY, public boolean);
-      INSERT INTO storage.buckets VALUES ('essay-submissions',true);
+      CREATE TABLE storage.buckets(id text PRIMARY KEY, name text, public boolean);
+      INSERT INTO storage.buckets(id,public) VALUES ('essay-submissions',true);
       ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
       CREATE POLICY existing_storage ON storage.objects FOR ALL TO authenticated USING (true) WITH CHECK (true);
       GRANT ALL ON ALL TABLES IN SCHEMA public,storage TO authenticated;
@@ -213,6 +213,10 @@ async function main() {
     await asWorker();
     const retried = await rpc('SELECT public.claim_submission_job() AS result');
     assert.equal(retried.id, firstJob.id); // Retry and restart reuse the external scan ID.
+    await db.exec('RESET ROLE');
+    await db.exec(fs.readFileSync(path.join(root, 'submission_provenance.sql'), 'utf8'));
+    await db.exec(fs.readFileSync(path.join(root, 'submission_provenance.sql'), 'utf8'));
+    await asWorker();
     const report = {score: 12, transcribedText: 'Verified text', matchedSources: []};
     assert.equal(await rpc('SELECT public.finish_submission_job($1,$2,$3,$4,NULL) AS result',
       [queuedId,retried.lease,'Verified text',JSON.stringify(report)]), true);
@@ -221,11 +225,47 @@ async function main() {
     for (const field of ['grade','feedback','transcribed_text','scan_result','plagiarism_score']) assert.equal(ready[field], null);
     assert.equal((await db.query('SELECT * FROM public."submissionTable" WHERE id=$1',[queuedId])).rows.length, 0);
     await asUser(teacher);
+    await assert.rejects(() => db.query('SELECT public.return_submission($1)', [queuedId]), /verify the provider/);
+    const scanId = 'j' + retried.id.replaceAll('-', '');
+    const payload = {status: 0, scannedDocument: {scanId}, results: {score: {aggregatedScore: 12}, internet: []}};
+    await asWorker();
+    await db.query("UPDATE public.submission_jobs SET provider_result=$2 WHERE submission_id=$1", [queuedId, JSON.stringify(payload)]);
+    await asUser(teacher);
+    // A real callback cannot make an unrelated legacy report releasable.
+    await assert.rejects(() => db.query('SELECT public.return_submission($1)', [queuedId]), /verify the provider/);
+    await db.query('UPDATE public."submissionTable" SET scan_result=$2 WHERE id=$1',
+      [queuedId, JSON.stringify({...report, provider: 'copyleaks', mode: 'copyleaks', scanId})]);
+    for (const invalid of [null, {...payload, scannedDocument: {scanId: 'wrong'}}, {...payload, status: 1},
+      {...payload, results: {score: {aggregatedScore: 'NaN'}}}, {...payload, results: {score: {aggregatedScore: 101}}}]) {
+      await asWorker();
+      await db.query('UPDATE public.submission_jobs SET provider_result=$2 WHERE submission_id=$1', [queuedId, invalid && JSON.stringify(invalid)]);
+      await asUser(teacher);
+      await assert.rejects(() => db.query('SELECT public.return_submission($1)', [queuedId]), /verify the provider/);
+    }
+    await asWorker();
+    await db.query('UPDATE public.submission_jobs SET provider_result=$2 WHERE submission_id=$1', [queuedId, JSON.stringify(payload)]);
+    await asUser(teacher);
     await db.query('SELECT public.return_submission($1)', [queuedId]);
     await asUser(student);
     ready = (await rpc('SELECT public.list_submission_results() AS result')).find(row => row.id === queuedId);
     assert.equal(ready.grade, '0');
     assert.equal(ready.transcribed_text, 'Verified text');
+    // A late provider error hides already-returned contents at RPC and table boundaries.
+    await asWorker();
+    await db.query("UPDATE public.submission_jobs SET provider_error='Provider rejected scan' WHERE submission_id=$1", [queuedId]);
+    await asUser(student);
+    const hidden = (await rpc('SELECT public.list_submission_results() AS result')).find(row => row.id === queuedId);
+    assert.equal(hidden.grade, null);
+    assert.equal(hidden.returned_at, null);
+    assert.equal((await db.query('SELECT * FROM public."submissionTable" WHERE id=$1', [queuedId])).rows.length, 0);
+    await asWorker();
+    await db.query("UPDATE public.submission_jobs SET provider_error=NULL, checkpoint='{" + '\"mode\":\"classroom\"' + "}' WHERE submission_id=$1", [queuedId]);
+    await asUser(teacher);
+    // Make private first, then explicitly classroom-only; no provider callback required.
+    await db.query('UPDATE public."submissionTable" SET returned_at=NULL WHERE id=$1', [queuedId]);
+    await db.query('UPDATE public."submissionTable" SET scan_result=$2 WHERE id=$1', [queuedId, JSON.stringify({...report, mode: 'classroom'})]);
+    await db.query('SELECT public.return_submission($1)', [queuedId]);
+
     await asUser(teacher);
     await db.query('SELECT public.retry_submission_processing($1,$2)', [queuedId,'Corrected text']);
     await asUser(student);
@@ -258,6 +298,44 @@ async function main() {
     teacherPreview = (await rpc('SELECT public.list_submission_results() AS result')).find(row => row.id === reviewedId);
     assert.equal(teacherPreview.transcribed_text, 'Student reviewed text');
     assert.equal(teacherPreview.scan_result, null);
+    await db.exec('RESET ROLE');
+    await db.exec(fs.readFileSync(path.join(root, 'student_resubmission.sql'), 'utf8'));
+    await db.exec(fs.readFileSync(path.join(root, 'student_resubmission.sql'), 'utf8'));
+    const replacement = `${student}/${queueAssignment}/replacement.txt`;
+    const retryArgs = [reviewedId, student, reviewedJob.id, 'Replacement essay', replacement, 'Corrected replacement essay text'];
+    const retrySql = 'SELECT public.resubmit_failed_submission($1,$2,$3,$4,$5,$6) AS result';
+    await asUser(student);
+    await assert.rejects(() => db.query(retrySql, retryArgs), /permission denied/);
+    await asWorker();
+    await assert.rejects(() => db.query(retrySql, [reviewedId, teacher, ...retryArgs.slice(2)]), /does not belong/);
+    const replaced = await rpc(retrySql, retryArgs);
+    assert.equal(replaced.id, reviewedId);
+    assert.equal(replaced.already_submitted, false);
+    const replacementJob = (await db.query('SELECT * FROM public.submission_jobs WHERE submission_id=$1', [reviewedId])).rows[0];
+    assert.notEqual(replacementJob.id, reviewedJob.id);
+    assert.equal(replacementJob.state, 'submitted');
+    assert.equal(replacementJob.provider_result, null);
+    assert.equal(replacementJob.input_text, retryArgs[5]);
+    assert.equal((await rpc(retrySql, retryArgs)).already_submitted, true);
+    await assert.rejects(() => db.query(retrySql, [...retryArgs.slice(0,5), 'Another version']), /current failed/);
+    const savedReplacement = (await db.query('SELECT * FROM public."submissionTable" WHERE id=$1', [reviewedId])).rows[0];
+    assert.equal(savedReplacement.file_url, replacement);
+    assert.equal(savedReplacement.transcribed_text, retryArgs[5]);
+    await db.query("UPDATE public.submission_jobs SET state='failed' WHERE submission_id=$1", [reviewedId]);
+    await asUser(teacher);
+    await db.query('UPDATE public."submissionTable" SET grade=$2 WHERE id=$1', [reviewedId, '0']);
+    await asWorker();
+    await assert.rejects(() => db.query(retrySql, [reviewedId, student, replacementJob.id, ...retryArgs.slice(3)]), /Graded work/);
+    await db.query('UPDATE public."submissionTable" SET grade=NULL WHERE id=$1', [reviewedId]);
+    await db.exec('RESET ROLE');
+    await db.query('UPDATE public."classroomTable" SET is_archived=true WHERE id=$1', [classId]);
+    await asWorker();
+    await assert.rejects(() => db.query(retrySql, [reviewedId, student, replacementJob.id, ...retryArgs.slice(3)]), /closed/);
+    await db.exec('RESET ROLE');
+    await db.query('UPDATE public."classroomTable" SET is_archived=false WHERE id=$1', [classId]);
+    await db.query("UPDATE public.\"assignmentTable\" SET accept_late_submissions=false,due_date='2000-01-01' WHERE id=$1", [queueAssignment]);
+    await asWorker();
+    await assert.rejects(() => db.query(retrySql, [reviewedId, student, replacementJob.id, ...retryArgs.slice(3)]), /closed/);
     await db.exec("RESET ROLE; SET ROLE anon; SELECT set_config('request.jwt.claim.sub','',false)");
     await assert.rejects(() => db.query("SELECT public.admin_read('dashboard')"), /permission denied/);
     console.log('Database integration checks passed: RPCs, RLS, private results, return controls, atomic submission queue, duplicate retries, lease recovery, stale worker rejection, and repeat migrations.');

@@ -2,7 +2,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
+import './workspace-theme.css';
+import { applyTheme } from './theme';
+
 import reportWebVitals from './reportWebVitals';
+
+applyTheme();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

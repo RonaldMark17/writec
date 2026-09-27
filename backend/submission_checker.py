@@ -27,10 +27,10 @@ def normalize_provider(payload):
     if not math.isfinite(percentage) or not 0 <= percentage <= 100:
         raise ValueError('The similarity provider returned an invalid score.')
     sources = []
-    for match in results.get('internet') or []:
-        url = match.get('url') or match.get('address')
-        if url:
-            sources.append({'title': match.get('title') or url, 'url': url,
+    for kind in ('internet', 'database', 'repositories'):
+        for match in results.get(kind) or []:
+            url = match.get('url') or match.get('address') or match.get('sourceUrl') or match.get('link') or ''
+            sources.append({'title': match.get('title') or url or 'Provider source', 'url': url,
                             'matched_words': match.get('matchedWords', 0)})
     return {'score': percentage, 'wordCount': document.get('totalWords', 0),
             'identicalWords': score.get('identicalWords', 0), 'matchedSources': sources}

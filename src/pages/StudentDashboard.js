@@ -27,6 +27,7 @@ import {
   AlertCircleIcon,
   ClockIcon,
   filterAndSortTodoAssignments,
+  getAssignmentDueInfo,
   formatDateTime,
   normalizeAssignment,
   normalizeClassroom,
@@ -248,7 +249,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     selectedClassroomId
   );
 
-  const todoAssignments = assignmentGroups.todoList;
+  const retryTarget = submissions.find((row) => row.id === submissionDraft.retrySubmissionId);
+  const canResubmit = (row) => row?.processingState === "failed" && row?.processingJobId
+    && row.status !== "graded" && !row.returnedAt && !String(row.grade ?? "").trim();
+  const todoAssignments = submissionDraft.retrySubmissionId && selectedAssignment
+    ? [{ ...selectedAssignment, dueInfo: getAssignmentDueInfo(selectedAssignment.dueDate, false) }] : assignmentGroups.todoList;
   const dueSoonAssignments = assignmentGroups.dueSoonList.filter(
     (assignment) => assignment.dueInfo.isDueSoon
   );
@@ -578,7 +583,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       assignmentId:
         nextAssignments.some(
           (assignment) =>
-            assignment.id === currentDraft.assignmentId && !assignment.submitted
+            assignment.id === currentDraft.assignmentId && (!assignment.submitted || currentDraft.retrySubmissionId)
         )
           ? currentDraft.assignmentId
           : "",
@@ -907,7 +912,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
-    if (selectedAssignment.submitted) {
+    if (selectedAssignment.submitted && !canResubmit(retryTarget)) {
       setErrorMessage("You already submitted this assignment.");
       return;
     }
@@ -918,7 +923,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
-    if (selectedAssignment.dueInfo?.isOverdue && selectedAssignment.acceptLateSubmissions === false) {
+    if (getAssignmentDueInfo(selectedAssignment.dueDate, false).isOverdue && selectedAssignment.acceptLateSubmissions === false) {
       setErrorMessage("Submissions are closed. Your teacher has disabled late submissions for this assignment.");
       return;
     }
@@ -1031,7 +1036,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         const response = await apiFetch(`${resolveBackendUrl()}/api/submissions/submit`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ assignment_id: String(selectedAssignment.id), title: essayTitle,
-            file_url: uploadedFileUrl, text: reviewedText.trim() }),
+            file_url: uploadedFileUrl, text: reviewedText.trim(),
+            ...(submissionDraft.retryJobId ? { retry_job_id: submissionDraft.retryJobId } : {}) }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not save the submission.");
@@ -1040,7 +1046,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
       // A lost response can follow a committed insert. Confirm using safe metadata.
       let confirmed = Boolean(savedSubmission?.id);
-      if (!confirmed) {
+      if (!confirmed && !submissionDraft.retrySubmissionId) {
         const { data: confirmedRows, error: confirmationError } = await supabase.rpc("accessible_submissions");
         confirmed = !confirmationError && (confirmedRows || []).some((row) =>
           String(row.assignment_id) === String(selectedAssignment.id) && String(row.student_id) === String(profile.id));
@@ -1056,7 +1062,9 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         return;
       }
 
-      const savedMessage = savedSubmission?.already_submitted
+      const savedMessage = submissionDraft.retrySubmissionId
+        ? "Work resubmitted. Processing has been queued again."
+        : savedSubmission?.already_submitted
         ? "This assignment was already saved. Your existing submission is available below."
         : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for plagiarism. Confirmation status will update below.";
       setSuccessMessage(savedMessage);
@@ -1623,7 +1631,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       )}
 
                       {!isDraftOpen && <div className="mt-3.5 sm:mt-4 flex flex-wrap gap-2.5 sm:gap-3 pl-0 sm:pl-14">
-                        {assignment.submitted ? (
+                        {assignment.submitted && !submissionDraft.retrySubmissionId ? (
                           <button
                             type="button"
                             disabled={isSubmittingEssay}
@@ -1667,7 +1675,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         )}
                       </div>}
 
-                    {isDraftOpen && !assignment.submitted && (
+                    {isDraftOpen && (!assignment.submitted || submissionDraft.retrySubmissionId) && (
                       <form
                         id={`assignment-draft-${assignment.id}`}
                         onSubmit={handleSubmitAssignment}
@@ -1837,7 +1845,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-base font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                         >
                           <UploadIcon className="h-5 w-5" />
-                          {isSubmittingEssay ? "Saving your work..." : transcription.status === "processing" && submissionDraft.mode !== "text" ? "Transcribing…" : "Submit assignment"}
+                          {isSubmittingEssay ? "Saving your work..." : transcription.status === "processing" && submissionDraft.mode !== "text" ? "Transcribing…" : submissionDraft.retrySubmissionId ? "Resubmit assignment" : "Submit assignment"}
                         </button>
                       </form>
                     )}
@@ -2111,6 +2119,20 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
                           {/* Action Button */}
                           <div className="text-right">
+                          {canResubmit(submission) && (
+                            <button type="button" className="rounded-full border border-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-700"
+                              onClick={() => {
+                                setSubmissionFile(null);
+                                setErrorMessage("");
+                                setSuccessMessage("");
+                                setSubmissionDraft({ ...emptySubmissionDraft, assignmentId: submission.assignmentId,
+                                  essayTitle: submission.essayTitle || "", retrySubmissionId: submission.id,
+                                  retryJobId: submission.processingJobId });
+                                setSelectedClassroomId(submission.classroomId);
+                                setActivePage("assignments");
+                              }}>Resubmit failed work</button>
+                          )}
+
                             <button
                               type="button"
                               onClick={() => {

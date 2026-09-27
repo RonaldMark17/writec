@@ -193,48 +193,6 @@ def get_submission_grades() -> Dict[str, Dict[str, Any]]:
                 except Exception:
                     pass
 
-                scan_res = d.get("scan_result")
-                if isinstance(scan_res, dict):
-                    matched = scan_res.get("matchedSources") or scan_res.get("matched_sources") or []
-                    if "result_data" in scan_res and isinstance(scan_res["result_data"], dict):
-                        sub_matched = scan_res["result_data"].get("matched_sources") or []
-                        if sub_matched:
-                            matched = sub_matched
-
-                    has_dummy = any(
-                        "wikipedia" in str(s.get("url", "")).lower()
-                        or "wikipedia" in str(s.get("title", "")).lower()
-                        or "Academic_integrity" in str(s.get("url", ""))
-                        or "Online Reference" in str(s.get("title", ""))
-                        or str(s.get("url", "")) == "https://copyleaks.com/plagiarism-checker"
-                        for s in matched
-                    )
-                    needs_enrichment = not matched or has_dummy or "highlighted_sentences" not in scan_res
-                    if needs_enrichment:
-                        text = d.get("transcribed_text") or ""
-                        if text:
-                            try:
-                                from source_finder import find_copyleaks_sources, extract_plagiarism_highlights
-                                real_sources = find_copyleaks_sources(text) if (not matched or has_dummy) else matched
-                                if real_sources:
-                                    scan_res["matchedSources"] = real_sources
-                                    scan_res["matched_sources"] = real_sources
-                                    if "result_data" in scan_res and isinstance(scan_res["result_data"], dict):
-                                        scan_res["result_data"]["matched_sources"] = real_sources
-                                    peer_snips = (scan_res.get("peerSimilarity") or {}).get("matching_snippets") or []
-                                    highlights = extract_plagiarism_highlights(text, real_sources, peer_snips)
-                                    scan_res["highlighted_sentences"] = highlights
-                                    if "result_data" in scan_res and isinstance(scan_res["result_data"], dict):
-                                        scan_res["result_data"]["highlighted_sentences"] = highlights
-                                    d["scan_result"] = scan_res
-                                    conn.execute(
-                                        "UPDATE submission_grades SET scan_result = ? WHERE submission_id = ?",
-                                        (json.dumps(scan_res, ensure_ascii=False), d["submission_id"]),
-                                    )
-                                    conn.commit()
-                            except Exception as e:
-                                print(f"[get_submission_grades] error enriching sources: {e}", flush=True)
-
             result[d["submission_id"]] = d
         return result
 
@@ -306,7 +264,7 @@ def update_scan_completed(
             """,
             (
                 total_words,
-                round(float(plagiarism_score), 2),
+                float(plagiarism_score),
                 identical_words,
                 result_json,
                 now_iso,
