@@ -1,6 +1,6 @@
 import { apiFetch } from "../../apiFetch";
 import { useState, useEffect } from "react";
-import ProfileEditor, { ProfileIcon, AVATAR_THEMES } from "./ProfileEditor";
+import ProfileEditor from "./ProfileEditor";
 import { supabase, signOutAndExpireToken } from "../../supabaseClient";
 
 export const CLASSROOM_TABLE = "classroomTable";
@@ -942,7 +942,14 @@ function PageNav({ pages, activePage, onChange, label }) {
   );
 }
 
-export { AVATAR_THEMES };
+export const AVATAR_THEMES = [
+  { id: "emerald", label: "Emerald", bg: "from-[#137333] to-[#2e7d32]", ring: "ring-[#e6f4ea]", dot: "#137333" },
+  { id: "blue", label: "Ocean Blue", bg: "from-[#1a73e8] to-[#1557b0]", ring: "ring-[#e8f0fe]", dot: "#1a73e8" },
+  { id: "purple", label: "Royal Purple", bg: "from-[#7b1fa2] to-[#512da8]", ring: "ring-[#f3e8fd]", dot: "#7b1fa2" },
+  { id: "crimson", label: "Crimson Red", bg: "from-[#c5221f] to-[#b71c1c]", ring: "ring-[#fce8e6]", dot: "#c5221f" },
+  { id: "amber", label: "Warm Amber", bg: "from-[#e37400] to-[#b06000]", ring: "ring-[#fef7e0]", dot: "#e37400" },
+  { id: "slate", label: "Dark Slate", bg: "from-[#37474f] to-[#263238]", ring: "ring-[#eceff1]", dot: "#37474f" },
+];
 
 export function getInitials(name, fallback = "T") {
   if (!name) return fallback;

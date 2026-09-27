@@ -1,19 +1,29 @@
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 
+function resolveBackendUrl() {
+  if (typeof getBackendUrl === "function") {
+    try {
+      const url = getBackendUrl();
+      if (url) return url;
+    } catch {
+      // ignore
+    }
+  }
+  return process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+}
+
 export function getOcrEndpoint() {
   if (process.env.REACT_APP_OCR_ENDPOINT) {
     return process.env.REACT_APP_OCR_ENDPOINT;
   }
-  const backend = getBackendUrl();
-  return `${backend}/api/upload`;
+  return `${resolveBackendUrl()}/api/upload`;
 }
 
 export function getOcrStreamEndpoint() {
   if (process.env.REACT_APP_OCR_STREAM_ENDPOINT) {
     return process.env.REACT_APP_OCR_STREAM_ENDPOINT;
   }
-  const backend = getBackendUrl();
-  return `${backend}/api/upload-stream`;
+  return `${resolveBackendUrl()}/api/upload-stream`;
 }
 
 const OCR_TIMEOUT_MS = 1200000;
@@ -88,23 +98,19 @@ async function extractTextFromImageJson(file, signal) {
 }
 
 async function extractTextFromImageStream(file, signal, onProgress, local = false) {
+  const backend = resolveBackendUrl();
   const endpoint = local
-    ? `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/local-ocr/upload-stream`
-    : OCR_STREAM_ENDPOINT;
+    ? `${backend}/local-ocr/upload-stream`
+    : getOcrStreamEndpoint();
   const formData = new FormData();
 
   formData.append("file", file, file.name);
 
   let response;
 
-  const streamEndpoint = getOcrStreamEndpoint();
   try {
     response =
-<<<<<<< HEAD
       await (local ? fetch : apiFetch)(endpoint, {
-=======
-      await apiFetch(streamEndpoint, {
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
         method: "POST",
         body: formData,
         signal,
@@ -117,11 +123,7 @@ async function extractTextFromImageStream(file, signal, onProgress, local = fals
     }
 
     throw new Error(
-<<<<<<< HEAD
       `Could not reach the OCR server at ${endpoint}. Start it with "npm run start:backend", then try again.`
-=======
-      `Could not reach the OCR server at ${streamEndpoint}. Start FastAPI with "uvicorn main:app --reload --port 8000", then try again.`
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
     );
   }
 
@@ -268,13 +270,8 @@ export async function extractTextFromImage(file, options = {}) {
 
 export async function getOcrEngineInfo() {
   try {
-<<<<<<< HEAD
-    const backend = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-    const response = await fetch(`${backend}/health`);
-=======
     const backend = getBackendUrl();
     const response = await apiFetch(`${backend}/api/health`);
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
     if (!response.ok) return null;
     return await response.json();
   } catch {

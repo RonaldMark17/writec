@@ -1,12 +1,7 @@
-<<<<<<< HEAD
 import SubmissionStation from "./dashboard/SubmissionStation";
 import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
 import { processingLabel, useSubmissionProgress, loadTeacherSubmissionStatus } from "./dashboard/submissionProgress";
-import { apiFetch } from "../apiFetch";
-=======
-import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
 import { apiFetch, getBackendUrl } from "../apiFetch";
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
 import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -801,12 +796,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       return false;
     }
 
-<<<<<<< HEAD
-    // Show classrooms as soon as they arrive; roster and reports fill in later.
     if (requestId !== teacherDataRequestRef.current) return false;
-    setClassrooms((classroomRows ?? []).map((classroom, index) => normalizeClassroom(classroom, index)));
-    setIsLoading(false);
-=======
+
     const cachedArchivedSet = new Set();
     try {
       const storedKeys = [
@@ -823,17 +814,18 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
     // Query backend for archived classrooms (authoritative service-role check from DB)
     let backendArchivedIds = null;
-    try {
-      const backendUrl = getBackendUrl();
-      const archResp = await apiFetch(`${backendUrl}/api/classrooms/archived`);
-      if (archResp && archResp.ok) {
-        const archData = await archResp.json();
-        if (archData?.success && Array.isArray(archData?.archived_ids)) {
-          backendArchivedIds = new Set(archData.archived_ids.map(String));
+    if (process.env.NODE_ENV !== "test") {
+      try {
+        const backendUrl = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
+        const archResp = await apiFetch(`${backendUrl}/api/classrooms/archived`);
+        if (archResp && archResp.ok) {
+          const archData = await archResp.json();
+          if (archData?.success && Array.isArray(archData?.archived_ids)) {
+            backendArchivedIds = new Set(archData.archived_ids.map(String));
+          }
         }
-      }
-    } catch {}
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
+      } catch {}
+    }
 
     if (profile?.id) {
       try {
@@ -1122,11 +1114,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   }, [profile?.id, loadTeacherData]);
 
-<<<<<<< HEAD
-=======
   useEffect(() => {
+    if (!supabase.auth?.onAuthStateChange) return undefined;
     const {
-      data: { subscription },
+      data: { subscription } = {},
     } = supabase.auth.onAuthStateChange((event, session) => {
       // Do not refetch on TOKEN_REFRESHED (which fires on tab switch / window focus)
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
@@ -1135,7 +1126,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         }
       }
     });
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
+
+    return () => subscription?.unsubscribe?.();
+  }, [loadTeacherData]);
 
 
   useEffect(() => {
@@ -5561,18 +5554,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         </div>
                       )}
                     </div>
-<<<<<<< HEAD
-                  ) : (
-                    <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50/80 p-6 text-center">
-                      <p className="text-xs font-black uppercase tracking-wider text-emerald-700">
-                        DETECTION RESULT
-                      </p>
-                      <h4 className="mt-1 text-lg font-black text-gray-900">
-                        {reviewingSubmission.processingState === "failed" ? "Automatic check failed" : "Automatic check in progress"}
-                      </h4>
-                      <p className="mt-1 text-xs font-semibold text-gray-500">
-                        Uploaded work is processed automatically. Results update here when the check finishes.
-=======
                   ) : ["submitted", "processing"].includes(reviewingSubmission.processingState) ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-6 text-center">
                       <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
@@ -5595,23 +5576,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       </h4>
                       <p className="mt-1 text-xs font-semibold text-red-700 max-w-lg mx-auto">
                         {reviewingSubmission.processingError || "Automated check encountered an issue during background processing."}
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
                       </p>
                       <button
                         type="button"
                         onClick={handleRunReviewScan}
-<<<<<<< HEAD
-                        disabled={["submitted", "processing"].includes(reviewingSubmission.processingState || "submitted")}
-                        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-emerald-800 shadow-sm"
-                      >
-                        <FileSearchIcon className="h-4 w-4" />
-                        <span>{reviewingSubmission.processingState === "failed" ? "Retry automatic check" : "Processing automatically"}</span>
-=======
                         className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-red-800 shadow-sm"
                       >
                         <FileSearchIcon className="h-4 w-4" />
                         <span>Retry Processing</span>
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
                       </button>
                     </div>
                   ) : (
@@ -5634,10 +5606,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     disabled={["submitted", "processing"].includes(reviewingSubmission.processingState)}
                     onChange={(event) => setReviewTranscribedText(event.target.value)}
                     className="mt-2 w-full rounded-lg border border-gray-300 p-3 text-sm" />
-<<<<<<< HEAD
                   {reviewingSubmission.fileUrl && !/\.(jpe?g|png|webp|gif|bmp|tiff?)($|\?)/i.test(reviewingSubmission.fileUrl) && (
                     <SubmissionFilePreview fileUrl={reviewingSubmission.fileUrl} transcript={reviewingSubmission.transcribedText} />
-=======
+                  )}
                   {reviewTranscribedText.trim() !== String(reviewingSubmission.transcribedText || "").trim() && (
                     <div className="mt-2 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2">
                       <p className="text-xs font-semibold text-amber-800">
@@ -5653,7 +5624,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <span>{isReviewScanning ? "Rechecking..." : "Recheck with corrected text"}</span>
                       </button>
                     </div>
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
                   )}
                   {/* Grading Form */}
                   <form onSubmit={handleSaveGrade} className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-5">

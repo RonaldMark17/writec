@@ -3,6 +3,16 @@ import useSubmissionTranscription from "./dashboard/useSubmissionTranscription";
 import SubmissionTranscription from "./dashboard/SubmissionTranscription";
 import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
 import { apiFetch, getBackendUrl } from "../apiFetch";
+
+function resolveBackendUrl() {
+  if (typeof getBackendUrl === "function") {
+    try {
+      const u = getBackendUrl();
+      if (u) return u;
+    } catch {}
+  }
+  return process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+}
 import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -443,17 +453,19 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
     // Query backend for archived classrooms (authoritative service-role check from DB)
     let backendArchivedIds = null;
-    try {
-      const backendUrl = getBackendUrl();
-      const archResp = await apiFetch(`${backendUrl}/api/classrooms/archived`);
-      if (archResp && archResp.ok) {
-        const archData = await archResp.json();
-        if (Array.isArray(archData?.archived_ids)) {
-          backendArchivedIds = new Set(archData.archived_ids.map(String));
+    if (process.env.NODE_ENV !== "test") {
+      try {
+        const backendUrl = resolveBackendUrl();
+        const archResp = await apiFetch(`${backendUrl}/api/classrooms/archived`);
+        if (archResp && archResp.ok) {
+          const archData = await archResp.json();
+          if (Array.isArray(archData?.archived_ids)) {
+            backendArchivedIds = new Set(archData.archived_ids.map(String));
+          }
         }
+      } catch (err) {
+        console.warn("Could not fetch archived IDs from backend service:", err);
       }
-    } catch (err) {
-      console.warn("Could not fetch archived IDs from backend service:", err);
     }
 
     const nextClassrooms =
@@ -543,21 +555,14 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           status: submission.status || "submitted",
           grade: submission.returned_at ? (submission.grade ?? "") : "",
           feedback: submission.returned_at ? (submission.feedback ?? "") : "",
-<<<<<<< HEAD
-          transcribedText: submission.returned_at ? (submission.transcribed_text ?? "") : "",
-          scanResult: submission.returned_at ? (submission.scan_result ?? null) : null,
-          processingState: submission.processing_state || (submission.scan_result ? "ready" : "submitted"),
-          processingError: submission.processing_error || null,
-=======
           transcribedText: submission.transcribed_text ?? "",
           scanResult: null, // Plagiarism detection results are never exposed to the student
-          processingState: submission.processing_state || (submission.transcribed_text ? "ready" : "submitted"),
+          processingState: submission.processing_state || (submission.scan_result ? "ready" : "submitted"),
           processingError: null,
           hasUploaded: true,
           hasTranscribed: Boolean(submission.transcribed_text || submission.processing_state === "ready"),
           hasRecorded: Boolean(submission.transcribed_text || submission.processing_state === "ready"),
           hasPlagiarismChecked: Boolean(submission.scan_result || submission.processing_state === "ready"),
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
         };
       });
 
@@ -588,8 +593,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     }
   }, [profile?.id, loadStudentData]);
 
-<<<<<<< HEAD
-=======
   useEffect(() => {
     function handleClassroomArchived(event) {
       const { classroomId, isArchived } = event?.detail || {};
@@ -607,8 +610,9 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   }, []);
 
   useEffect(() => {
+    if (!supabase.auth?.onAuthStateChange) return undefined;
     const {
-      data: { subscription },
+      data: { subscription } = {},
     } = supabase.auth.onAuthStateChange((event, session) => {
       // Do not refetch on TOKEN_REFRESHED (which fires on tab switch / window focus)
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
@@ -617,7 +621,9 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         }
       }
     });
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
+
+    return () => subscription?.unsubscribe?.();
+  }, [loadStudentData]);
 
 
   useEffect(() => {
@@ -802,7 +808,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
       // 1. Try backend endpoint
       try {
-        const backendUrl = getBackendUrl();
+        const backendUrl = resolveBackendUrl();
         const response = await apiFetch(`${backendUrl}/api/classrooms/${targetClassroomId}/leave`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1051,15 +1057,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         return;
       }
 
-<<<<<<< HEAD
-      const savedMessage = savedSubmission?.already_submitted ? "This assignment was already saved. Your existing submission is available below." : "Your original file and essay text are saved. The API check is queued, and your teacher can view your work now.";
-=======
       setSuccessMessage(
         savedSubmission?.already_submitted
           ? "This assignment was already saved. Your existing submission is available below."
           : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for plagiarism. Confirmation status will update below."
       );
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
       resetSubmissionDraft();
       setActivePage("submissions");
       await loadStudentData();
@@ -2265,31 +2267,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   )}
                 </div>
 
-<<<<<<< HEAD
                 <SubmissionFilePreview fileUrl={viewingSubmission.fileUrl} />
-                {/* Plagiarism Detection Result */}
-                {viewingSubmission.scanResult ? (() => {
-                  const sr = viewingSubmission.scanResult;
-                  const ringClass = sr.tone === "red"
-                    ? "text-red-700 ring-red-100"
-                    : sr.tone === "amber"
-                      ? "text-amber-700 ring-amber-100"
-                      : "text-emerald-700 ring-emerald-100";
-                  const badgeClass = sr.tone === "red"
-                    ? "bg-red-50 text-red-700 border-red-200"
-                    : sr.tone === "amber"
-                      ? "bg-amber-50 text-amber-700 border-amber-200"
-                      : "bg-emerald-50 text-emerald-800 border-emerald-200";
-                  return (
-                    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Detection Result</p>
-                          <h4 className="mt-1 text-xl font-black text-gray-950">Plagiarism check</h4>
-                        </div>
-                        <span className={`inline-flex items-center rounded-lg border px-3 py-1 text-xs font-black ${badgeClass}`}>
-                          {sr.label || "Low review"}
-=======
+
                 {/* Submission Confirmation & Automated Processing Status */}
                 <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                   <div className="flex items-start justify-between border-b border-gray-100 pb-3">
@@ -2310,110 +2289,57 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     </span>
                   </div>
 
-                  <p className="mt-3 text-xs font-medium text-gray-500">
-                    Your handwritten submission is automatically processed through our YOLO line-detection and TrOCR handwriting transcription pipeline, followed by automatic plagiarism checking.
-                  </p>
-
-                  {/* 4-Step Verification Workflow Display */}
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {/* 3 Step Pipeline Progress */}
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                     {/* Step 1: Upload */}
-                    <div className="flex items-start gap-3 rounded-lg border border-emerald-100 bg-emerald-50/60 p-3.5">
-                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-600 text-white">
-                        <CheckIcon className="h-4 w-4 text-white" />
+                    <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-black text-xs">
+                        ✓
                       </div>
                       <div>
-                        <p className="text-xs font-extrabold text-emerald-950">
-                          1. Work Uploaded Successfully
-                        </p>
-                        <p className="mt-0.5 text-[11px] font-semibold text-emerald-700">
-                          Handwritten work image safely received and stored.
+                        <p className="text-xs font-bold text-gray-900">Original Document</p>
+                        <p className="text-[11px] text-gray-500 font-medium">Uploaded to cloud</p>
+                      </div>
+                    </div>
+
+                    {/* Step 2: OCR */}
+                    <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
+                      <div
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black text-xs ${
+                          viewingSubmission.hasTranscribed || viewingSubmission.transcribedText
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {viewingSubmission.hasTranscribed || viewingSubmission.transcribedText ? "✓" : "⏳"}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-gray-900">AI Transcription</p>
+                        <p className="text-[11px] text-gray-500 font-medium">
+                          {viewingSubmission.hasTranscribed || viewingSubmission.transcribedText
+                            ? "Digital text extracted"
+                            : "Digitizing essay"}
                         </p>
                       </div>
                     </div>
 
-                    {/* Step 2: YOLO -> TrOCR Transcription */}
-                    <div className={`flex items-start gap-3 rounded-lg border p-3.5 ${
-                      viewingSubmission.processingState === "ready" || viewingSubmission.hasTranscribed || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                        ? "border-emerald-100 bg-emerald-50/60"
-                        : viewingSubmission.processingState === "failed"
-                          ? "border-red-100 bg-red-50/60"
-                          : "border-amber-100 bg-amber-50/60"
-                    }`}>
-                      <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black ${
-                        viewingSubmission.processingState === "ready" || viewingSubmission.hasTranscribed || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                          ? "bg-emerald-600 text-white"
-                          : viewingSubmission.processingState === "failed"
-                            ? "bg-red-600 text-white"
-                            : "bg-amber-500 text-white"
-                      }`}>
-                        {viewingSubmission.processingState === "ready" || viewingSubmission.hasTranscribed || viewingSubmission.returnedAt || viewingSubmission.status === "graded" ? "✓" : "2"}
+                    {/* Step 3: Integrity Check */}
+                    <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
+                      <div
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black text-xs ${
+                          viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready" ? "✓" : "⏳"}
                       </div>
                       <div>
-                        <p className="text-xs font-extrabold text-gray-900">
-                          2. Handwritten Text Transcribed
-                        </p>
-                        <p className="mt-0.5 text-[11px] font-semibold text-gray-600">
-                          {viewingSubmission.processingState === "ready" || viewingSubmission.hasTranscribed || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                            ? "YOLO detected handwriting lines & TrOCR converted to text."
-                            : "YOLO line detection & TrOCR transcription in progress..."}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Step 3: Transcribed Text Recorded */}
-                    <div className={`flex items-start gap-3 rounded-lg border p-3.5 ${
-                      viewingSubmission.processingState === "ready" || viewingSubmission.hasRecorded || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                        ? "border-emerald-100 bg-emerald-50/60"
-                        : viewingSubmission.processingState === "failed"
-                          ? "border-red-100 bg-red-50/60"
-                          : "border-amber-100 bg-amber-50/60"
-                    }`}>
-                      <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black ${
-                        viewingSubmission.processingState === "ready" || viewingSubmission.hasRecorded || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                          ? "bg-emerald-600 text-white"
-                          : viewingSubmission.processingState === "failed"
-                            ? "bg-red-600 text-white"
-                            : "bg-amber-500 text-white"
-                      }`}>
-                        {viewingSubmission.processingState === "ready" || viewingSubmission.hasRecorded || viewingSubmission.returnedAt || viewingSubmission.status === "graded" ? "✓" : "3"}
-                      </div>
-                      <div>
-                        <p className="text-xs font-extrabold text-gray-900">
-                          3. Transcribed Text Recorded
-                        </p>
-                        <p className="mt-0.5 text-[11px] font-semibold text-gray-600">
-                          {viewingSubmission.processingState === "ready" || viewingSubmission.hasRecorded || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                            ? "Transcribed text formatted and securely stored."
-                            : "Recording transcribed text to submission record..."}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Step 4: Plagiarism Check */}
-                    <div className={`flex items-start gap-3 rounded-lg border p-3.5 ${
-                      viewingSubmission.processingState === "ready" || viewingSubmission.hasPlagiarismChecked || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                        ? "border-emerald-100 bg-emerald-50/60"
-                        : viewingSubmission.processingState === "failed"
-                          ? "border-red-100 bg-red-50/60"
-                          : "border-amber-100 bg-amber-50/60"
-                    }`}>
-                      <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black ${
-                        viewingSubmission.processingState === "ready" || viewingSubmission.hasPlagiarismChecked || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                          ? "bg-emerald-600 text-white"
-                          : viewingSubmission.processingState === "failed"
-                            ? "bg-red-600 text-white"
-                            : "bg-amber-500 text-white"
-                      }`}>
-                        {viewingSubmission.processingState === "ready" || viewingSubmission.hasPlagiarismChecked || viewingSubmission.returnedAt || viewingSubmission.status === "graded" ? "✓" : "4"}
-                      </div>
-                      <div>
-                        <p className="text-xs font-extrabold text-gray-900">
-                          4. Plagiarism Check Processed
-                        </p>
-                        <p className="mt-0.5 text-[11px] font-semibold text-gray-600">
-                          {viewingSubmission.processingState === "ready" || viewingSubmission.hasPlagiarismChecked || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                            ? "Submission has gone through the plagiarism checking process."
-                            : "Running automatic plagiarism analysis..."}
+                        <p className="text-xs font-bold text-gray-900">Integrity Analysis</p>
+                        <p className="text-[11px] text-gray-500 font-medium">
+                          {viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready"
+                            ? "Scan delivered to teacher"
+                            : "Analyzing submission"}
                         </p>
                       </div>
                     </div>
@@ -2438,7 +2364,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         </p>
                         <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
                           YOLO + TrOCR
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
                         </span>
                       </div>
                       <button

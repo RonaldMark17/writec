@@ -1,12 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { supabase, signOutAndExpireToken } from "../supabaseClient";
-<<<<<<< HEAD
 import { accountRequest } from "../accountRequest";
 import { profilePreferences } from "../profilePreferences";
-=======
 import { apiFetch, getBackendUrl } from "../apiFetch";
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
 import StudentDashboard from "./StudentDashboard";
 import TeacherDashboard from "./TeacherDashboard";
 import AdminDashboard from "./AdminDashboard";
@@ -40,41 +37,26 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
     async function load() {
       try {
         if (!userId) throw new Error("Sign in to continue.");
-<<<<<<< HEAD
-        let { data, error: profileError } = await accountRequest((signal) => supabase.rpc("current_account").abortSignal(signal));
-        if (profileError) throw profileError;
-        if (!data) {
-          // Metadata is only a registration hint; it can never grant admin access.
-          const role = user?.user_metadata?.role === "teacher" ? "teacher" : "student";
-          const { error: createError } = await accountRequest((signal) => supabase.from("userTable").insert({
-            id: userId,
-            full_name: user?.user_metadata?.full_name || user?.email,
-            email: user?.email,
-            role,
-          }).abortSignal(signal));
-          if (createError && createError.code !== "23505") throw createError;
-          const response = await accountRequest((signal) => supabase.rpc("current_account").abortSignal(signal));
-          if (response.error) throw response.error;
-          data = response.data;
-=======
 
         let data = null;
+        let profileError = null;
 
-        // 1. Try authoritative RPC current_account with a timeout so it never hangs
+        // 1. Try authoritative RPC current_account
         try {
-          const rpcPromise = supabase.rpc("current_account");
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("RPC_TIMEOUT")), 5000)
-          );
-          const response = await Promise.race([rpcPromise, timeoutPromise]);
-          if (response && !response.error && response.data) {
-            data = response.data;
+          const res = await accountRequest((signal) => {
+            const req = supabase.rpc("current_account");
+            return typeof req?.abortSignal === "function" ? req.abortSignal(signal) : req;
+          });
+          if (res?.data) {
+            data = res.data;
+          } else if (res?.error) {
+            profileError = res.error;
           }
         } catch (rpcErr) {
-          // RPC failed or timed out; will fall back
+          profileError = rpcErr;
         }
 
-        // 2. If current_account RPC did not return data, fall back to direct userTable query
+        // 2. Direct userTable query fallback if RPC didn't return data
         if (!data && typeof supabase?.from === "function") {
           try {
             const { data: rowData, error: tableErr } = await supabase
@@ -122,19 +104,20 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
             account_status: "active",
             registered_at: user?.created_at || null,
           };
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
         }
-
         if (!data || !["student", "teacher", "admin"].includes(data.role)) {
           throw new Error("Your account has no valid workspace role. Contact an administrator.");
         }
-<<<<<<< HEAD
-        const { data: authData, error: authError } = await accountRequest(() => supabase.auth.getUser());
-        if (authError) throw authError;
-        const metadata = authData?.user?.user_metadata || {};
-=======
-
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
+        let metadata = {};
+        try {
+          const { data: authData, error: authError } = await accountRequest(() => supabase.auth.getUser());
+          if (!authError && authData?.user?.user_metadata) {
+            metadata = authData.user.user_metadata;
+          }
+        } catch {}
+        if (!Object.keys(metadata).length && user?.user_metadata) {
+          metadata = user.user_metadata;
+        }
         if (!cancelled) {
           let localPrefs = {};
           if (data?.id && typeof window !== "undefined") {
@@ -143,19 +126,17 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
               if (stored) localPrefs = JSON.parse(stored);
             } catch {}
           }
-<<<<<<< HEAD
-          const metaAvatar = metadata.avatar_url || "";
-          const metaColor = metadata.avatar_color || "";
-=======
-          const metaAvatar = isCustomAvatarUrl(user?.user_metadata?.avatar_url) ? user.user_metadata.avatar_url : "";
-          const metaColor = user?.user_metadata?.avatar_color || "";
+          const metaAvatar = isCustomAvatarUrl(metadata?.avatar_url)
+            ? metadata.avatar_url
+            : (isCustomAvatarUrl(user?.user_metadata?.avatar_url) ? user.user_metadata.avatar_url : (metadata.avatar_url || ""));
+          const metaColor = metadata.avatar_color || user?.user_metadata?.avatar_color || "";
           const customLocalAvatar = isCustomAvatarUrl(localPrefs?.avatarUrl) ? localPrefs.avatarUrl : "";
           const publicStorageAvatar = data?.id ? getAvatarPublicUrl(data.id) : "";
           const finalAvatarUrl = customLocalAvatar || metaAvatar || publicStorageAvatar;
 
           // If user has a local base64 avatar, automatically sync it to public storage once
           if (customLocalAvatar && customLocalAvatar.startsWith("data:") && data?.id) {
-            const backendUrl = getBackendUrl();
+            const backendUrl = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
             apiFetch(`${backendUrl}/api/users/${data.id}/avatar`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -173,19 +154,14 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
               })
               .catch(() => {});
           }
-
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
           setProfile((prev) => ({
             ...(prev || {}),
             avatarUrl: finalAvatarUrl,
             avatarColor: metaColor,
             ...data,
-<<<<<<< HEAD
-            ...profilePreferences(metadata.writecheck_preferences ?? localPrefs),
-=======
             ...localPrefs,
+            ...profilePreferences(metadata.writecheck_preferences ?? localPrefs),
             avatarUrl: finalAvatarUrl,
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
           }));
           setError("");
         }
@@ -211,9 +187,6 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
     };
   }, [userId, retry]);
 
-<<<<<<< HEAD
-  if (loading) return <div role="status" className="p-12 text-center">Verifying your account…</div>;
-=======
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] px-4">
@@ -253,7 +226,6 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
     );
   }
 
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
   if (error || !profile || profile.account_status !== "active") return (
     <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
       <div className="max-w-md rounded-xl border bg-white p-8 text-center">
