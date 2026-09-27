@@ -1,7 +1,12 @@
+<<<<<<< HEAD
 import SubmissionStation from "./dashboard/SubmissionStation";
 import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
 import { processingLabel, useSubmissionProgress, loadTeacherSubmissionStatus } from "./dashboard/submissionProgress";
 import { apiFetch } from "../apiFetch";
+=======
+import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
+import { apiFetch, getBackendUrl } from "../apiFetch";
+>>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
 import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -9,6 +14,7 @@ import { supabase } from "../supabaseClient";
 import {
   ASSIGNMENT_TABLE,
   CLASSROOM_TABLE,
+  MEMBER_TABLE,
   ClipboardIcon,
   ESSAY_BUCKET,
   resolveStorageImageUrl,
@@ -42,6 +48,10 @@ import {
   DownloadIcon,
   getInitials,
   getTeacherAvatarTheme,
+  isCustomAvatarUrl,
+  ArchiveIcon,
+  UnarchiveIcon,
+  getAvatarPublicUrl,
 } from "./dashboard/shared";
 import HighlightedText from "./HighlightedText";
 import {
@@ -97,6 +107,34 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
   const [classrooms, setClassrooms] =
     useState([]);
+  const [classroomTab, setClassroomTabState] = useState(() => {
+    if (typeof window !== "undefined") {
+      const urlTab = new URLSearchParams(window.location.search).get("tab");
+      if (urlTab === "active" || urlTab === "archived") return urlTab;
+      try {
+        const saved = sessionStorage.getItem(`writecheck-classroom-tab-${profile?.id || "teacher"}`);
+        if (saved === "active" || saved === "archived") return saved;
+      } catch {}
+    }
+    return "active";
+  });
+
+  const setClassroomTab = useCallback((tab) => {
+    setClassroomTabState(tab);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem(`writecheck-classroom-tab-${profile?.id || "teacher"}`, tab);
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", tab);
+        window.history.replaceState({}, "", url.toString());
+      } catch {}
+    }
+  }, [profile?.id]);
+  const [archivingClassroom, setArchivingClassroom] = useState(null);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [copyingClassroom, setCopyingClassroom] = useState(null);
+  const [copyForm, setCopyForm] = useState({ name: "", section: "", subject: "" });
+  const [isCopying, setIsCopying] = useState(false);
 
   const [assignments, setAssignments] =
     useState([]);
@@ -295,8 +333,19 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     );
   }, [activePage, profile?.id]);
 
+  const activeClassrooms = useMemo(
+    () => classrooms.filter((classroom) => !classroom.isArchived),
+    [classrooms]
+  );
+  const archivedClassrooms = useMemo(
+    () => classrooms.filter((classroom) => Boolean(classroom.isArchived)),
+    [classrooms]
+  );
+  const visibleClassrooms = classroomTab === "active" ? activeClassrooms : archivedClassrooms;
+
   const selectedClassroom =
     classrooms.find((classroom) => classroom.id === selectedClassroomId) ??
+    activeClassrooms[0] ??
     classrooms[0] ??
     {
       id: "",
@@ -713,21 +762,38 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
   const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, true, { assignments, members: classroomMembers });
 
-  const loadTeacherData = useCallback(async () => {
+  const loadTeacherData = useCallback(async (silent = false) => {
     const teacherId = profile?.id;
     if (!teacherId) return false;
 
     const requestId = teacherDataRequestRef.current + 1;
     teacherDataRequestRef.current = requestId;
-    setIsLoading(true);
-    setErrorMessage("");
+    if (!silent) {
+      setIsLoading(true);
+      setErrorMessage("");
+    }
 
-    const { data: classroomRows, error: classroomError } =
-      await supabase
+    let classroomRows = [];
+    let classroomError = null;
+
+    const resWithArchived = await supabase
+      .from(CLASSROOM_TABLE)
+      .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section, teacher_name, is_archived")
+      .eq("teacher_id", teacherId)
+      .order("created_at", { ascending: false });
+
+    if (resWithArchived.error) {
+      const resFallback = await supabase
         .from(CLASSROOM_TABLE)
         .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section, teacher_name")
         .eq("teacher_id", teacherId)
         .order("created_at", { ascending: false });
+      classroomRows = resFallback.data;
+      classroomError = resFallback.error;
+    } else {
+      classroomRows = resWithArchived.data;
+      classroomError = resWithArchived.error;
+    }
 
     if (classroomError) {
       setErrorMessage(classroomError.message);
@@ -735,10 +801,39 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       return false;
     }
 
+<<<<<<< HEAD
     // Show classrooms as soon as they arrive; roster and reports fill in later.
     if (requestId !== teacherDataRequestRef.current) return false;
     setClassrooms((classroomRows ?? []).map((classroom, index) => normalizeClassroom(classroom, index)));
     setIsLoading(false);
+=======
+    const cachedArchivedSet = new Set();
+    try {
+      const storedKeys = [
+        `writecheck_archived_classes_${teacherId}`,
+        "writecheck_archived_classes_teacher",
+      ];
+      storedKeys.forEach((key) => {
+        const stored = JSON.parse(localStorage.getItem(key) || "[]");
+        if (Array.isArray(stored)) {
+          stored.forEach((id) => cachedArchivedSet.add(String(id)));
+        }
+      });
+    } catch {}
+
+    // Query backend for archived classrooms (authoritative service-role check from DB)
+    let backendArchivedIds = null;
+    try {
+      const backendUrl = getBackendUrl();
+      const archResp = await apiFetch(`${backendUrl}/api/classrooms/archived`);
+      if (archResp && archResp.ok) {
+        const archData = await archResp.json();
+        if (archData?.success && Array.isArray(archData?.archived_ids)) {
+          backendArchivedIds = new Set(archData.archived_ids.map(String));
+        }
+      }
+    } catch {}
+>>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
 
     if (profile?.id) {
       try {
@@ -877,13 +972,49 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       }, {});
 
     const nextClassrooms =
-      (classroomRows ?? []).map((classroom, index) =>
-        normalizeClassroom(classroom, index, {
+      (classroomRows ?? []).map((classroom, index) => {
+        const classIdStr = String(classroom.id);
+        let isArchived = false;
+
+        // Authoritative resolution:
+        // 1. Authoritative check from backend service role DB query:
+        if (backendArchivedIds !== null) {
+          isArchived = backendArchivedIds.has(classIdStr);
+        }
+        // 2. Direct database column value if returned by Supabase query:
+        else if (typeof classroom.is_archived === "boolean") {
+          isArchived = classroom.is_archived;
+        }
+        // 3. Fallback to cached set only if database column was missing:
+        else {
+          isArchived = cachedArchivedSet.has(classIdStr);
+        }
+
+        // Keep local cache strictly in sync with authoritative database value:
+        if (isArchived) {
+          cachedArchivedSet.add(classIdStr);
+        } else {
+          cachedArchivedSet.delete(classIdStr);
+        }
+
+        return normalizeClassroom(classroom, index, {
           students: memberCountByClass[classroom.id] ?? 0,
           assignments: assignmentCountByClass[classroom.id] ?? 0,
           submissions: submissionCountByClass[classroom.id] ?? 0,
-        })
-      );
+          isArchived,
+        });
+      });
+
+    try {
+      const storageKeys = [
+        `writecheck_archived_classes_${teacherId}`,
+        "writecheck_archived_classes_teacher",
+        "writecheck_archived_classes_global",
+      ];
+      storageKeys.forEach((key) => {
+        localStorage.setItem(key, JSON.stringify(Array.from(cachedArchivedSet)));
+      });
+    } catch {}
 
     const classroomsById =
       new Map(nextClassrooms.map((classroom) => [classroom.id, classroom]));
@@ -991,6 +1122,20 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   }, [profile?.id, loadTeacherData]);
 
+<<<<<<< HEAD
+=======
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Do not refetch on TOKEN_REFRESHED (which fires on tab switch / window focus)
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        if (session?.user?.id) {
+          loadTeacherData();
+        }
+      }
+    });
+>>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
 
 
   useEffect(() => {
@@ -1021,6 +1166,310 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       isMounted = false;
     };
   }, []);
+
+  const handleArchiveClassroom = async (classroomId, archive = true) => {
+    if (!classroomId) return;
+    setIsArchiving(true);
+    setErrorMessage("");
+    const classIdStr = String(classroomId);
+
+    // Save snapshot of previous state for reliable rollback on failure
+    const previousClassrooms = classrooms;
+    const previousTab = classroomTab;
+
+    try {
+      // 1. Optimistically update local state so UI is immediately responsive
+      setClassrooms((prev) =>
+        prev.map((c) =>
+          String(c.id) === classIdStr ? { ...c, isArchived: archive } : c
+        )
+      );
+
+      // When restoring, switch immediately to "active" tab so the user sees the restored class
+      if (!archive) {
+        setClassroomTab("active");
+      }
+
+      // 2. Persist to backend service role endpoint (guaranteed to persist is_archived in Supabase Postgres)
+      let backendUpdated = false;
+      let failureReason = "";
+
+      try {
+        const backendUrl = getBackendUrl();
+        const response = await apiFetch(`${backendUrl}/api/classrooms/${classroomId}/archive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_archived: archive }),
+        });
+        const resBody = await response.json().catch(() => ({}));
+        if (response.ok && resBody?.success) {
+          backendUpdated = true;
+        } else {
+          failureReason =
+            resBody?.detail ||
+            resBody?.message ||
+            resBody?.error ||
+            `Server responded with HTTP ${response.status}`;
+          console.warn("Backend archive response not ok:", response.status, resBody);
+        }
+      } catch (backendErr) {
+        failureReason = backendErr.message || "Unable to reach backend server";
+        console.warn("Backend archive call failed, trying direct Supabase:", backendErr);
+      }
+
+      // 3. Fallback: Try direct Supabase RPC archive_classroom (SECURITY DEFINER with teacher ownership check)
+      if (!backendUpdated) {
+        try {
+          const { data: rpcSuccess, error: rpcErr } = await supabase.rpc("archive_classroom", {
+            target_classroom_id: classroomId,
+            should_archive: archive,
+          });
+          if (!rpcErr && rpcSuccess === true) {
+            backendUpdated = true;
+          } else if (rpcErr) {
+            console.warn("archive_classroom RPC notice:", rpcErr);
+          }
+        } catch (rpcEx) {
+          console.warn("archive_classroom RPC call notice:", rpcEx);
+        }
+      }
+
+      // 4. Fallback: Try direct Supabase table update with row count verification
+      if (!backendUpdated) {
+        try {
+          const { data: updatedRows, error: sbErr } = await supabase
+            .from(CLASSROOM_TABLE)
+            .update({ is_archived: archive })
+            .eq("id", classroomId)
+            .select("id, is_archived");
+          if (!sbErr && Array.isArray(updatedRows) && updatedRows.length > 0) {
+            backendUpdated = true;
+          } else if (sbErr) {
+            console.warn("Direct Supabase update notice:", sbErr);
+          }
+        } catch (sbErr) {
+          console.warn("Direct Supabase update notice:", sbErr);
+        }
+      }
+
+      // 5. If all persistence attempts failed, ROLLBACK optimistic state and alert the user
+      if (!backendUpdated) {
+        setClassrooms(previousClassrooms);
+        setClassroomTab(previousTab);
+        throw new Error(
+          archive
+            ? `Could not archive classroom on server: ${failureReason || "Database update failed. Please check your backend connection."}`
+            : `Could not restore classroom on server: ${failureReason || "Database update failed. Please check your backend connection."}`
+        );
+      }
+
+      // 6. Confirmed server persistence: update localStorage cache across all keys
+      const storageKeys = [
+        `writecheck_archived_classes_${profile?.id || "teacher"}`,
+        "writecheck_archived_classes_teacher",
+        "writecheck_archived_classes_global",
+      ];
+      storageKeys.forEach((key) => {
+        try {
+          const stored = JSON.parse(localStorage.getItem(key) || "[]");
+          const set = new Set(Array.isArray(stored) ? stored.map(String) : []);
+          if (archive) {
+            set.add(classIdStr);
+          } else {
+            set.delete(classIdStr);
+          }
+          localStorage.setItem(key, JSON.stringify(Array.from(set)));
+        } catch (cacheErr) {
+          console.warn("Could not cache archived classroom ID:", cacheErr);
+        }
+      });
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("writecheck:classroom_archived", {
+            detail: { classroomId: classIdStr, isArchived: archive },
+          })
+        );
+      }
+
+      const target = previousClassrooms.find((c) => String(c.id) === classIdStr);
+      const targetName = target?.name || "Classroom";
+      setSuccessMessage(
+        archive
+          ? `Classroom "${targetName}" archived. You can find it in the Archived classes tab.`
+          : `Classroom "${targetName}" restored to active classes.`
+      );
+
+      // 7. Silently refresh teacher data from DB to guarantee tab counts and lists are completely synced
+      try {
+        await loadTeacherData(true);
+      } catch (syncErr) {
+        console.warn("Silent teacher data sync notice:", syncErr);
+      }
+    } catch (err) {
+      setErrorMessage(err.message || "Failed to update classroom archive status.");
+    } finally {
+      setIsArchiving(false);
+      setArchivingClassroom(null);
+    }
+  };
+
+  const handleOpenCopyModal = (classroom) => {
+    setCopyingClassroom(classroom);
+    setCopyForm({
+      name: `Copy of ${classroom.name}`,
+      section: classroom.section || "",
+      subject:
+        classroom.subject && classroom.subject !== "No subject"
+          ? classroom.subject
+          : classroom.name,
+    });
+  };
+
+  const handleConfirmCopyClassroom = async (e) => {
+    e.preventDefault();
+    if (!copyingClassroom || !copyForm.name.trim() || !copyForm.section.trim()) {
+      setErrorMessage("Enter a class name and section.");
+      return;
+    }
+    setIsCopying(true);
+    setErrorMessage("");
+
+    try {
+      const className = copyForm.name.trim();
+      const section = copyForm.section.trim();
+      const subject = copyForm.subject.trim() || className;
+
+      // 1. Generate unique class code and create classroom
+      let newClassroom = null;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const classroomCode = buildClassCode(className);
+        const { data, error } = await supabase
+          .from(CLASSROOM_TABLE)
+          .insert({
+            teacher_id: profile.id,
+            teacher_name: profile.full_name || profile.email || "Teacher",
+            classroom_name: className,
+            classroom_code: classroomCode,
+            subject: subject || null,
+            section,
+          })
+          .select()
+          .single();
+
+        if (error?.code === "23505") continue;
+        if (error) throw error;
+        newClassroom = data;
+        break;
+      }
+
+      if (!newClassroom) {
+        throw new Error("Could not generate a unique class code. Please try again.");
+      }
+
+      // 2. Clone assignments from source classroom
+      const { data: sourceAssignments, error: aError } = await supabase
+        .from(ASSIGNMENT_TABLE)
+        .select("title, instructions, due_date, accept_late_submissions")
+        .eq("classroom_id", copyingClassroom.id);
+
+      let copiedCount = 0;
+      if (!aError && Array.isArray(sourceAssignments) && sourceAssignments.length > 0) {
+        const clonedAssignments = sourceAssignments.map((a) => ({
+          classroom_id: newClassroom.id,
+          teacher_id: profile.id,
+          title: a.title,
+          instructions: a.instructions,
+          due_date: a.due_date,
+          accept_late_submissions: a.accept_late_submissions ?? true,
+        }));
+        const { error: insErr } = await supabase.from(ASSIGNMENT_TABLE).insert(clonedAssignments);
+        if (!insErr) {
+          copiedCount = clonedAssignments.length;
+        }
+      }
+
+      setCopyingClassroom(null);
+      setClassroomTab("active");
+      setSuccessMessage(
+        `Class copied! "${className}" created with code ${newClassroom.classroom_code} (${copiedCount} assignment${copiedCount === 1 ? "" : "s"} duplicated).`
+      );
+      await loadTeacherData();
+    } catch (err) {
+      setErrorMessage(err.message || "Failed to copy classroom.");
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
+  const handleExportClassroomCSV = async (classroom) => {
+    try {
+      const classId = classroom.id;
+      const classSubmissions = submissions.filter((s) => s.classroomId === classId);
+
+      const { data: members } = await supabase
+        .from(MEMBER_TABLE)
+        .select("student_id, student_name, student_email, created_at")
+        .eq("classroom_id", classId);
+
+      const studentList = members || [];
+      const rows = [
+        ["Classroom", classroom.name],
+        ["Section", classroom.section],
+        ["Subject", classroom.subject || ""],
+        ["Status", classroom.isArchived ? "Archived" : "Active"],
+        ["Export Date", new Date().toLocaleDateString()],
+        [],
+        ["Student Name", "Student Email", "Joined Date", "Assignments Submitted", "Average Grade", "Flagged Submissions"],
+      ];
+
+      if (studentList.length === 0) {
+        rows.push(["No enrolled students in this classroom"]);
+      } else {
+        studentList.forEach((m) => {
+          const studentSubs = classSubmissions.filter((s) => s.studentId === m.student_id);
+          const gradedSubs = studentSubs.filter(
+            (s) => s.grade !== undefined && s.grade !== null && s.grade !== ""
+          );
+          const avgGrade =
+            gradedSubs.length > 0
+              ? (
+                  gradedSubs.reduce((acc, s) => acc + (parseFloat(s.grade) || 0), 0) /
+                  gradedSubs.length
+                ).toFixed(1)
+              : "N/A";
+          const flaggedCount = studentSubs.filter(
+            (s) => s.status === "flagged" || s.scanResult?.similarityScore > 20
+          ).length;
+          rows.push([
+            m.student_name || "Student",
+            m.student_email || "",
+            m.created_at ? new Date(m.created_at).toLocaleDateString() : "",
+            studentSubs.length,
+            avgGrade,
+            flaggedCount,
+          ]);
+        });
+      }
+
+      const csvContent =
+        "data:text/csv;charset=utf-8," +
+        rows.map((e) => e.map((val) => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute(
+        "download",
+        `${classroom.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_summary.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setSuccessMessage(`Exported CSV for "${classroom.name}".`);
+    } catch (err) {
+      setErrorMessage("Could not export classroom CSV: " + err.message);
+    }
+  };
 
   const handleCreateClassroom = async (event) => {
     event.preventDefault();
@@ -1071,6 +1520,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
       setClassroomForm(emptyClassroomForm);
       setIsCreatingClassroom(false);
+      setClassroomTab("active");
       setSuccessMessage(`Class created. Code: ${classroomCode}`);
       setIsSavingClassroom(false);
       await loadTeacherData();
@@ -2223,7 +2673,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-extrabold text-white transition hover:bg-emerald-800 shadow-2xs"
                         >
                           <FileSearchIcon className="h-3.5 w-3.5" />
-                          <span>{item.grade ? "Review" : "Check & Grade"}</span>
+                          <span>{item.grade ? "Review" : "Review & Grade"}</span>
                         </button>
                       ) : (
                         <span className="text-xs font-bold text-gray-300">
@@ -2367,7 +2817,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] bg-white px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                     required
                   >
-                    {classrooms.map((c) => (
+                    {activeClassrooms.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} — Section {c.section} {c.subject ? `(${c.subject})` : ""}
                       </option>
@@ -2456,16 +2906,26 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             assignments={assignments}
             teacher={{ id: profile?.id, name: profile?.full_name || profile?.email || "Teacher", email: profile?.email || "" }}
             onBack={() => setOpenedClassroomId(null)}
-              onOpenAssignment={(assignment) => {
-                setAssignmentFilterClassroomId(openedClassroomId);
-                setSelectedAssignmentId(assignment.id);
-                setAssignmentDetailTab("roster");
-                setActivePage("assignments");
-              }}
-              onCreateAssignment={() => {
-                setAssignmentForm({ ...emptyAssignmentForm, classroomId: openedClassroomId });
-                setIsCreatingAssignment(true);
-              }}
+            onOpenAssignment={(assignment) => {
+              setAssignmentFilterClassroomId(openedClassroomId);
+              setSelectedAssignmentId(assignment.id);
+              setAssignmentDetailTab("roster");
+              setActivePage("assignments");
+            }}
+            onCreateAssignment={() => {
+              setAssignmentForm({ ...emptyAssignmentForm, classroomId: openedClassroomId });
+              setIsCreatingAssignment(true);
+            }}
+            onToggleArchive={(classroomId, archive) => {
+              const cl = classrooms.find((c) => String(c.id) === String(classroomId));
+              setArchivingClassroom({
+                id: classroomId,
+                name: cl?.name || "Classroom",
+                archive,
+              });
+            }}
+            onCopyClassroom={handleOpenCopyModal}
+            onExportCSV={handleExportClassroomCSV}
           />
         )}
 
@@ -2495,20 +2955,64 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
               </button>
             </div>
 
+            {/* Active vs Archived Filter Tabs */}
+            <div className="flex items-center gap-2 border-b border-[#dadce0]">
+              <button
+                type="button"
+                onClick={() => setClassroomTab("active")}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${
+                  classroomTab === "active"
+                    ? "border-[#137333] text-[#137333] font-semibold"
+                    : "border-transparent text-[#5f6368] hover:text-[#202124]"
+                }`}
+              >
+                <span>Active classes</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    classroomTab === "active"
+                      ? "bg-[#e6f4ea] text-[#137333]"
+                      : "bg-[#f1f3f4] text-[#5f6368]"
+                  }`}
+                >
+                  {activeClassrooms.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setClassroomTab("archived")}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${
+                  classroomTab === "archived"
+                    ? "border-amber-600 text-amber-800 font-semibold"
+                    : "border-transparent text-[#5f6368] hover:text-[#202124]"
+                }`}
+              >
+                <ArchiveIcon className="h-4 w-4" />
+                <span>Archived classes</span>
+                {archivedClassrooms.length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    {archivedClassrooms.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
             {isLoading ? (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {[1, 2, 3].map((n) => (
                   <div key={n} className="h-64 rounded-xl border border-[#dadce0] bg-white animate-pulse" />
                 ))}
               </div>
-            ) : classrooms.length === 0 ? (
+            ) : classroomTab === "active" && activeClassrooms.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
                   <DoorIcon className="h-7 w-7" />
                 </div>
-                <h3 className="mt-4 text-lg font-medium text-[#202124]">No classes yet</h3>
+                <h3 className="mt-4 text-lg font-medium text-[#202124]">No active classes</h3>
                 <p className="mt-1 text-sm text-[#5f6368]">
-                  Create a class to start posting assignments and tracking student submissions.
+                  {archivedClassrooms.length > 0
+                    ? "All your classes are currently archived. Create a new class or restore one from the Archived classes tab."
+                    : "Create a class to start posting assignments and tracking student submissions."}
                 </p>
                 <button
                   type="button"
@@ -2522,29 +3026,50 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   <span>Create class</span>
                 </button>
               </div>
+            ) : classroomTab === "archived" && archivedClassrooms.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+                  <ArchiveIcon className="h-7 w-7" />
+                </div>
+                <h3 className="mt-4 text-lg font-medium text-[#202124]">No archived classes</h3>
+                <p className="mt-1 text-sm text-[#5f6368]">
+                  Classes you archive will be moved here in read-only mode. You can restore them to active at any time.
+                </p>
+              </div>
             ) : (
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {classrooms.map((classroom) => {
+                {visibleClassrooms.map((classroom) => {
                   const creatorName = profile?.full_name || classroom.teacherName || "Teacher";
-                  const creatorInitials = getInitials(creatorName, "PX");
-                  const creatorTheme = getTeacherAvatarTheme(profile?.id || classroom.teacherId, profile?.avatarColor || "blue");
-                  const creatorAvatarUrl = (classroom.teacherId === profile?.id || !classroom.teacherId) ? (profile?.avatarUrl || "") : "";
+                  const creatorInitials = getInitials(creatorName, "T");
+                  const creatorTheme = getTeacherAvatarTheme(classroom.teacherId || profile?.id || classroom.teacherName, profile?.avatarColor);
+                  const rawAvatar = (classroom.teacherId === profile?.id || !classroom.teacherId) ? (profile?.avatarUrl || "") : (classroom.teacherAvatarUrl || (classroom.teacherId ? getAvatarPublicUrl(classroom.teacherId) : ""));
+                  const creatorAvatarUrl = isCustomAvatarUrl(rawAvatar) ? rawAvatar : "";
 
                   return (
                   <article
                     key={classroom.id}
-                    className="group flex flex-col rounded-xl border border-[#dadce0] bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200"
+                    className={`group flex flex-col rounded-xl border bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200 ${
+                      classroom.isArchived ? "border-amber-300 ring-1 ring-amber-200" : "border-[#dadce0]"
+                    }`}
                   >
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 pr-14">
-                          <h3>
-                            <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
-                              className="text-left text-xl font-medium tracking-tight text-white hover:underline break-words"
-                              title={classroom.name}>
-                              {classroom.name}
-                            </button>
-                          </h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3>
+                              <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
+                                className="text-left text-xl font-medium tracking-tight text-white hover:underline break-words"
+                                title={classroom.name}>
+                                {classroom.name}
+                              </button>
+                            </h3>
+                            {classroom.isArchived && (
+                              <span className="inline-flex items-center gap-1 rounded bg-amber-900/70 border border-amber-300/40 px-2 py-0.5 text-[11px] font-semibold text-amber-100 shadow-xs">
+                                <ArchiveIcon className="h-3 w-3" />
+                                Archived
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs font-normal text-white/90 truncate mt-0.5">
                             Section {classroom.section} {classroom.subject && classroom.subject !== classroom.name ? `• ${classroom.subject}` : ""}
                           </p>
@@ -2559,10 +3084,23 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           className={`flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr ${creatorTheme.bg} text-white text-lg font-bold shadow-md ring-4 ring-white transition-all duration-200 group-hover/avatar:scale-105 select-none overflow-hidden`}
                         >
                           {creatorAvatarUrl ? (
-                            <img src={creatorAvatarUrl} alt={creatorName} className="h-full w-full object-cover" />
-                          ) : (
-                            creatorInitials
-                          )}
+                            <img
+                              src={creatorAvatarUrl}
+                              alt={creatorName}
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                const span = e.currentTarget.parentElement?.querySelector(".avatar-initials-fallback");
+                                if (span) span.style.display = "flex";
+                              }}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
+                          <span
+                            className="avatar-initials-fallback flex items-center justify-center"
+                            style={{ display: creatorAvatarUrl ? "none" : "flex" }}
+                          >
+                            {creatorInitials}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -2594,41 +3132,117 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <p className="mt-3 text-xs text-[#5f6368]">
                           {classroom.assignments} assignments posted • {classroom.submissions} turned in
                         </p>
+
+                        {classroom.isArchived && (
+                          <div className="mt-2.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs text-amber-800">
+                            Class is archived (read-only)
+                          </div>
+                        )}
                       </div>
 
-                      <div className="mt-4 pt-3 border-t border-[#e0e0e0] flex items-center justify-between text-xs font-medium">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAssignmentFilterClassroomId(classroom.id);
-                            setSelectedAssignmentId(null);
-                            setActivePage("assignments");
-                          }}
-                          className="inline-flex items-center gap-1 text-[#137333] hover:underline"
-                        >
-                          <ClipboardIcon className="h-3.5 w-3.5" />
-                          <span>Classwork</span>
-                        </button>
+                      <div>
+                        {/* Quick Navigation Links */}
+                        <div className="mt-4 pt-3 border-t border-[#e0e0e0] flex items-center justify-between text-xs font-medium">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignmentFilterClassroomId(classroom.id);
+                              setSelectedAssignmentId(null);
+                              setActivePage("assignments");
+                            }}
+                            className="inline-flex items-center gap-1 text-[#137333] hover:underline"
+                          >
+                            <ClipboardIcon className="h-3.5 w-3.5" />
+                            <span>Classwork</span>
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedSubmissionsClassroomId(classroom.id);
-                            setGradeSubject("all");
-                            setSelectedSubmissionsAssignmentId("all");
-                            setSelectedAssignmentId(null);
-                            setActivePage("submissions");
-                          }}
-                          className="inline-flex items-center gap-1 text-[#5f6368] hover:text-[#202124]"
-                        >
-                          <FileSearchIcon className="h-3.5 w-3.5" />
-                          <span>Gradebook</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedSubmissionsClassroomId(classroom.id);
+                              setGradeSubject("all");
+                              setSelectedSubmissionsAssignmentId("all");
+                              setSelectedAssignmentId(null);
+                              setActivePage("submissions");
+                            }}
+                            className="inline-flex items-center gap-1 text-[#5f6368] hover:text-[#202124]"
+                          >
+                            <FileSearchIcon className="h-3.5 w-3.5" />
+                            <span>Gradebook</span>
+                          </button>
+                        </div>
+
+                        {/* Actions Row */}
+                        <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between text-xs gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setOpenedClassroomId(classroom.id)}
+                            className="font-medium text-[#137333] hover:underline shrink-0"
+                          >
+                            Open classroom
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            {/* Copy Class Button (Google Classroom feature) */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCopyModal(classroom)}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-[#5f6368] hover:text-[#137333] hover:underline"
+                              title="Copy class for new term (duplicates assignments)"
+                            >
+                              <CopyIcon className="h-3.5 w-3.5" />
+                              <span>Copy</span>
+                            </button>
+
+                            {/* Export CSV for archived classes */}
+                            {classroom.isArchived && (
+                              <button
+                                type="button"
+                                onClick={() => handleExportClassroomCSV(classroom)}
+                                className="inline-flex items-center gap-1 text-xs font-medium text-[#5f6368] hover:text-[#137333] hover:underline"
+                                title="Export summary and grades to CSV"
+                              >
+                                <DownloadIcon className="h-3.5 w-3.5" />
+                                <span>Export</span>
+                              </button>
+                            )}
+
+                            {classroom.isArchived ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setArchivingClassroom({
+                                    id: classroom.id,
+                                    name: classroom.name,
+                                    archive: false,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 hover:text-amber-950 hover:underline"
+                                title="Restore classroom to active"
+                              >
+                                <UnarchiveIcon className="h-3.5 w-3.5" />
+                                <span>Restore</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setArchivingClassroom({
+                                    id: classroom.id,
+                                    name: classroom.name,
+                                    archive: true,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 text-xs font-medium text-[#5f6368] hover:text-amber-800 hover:underline"
+                                title="Archive classroom"
+                              >
+                                <ArchiveIcon className="h-3.5 w-3.5" />
+                                <span>Archive</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
-                        className="mt-4 border-t border-gray-200 pt-3 text-left text-sm font-medium text-[#137333] hover:underline">
-                        Open classroom
-                      </button>
                     </div>
                   </article>
                 );
@@ -2660,11 +3274,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       onClick={() => {
                         setAssignmentForm({
                           ...emptyAssignmentForm,
-                          classroomId: classrooms[0]?.id || "",
+                          classroomId: activeClassrooms[0]?.id || "",
                         });
                         setIsCreatingAssignment(true);
                       }}
-                      disabled={classrooms.length === 0}
+                      disabled={activeClassrooms.length === 0}
                       className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-[#137333] px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white shadow-xs transition hover:bg-[#0f5b28] disabled:cursor-not-allowed disabled:bg-gray-300 active:scale-[0.98] shrink-0"
                     >
                       <PlusIcon className="h-4 w-4" />
@@ -2701,17 +3315,19 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   </div>
                   <h3 className="mt-4 text-base sm:text-lg font-medium text-[#202124]">No assignments yet</h3>
                   <p className="mt-1 text-xs sm:text-sm text-[#5f6368]">
-                    {classrooms.length === 0
-                      ? "Create a class first before creating assignments."
+                    {activeClassrooms.length === 0
+                      ? archivedClassrooms.length > 0
+                        ? "All your classes are currently archived. Restore or create an active class before creating assignments."
+                        : "Create a class first before creating assignments."
                       : "Click + Create to post your first assignment for this section."}
                   </p>
-                  {classrooms.length > 0 && (
+                  {activeClassrooms.length > 0 && (
                     <button
                       type="button"
                       onClick={() => {
                         setAssignmentForm({
                           ...emptyAssignmentForm,
-                          classroomId: classrooms[0]?.id || "",
+                          classroomId: activeClassrooms[0]?.id || "",
                         });
                         setIsCreatingAssignment(true);
                       }}
@@ -4616,15 +5232,28 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           <FileSearchIcon className="h-4 w-4 text-gray-500" />
                           <span>Open submission file</span>
                         </button>
-                        <button
-                          type="button"
-                          disabled={isReviewScanning || ["submitted", "processing"].includes(reviewingSubmission.processingState)}
-                          onClick={handleRunReviewScan}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 text-xs font-extrabold text-white hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm transition"
-                        >
-                          <FileSearchIcon className="h-4 w-4" />
-                          <span>{isReviewScanning ? "Scanning..." : reviewScanResult ? "Recheck corrected text" : "Retry processing"}</span>
-                        </button>
+                        {reviewTranscribedText.trim() !== String(reviewingSubmission.transcribedText || "").trim() && (
+                          <button
+                            type="button"
+                            disabled={isReviewScanning || ["submitted", "processing"].includes(reviewingSubmission.processingState)}
+                            onClick={handleRunReviewScan}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 text-xs font-extrabold text-white hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm transition"
+                          >
+                            <FileSearchIcon className="h-4 w-4" />
+                            <span>{isReviewScanning ? "Rechecking..." : "Recheck corrected text"}</span>
+                          </button>
+                        )}
+                        {reviewingSubmission.processingState === "failed" && !reviewScanResult && (
+                          <button
+                            type="button"
+                            disabled={isReviewScanning}
+                            onClick={handleRunReviewScan}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-red-700 px-3.5 text-xs font-extrabold text-white hover:bg-red-800 disabled:bg-red-400 shadow-sm transition"
+                          >
+                            <FileSearchIcon className="h-4 w-4" />
+                            <span>{isReviewScanning ? "Retrying..." : "Retry processing"}</span>
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -4932,6 +5561,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         </div>
                       )}
                     </div>
+<<<<<<< HEAD
                   ) : (
                     <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50/80 p-6 text-center">
                       <p className="text-xs font-black uppercase tracking-wider text-emerald-700">
@@ -4942,16 +5572,56 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       </h4>
                       <p className="mt-1 text-xs font-semibold text-gray-500">
                         Uploaded work is processed automatically. Results update here when the check finishes.
+=======
+                  ) : ["submitted", "processing"].includes(reviewingSubmission.processingState) ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-6 text-center">
+                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-700 border-t-transparent" />
+                      </div>
+                      <h4 className="mt-3 text-base font-black text-amber-950">
+                        Automated Submission Processing in Progress
+                      </h4>
+                      <p className="mt-1 text-xs font-semibold text-amber-800 max-w-lg mx-auto">
+                        The uploaded handwritten work is automatically being processed through YOLO line detection, TrOCR transcription, and Plagiarism Detection. Results will display here automatically.
+                      </p>
+                    </div>
+                  ) : reviewingSubmission.processingState === "failed" ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50/80 p-6 text-center">
+                      <p className="text-xs font-black uppercase tracking-wider text-red-700">
+                        PROCESSING STATUS
+                      </p>
+                      <h4 className="mt-1 text-base font-black text-red-950">
+                        Automated Processing Incomplete
+                      </h4>
+                      <p className="mt-1 text-xs font-semibold text-red-700 max-w-lg mx-auto">
+                        {reviewingSubmission.processingError || "Automated check encountered an issue during background processing."}
+>>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
                       </p>
                       <button
                         type="button"
                         onClick={handleRunReviewScan}
+<<<<<<< HEAD
                         disabled={["submitted", "processing"].includes(reviewingSubmission.processingState || "submitted")}
                         className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-emerald-800 shadow-sm"
                       >
                         <FileSearchIcon className="h-4 w-4" />
                         <span>{reviewingSubmission.processingState === "failed" ? "Retry automatic check" : "Processing automatically"}</span>
+=======
+                        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-red-800 shadow-sm"
+                      >
+                        <FileSearchIcon className="h-4 w-4" />
+                        <span>Retry Processing</span>
+>>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
                       </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-6 text-center">
+                      <h4 className="text-sm font-black text-gray-900">
+                        Awaiting Automated Scan Result
+                      </h4>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">
+                        Plagiarism checking runs automatically upon student submission. Synchronizing server status...
+                      </p>
                     </div>
                   )}
 
@@ -4964,8 +5634,26 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     disabled={["submitted", "processing"].includes(reviewingSubmission.processingState)}
                     onChange={(event) => setReviewTranscribedText(event.target.value)}
                     className="mt-2 w-full rounded-lg border border-gray-300 p-3 text-sm" />
+<<<<<<< HEAD
                   {reviewingSubmission.fileUrl && !/\.(jpe?g|png|webp|gif|bmp|tiff?)($|\?)/i.test(reviewingSubmission.fileUrl) && (
                     <SubmissionFilePreview fileUrl={reviewingSubmission.fileUrl} transcript={reviewingSubmission.transcribedText} />
+=======
+                  {reviewTranscribedText.trim() !== String(reviewingSubmission.transcribedText || "").trim() && (
+                    <div className="mt-2 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2">
+                      <p className="text-xs font-semibold text-amber-800">
+                        Transcription has been edited. Recheck to update similarity metrics.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={isReviewScanning}
+                        onClick={handleRunReviewScan}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm transition"
+                      >
+                        <FileSearchIcon className="h-3.5 w-3.5" />
+                        <span>{isReviewScanning ? "Rechecking..." : "Recheck with corrected text"}</span>
+                      </button>
+                    </div>
+>>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
                   )}
                   {/* Grading Form */}
                   <form onSubmit={handleSaveGrade} className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-5">
@@ -5077,6 +5765,184 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
               </div>
             </div>
           )}
+        {/* Archive / Restore Confirmation Modal Dialog */}
+        {archivingClassroom && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+                    archivingClassroom.archive
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-[#e6f4ea] text-[#137333]"
+                  }`}
+                >
+                  {archivingClassroom.archive ? (
+                    <ArchiveIcon className="h-6 w-6" />
+                  ) : (
+                    <UnarchiveIcon className="h-6 w-6" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-[#202124]">
+                    {archivingClassroom.archive ? "Archive class?" : "Restore class?"}
+                  </h3>
+                  <p className="text-xs text-[#5f6368] font-medium">
+                    {archivingClassroom.name}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-4 text-sm text-[#5f6368] leading-relaxed">
+                {archivingClassroom.archive
+                  ? `Archiving "${archivingClassroom.name}" moves it to your Archived classes tab. The class becomes read-only: all past assignments, submissions, and grades remain safely preserved, but no new assignments or submissions can be posted. You can restore this class at any time.`
+                  : `Restoring "${archivingClassroom.name}" moves it back to your Active classes list. You and enrolled students will be able to post assignments and submit work again.`}
+              </p>
+
+              <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#dadce0]">
+                <button
+                  type="button"
+                  disabled={isArchiving}
+                  onClick={() => setArchivingClassroom(null)}
+                  className="rounded-full px-4 py-2 text-sm font-medium text-[#5f6368] hover:bg-[#f1f3f4] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isArchiving}
+                  onClick={() =>
+                    handleArchiveClassroom(
+                      archivingClassroom.id,
+                      archivingClassroom.archive
+                    )
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-medium text-white shadow-xs transition disabled:opacity-50 ${
+                    archivingClassroom.archive
+                      ? "bg-amber-600 hover:bg-amber-700 active:bg-amber-800"
+                      : "bg-[#137333] hover:bg-[#0f5b28] active:bg-[#0c471f]"
+                  }`}
+                >
+                  {isArchiving ? (
+                    <span>Processing...</span>
+                  ) : archivingClassroom.archive ? (
+                    <>
+                      <ArchiveIcon className="h-4 w-4" />
+                      <span>Archive</span>
+                    </>
+                  ) : (
+                    <>
+                      <UnarchiveIcon className="h-4 w-4" />
+                      <span>Restore</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Copy Class Modal (Google Classroom Clone Feature) */}
+        {copyingClassroom && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="flex items-center justify-between pb-3 border-b border-[#dadce0]">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                    <CopyIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-[#202124]">Copy class</h3>
+                    <p className="text-xs text-[#5f6368]">Duplicate syllabus and coursework</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCopyingClassroom(null)}
+                  disabled={isCopying}
+                  className="rounded-full p-1 text-[#5f6368] hover:bg-[#f1f3f4] transition"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleConfirmCopyClassroom} className="mt-4 space-y-4">
+                <div className="rounded-xl bg-[#f8f9fa] border border-[#dadce0] p-3 text-xs text-[#5f6368] space-y-1">
+                  <p className="font-semibold text-[#202124]">What gets copied:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px] text-[#444746]">
+                    <li>All assignment titles, instructions, and settings</li>
+                    <li>A brand new classroom join code</li>
+                  </ul>
+                  <p className="font-semibold text-[#202124] pt-1">What does NOT get copied:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px] text-[#444746]">
+                    <li>Previous students and class rosters</li>
+                    <li>Past essay submissions and grades</li>
+                  </ul>
+                </div>
+
+                <div>
+                  <label htmlFor="copy-class-name" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1">
+                    Class name (required)
+                  </label>
+                  <input
+                    id="copy-class-name"
+                    required
+                    value={copyForm.name}
+                    onChange={(e) => setCopyForm((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Copy of History 101"
+                    className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-sm text-[#202124] outline-none transition focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="copy-section" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1">
+                      Section (required)
+                    </label>
+                    <input
+                      id="copy-section"
+                      required
+                      value={copyForm.section}
+                      onChange={(e) => setCopyForm((prev) => ({ ...prev, section: e.target.value }))}
+                      placeholder="e.g. 2A, Fall 2026"
+                      className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-sm text-[#202124] outline-none transition focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="copy-subject" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1">
+                      Subject
+                    </label>
+                    <input
+                      id="copy-subject"
+                      value={copyForm.subject}
+                      onChange={(e) => setCopyForm((prev) => ({ ...prev, subject: e.target.value }))}
+                      placeholder="e.g. History"
+                      className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-sm text-[#202124] outline-none transition focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#dadce0]">
+                  <button
+                    type="button"
+                    disabled={isCopying}
+                    onClick={() => setCopyingClassroom(null)}
+                    className="rounded-full px-4 py-2 text-sm font-medium text-[#5f6368] hover:bg-[#f1f3f4] transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isCopying}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#137333] px-5 py-2 text-sm font-medium text-white shadow-xs transition hover:bg-[#0f5b28] disabled:opacity-50"
+                  >
+                    {isCopying ? "Copying class..." : "Copy class"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         </section>
       </main>
     </div>

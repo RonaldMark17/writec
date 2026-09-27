@@ -12,6 +12,12 @@ $$;
 DROP POLICY IF EXISTS classroom_create_scope ON public."classroomTable";
 CREATE POLICY classroom_create_scope ON public."classroomTable" AS RESTRICTIVE FOR INSERT TO anon, authenticated
 WITH CHECK (teacher_id = auth.uid() AND (public.current_account()->>'role') = 'teacher');
+DROP POLICY IF EXISTS classroom_teacher_update ON public."classroomTable";
+CREATE POLICY classroom_teacher_update ON public."classroomTable"
+  FOR UPDATE TO authenticated
+  USING (teacher_id = auth.uid())
+  WITH CHECK (teacher_id = auth.uid());
+
 DROP POLICY IF EXISTS classroom_edit_scope ON public."classroomTable";
 CREATE POLICY classroom_edit_scope ON public."classroomTable" AS RESTRICTIVE FOR UPDATE TO anon, authenticated
 USING (public.can_manage_classroom(id::text)) WITH CHECK (teacher_id = auth.uid());

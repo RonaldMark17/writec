@@ -46,8 +46,8 @@ RETURNS JSONB LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
     'grade', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.grade END,
     'feedback', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.feedback END,
     'transcribed_text', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.transcribed_text END,
-    'scan_result', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.scan_result END,
-    'plagiarism_score', CASE WHEN s.returned_at IS NOT NULL OR public.can_access_submission(s.id::text,true) THEN s.plagiarism_score END
+    'scan_result', CASE WHEN public.can_access_submission(s.id::text,true) THEN s.scan_result END,
+    'plagiarism_score', CASE WHEN public.can_access_submission(s.id::text,true) THEN s.plagiarism_score END
   ) ORDER BY s.created_at DESC), '[]'::jsonb)
   FROM public."submissionTable" s WHERE public.can_access_submission(s.id::text);
 $$;

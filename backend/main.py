@@ -7,6 +7,8 @@ import shutil
 import sys
 import time
 import uuid
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -608,6 +610,7 @@ def proxy_storage_file(request: Request, path: str = Query(...)):
 # ==========================================
 
 
+@app.get("/api/health")
 @app.get("/health")
 async def health():
     return {
@@ -652,6 +655,108 @@ def upload_submission_file(request: Request, file: UploadFile = File(...), assig
     }
 
 
+@app.post("/api/users/{target_user_id}/avatar")
+async def save_user_avatar(target_user_id: str, request: Request):
+    """
+    Saves a user's avatar image to Supabase Storage ('avatars' bucket) and local filesystem backup.
+    Accepts JSON with base64 data URI or raw multipart file.
+    Ensures avatars are publicly accessible to students, teachers, and rosters.
+    """
+    account = authenticated_account(request)
+    if account.get("role") != "admin" and str(account.get("id")).lower() != str(target_user_id).lower():
+        raise HTTPException(403, "You can only update your own avatar.")
+
+    avatar_bytes = None
+    content_type = "image/jpeg"
+
+    # Support JSON base64 body
+    content_type_header = request.headers.get("content-type", "")
+    if "application/json" in content_type_header:
+        body = await request.json()
+        raw_data = body.get("avatar_data", "")
+        if raw_data and "," in raw_data:
+            header, b64_data = raw_data.split(",", 1)
+            if "image/png" in header:
+                content_type = "image/png"
+            elif "image/webp" in header:
+                content_type = "image/webp"
+            try:
+                avatar_bytes = base64.b64decode(b64_data)
+            except Exception:
+                raise HTTPException(400, "Invalid base64 image data.")
+        elif raw_data:
+            try:
+                avatar_bytes = base64.b64decode(raw_data)
+            except Exception:
+                raise HTTPException(400, "Invalid base64 image data.")
+    else:
+        # Multipart form upload
+        form = await request.form()
+        file = form.get("file")
+        if file and hasattr(file, "read"):
+            avatar_bytes = await file.read()
+            if hasattr(file, "content_type") and file.content_type:
+                content_type = file.content_type
+
+    if not avatar_bytes or len(avatar_bytes) < 10:
+        raise HTTPException(400, "No image provided.")
+
+    # 1. Save locally in uploads/avatars/{target_user_id}.jpg
+    avatar_dir = UPLOAD_DIR / "avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    local_path = avatar_dir / f"{target_user_id}.jpg"
+    with open(local_path, "wb") as f:
+        f.write(avatar_bytes)
+
+    # 2. Upload to Supabase Storage 'avatars' bucket via service role key
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    public_url = f"{url}/storage/v1/object/public/avatars/{target_user_id}.jpg"
+
+    if service_key:
+        try:
+            req_upload = urllib.request.Request(
+                f"{url}/storage/v1/object/avatars/{target_user_id}.jpg",
+                data=avatar_bytes,
+                headers={
+                    "apikey": service_key,
+                    "Authorization": f"Bearer {service_key}",
+                    "Content-Type": content_type,
+                    "x-upsert": "true",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req_upload, timeout=10) as resp:
+                pass
+        except Exception as exc:
+            print(f"[avatar] notice: supabase storage upload: {exc}", flush=True)
+
+    return {
+        "success": True,
+        "avatar_url": public_url,
+        "local_avatar_url": f"{str(request.base_url).rstrip('/')}/api/users/{target_user_id}/avatar",
+        "user_id": target_user_id,
+    }
+
+
+@app.get("/api/users/{target_user_id}/avatar")
+def get_user_avatar(target_user_id: str, request: Request):
+    """Publicly serves a user's avatar image without authentication requirements."""
+    local_path = UPLOAD_DIR / "avatars" / f"{target_user_id}.jpg"
+    if local_path.is_file():
+        return FileResponse(
+            str(local_path),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    # Fallback redirect to Supabase Storage public avatar if available
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    public_url = f"{url}/storage/v1/object/public/avatars/{target_user_id}.jpg"
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=public_url, status_code=307)
+
+
 @app.get("/api/submissions/grades")
 def get_submission_grades(request: Request):
     """Read authoritative results through the caller's database permissions."""
@@ -664,6 +769,170 @@ def return_submission_endpoint(submission_id: str, request: Request):
     result = supabase_request('/rest/v1/rpc/return_submission', request.state.access_token,
                               {'submission_key': submission_id})
     return {"success": True, "submission": result}
+
+
+class ArchiveClassroomRequest(BaseModel):
+    is_archived: bool = True
+
+
+@app.get("/api/classrooms/archived")
+def get_archived_classrooms_endpoint(request: Request):
+    """
+    Returns list of archived classroom IDs.
+    Queries using service role key to ensure consistent persistence for both teachers and students.
+    """
+    authenticated_account(request)
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    if not service_key:
+        raise HTTPException(500, "SUPABASE_SERVICE_ROLE_KEY is not configured.")
+
+    req = urllib.request.Request(
+        f"{url}/rest/v1/classroomTable?is_archived=eq.true&select=id",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            rows = json.load(resp)
+            return {"success": True, "archived_ids": [str(r["id"]) for r in rows if "id" in r]}
+    except Exception as exc:
+        return {"success": False, "archived_ids": [], "error": str(exc)}
+
+
+@app.post("/api/classrooms/{classroom_id}/archive")
+def archive_classroom_endpoint(
+    classroom_id: str,
+    payload: ArchiveClassroomRequest,
+    request: Request,
+):
+    """
+    Archives or restores a classroom on behalf of the authenticated teacher.
+    Uses the service role key to reliably persist the is_archived column in Supabase.
+    """
+    account = authenticated_account(request)
+    if account.get("role") not in ("teacher", "admin"):
+        raise HTTPException(403, "Only teachers can archive classrooms.")
+
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    if not service_key:
+        raise HTTPException(500, "SUPABASE_SERVICE_ROLE_KEY is not configured.")
+
+    req_check = urllib.request.Request(
+        f"{url}/rest/v1/classroomTable?id=eq.{classroom_id}&select=id,teacher_id,classroom_name",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req_check, timeout=10) as resp:
+            classrooms = json.load(resp)
+            if not classrooms:
+                raise HTTPException(404, "Classroom not found.")
+            classroom = classrooms[0]
+            if account.get("role") != "admin" and str(classroom.get("teacher_id")).lower() != str(account.get("id")).lower():
+                raise HTTPException(403, "You do not have permission to manage this classroom.")
+    except HTTPException:
+        raise
+    except urllib.error.HTTPError as exc:
+        err_msg = "Failed to query classroom."
+        try:
+            body = json.loads(exc.read().decode("utf-8"))
+            if isinstance(body, dict) and "message" in body:
+                err_msg = body["message"]
+        except Exception:
+            pass
+        raise HTTPException(exc.code, err_msg)
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to query classroom: {str(exc)}")
+
+    req_patch = urllib.request.Request(
+        f"{url}/rest/v1/classroomTable?id=eq.{classroom_id}",
+        data=json.dumps({"is_archived": payload.is_archived}).encode("utf-8"),
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        method="PATCH",
+    )
+    try:
+        with urllib.request.urlopen(req_patch, timeout=10) as resp:
+            updated = json.load(resp)
+            if not updated or not isinstance(updated, list) or len(updated) == 0:
+                raise HTTPException(500, "Database update did not modify any rows.")
+            return {
+                "success": True,
+                "classroom_id": classroom_id,
+                "is_archived": payload.is_archived,
+                "classroom_name": classroom.get("classroom_name"),
+                "updated": updated,
+            }
+    except HTTPException:
+        raise
+    except urllib.error.HTTPError as exc:
+        err_msg = "Failed to update classroom archive state."
+        try:
+            body = json.loads(exc.read().decode("utf-8"))
+            if isinstance(body, dict) and "message" in body:
+                err_msg = body["message"]
+        except Exception:
+            pass
+        raise HTTPException(exc.code, err_msg)
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to update classroom archive state: {str(exc)}")
+
+
+@app.post("/api/classrooms/{classroom_id}/leave")
+def leave_classroom_endpoint(classroom_id: str, request: Request):
+    """
+    Allows a student to leave (unenroll from) a classroom.
+    Deletes the membership record from classroomMembers using the service role key.
+    """
+    account = authenticated_account(request)
+    student_id = str(account.get("id"))
+    if not student_id:
+        raise HTTPException(401, "Sign in to continue.")
+
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
+    if not service_key:
+        raise HTTPException(500, "SUPABASE_SERVICE_ROLE_KEY is not configured.")
+
+    req_delete = urllib.request.Request(
+        f"{url}/rest/v1/classroomMembers?classroom_id=eq.{classroom_id}&student_id=eq.{student_id}",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Prefer": "return=representation",
+        },
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(req_delete, timeout=10) as resp:
+            deleted = json.load(resp)
+            return {
+                "success": True,
+                "classroom_id": classroom_id,
+                "student_id": student_id,
+                "deleted": deleted,
+            }
+    except urllib.error.HTTPError as exc:
+        err_msg = "Failed to leave classroom."
+        try:
+            body = json.loads(exc.read().decode("utf-8"))
+            if isinstance(body, dict) and "message" in body:
+                err_msg = body["message"]
+        except Exception:
+            pass
+        raise HTTPException(exc.code, err_msg)
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to leave classroom: {str(exc)}")
 
 
 @app.post("/api/submissions/{submission_id}/grade")
@@ -1112,6 +1381,7 @@ def simulate_complete_scan(scan_id: str, request: Request):
     return {"success": True, "record": updated}
 
 
+@app.post("/api/upload")
 @app.post("/upload")
 def upload_image(file: UploadFile = File(...)):
     started_at = time.perf_counter()
@@ -1169,6 +1439,7 @@ def upload_image(file: UploadFile = File(...)):
     }
 
 
+@app.post("/api/upload-stream")
 @app.post("/upload-stream")
 def upload_image_stream(file: UploadFile = File(...)):
     started_at = time.perf_counter()

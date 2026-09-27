@@ -81,7 +81,7 @@ class SubmissionWorker:
             try:
                 self.rpc('finish_submission_job', {
                     'job_key': job['submission_id'], 'lease_key': job['lease'],
-                    'result_text': None, 'result_scan': None, 'failure': message,
+                    'result_text': text if 'text' in locals() else None, 'result_scan': None, 'failure': message,
                 })
             except Exception:
                 log.warning('Could not save failure; the expired lease will be recovered.')

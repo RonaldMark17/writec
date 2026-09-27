@@ -19,6 +19,7 @@ export function processingLabel(state) {
 
 export function applySubmissionResult(row, result, progress, teacher) {
   const visible = teacher || Boolean(result.returned_at);
+<<<<<<< HEAD
   const state = progress?.state || (result.scan_result ? "ready" : "submitted");
   return { ...row, status: result.status, returnedAt: result.returned_at,
     grade: visible ? (result.grade ?? "") : "",
@@ -26,6 +27,24 @@ export function applySubmissionResult(row, result, progress, teacher) {
     transcribedText: visible ? (result.transcribed_text ?? "") : "",
     scanResult: visible && state === "ready" ? (result.scan_result ?? null) : null,
     processingState: state, processingError: teacher ? progress?.error : null };
+=======
+  const isReady = (progress?.state === "ready") || Boolean(result.scan_result) || Boolean(result.transcribed_text);
+  return {
+    ...row,
+    status: result.status,
+    returnedAt: result.returned_at,
+    grade: visible ? (result.grade ?? "") : "",
+    feedback: visible ? (result.feedback ?? "") : "",
+    transcribedText: teacher ? (result.transcribed_text ?? "") : (isReady ? (result.transcribed_text ?? "") : ""),
+    scanResult: teacher ? (result.scan_result ?? null) : null,
+    processingState: progress?.state || (isReady ? "ready" : "submitted"),
+    processingError: teacher ? progress?.error : null,
+    hasUploaded: true,
+    hasTranscribed: isReady || Boolean(result.transcribed_text),
+    hasRecorded: isReady || Boolean(result.transcribed_text),
+    hasPlagiarismChecked: isReady || Boolean(result.scan_result),
+  };
+>>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
 }
 
 export function mergeSubmissionResults(rows, results, progress, teacher, context = {}) {

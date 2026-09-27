@@ -8,6 +8,11 @@ export const supabase = createClient(
   supabaseAnonKey
 );
 
+export function getAvatarPublicUrl(userId) {
+  if (!userId) return "";
+  return `${supabaseUrl}/storage/v1/object/public/avatars/${userId}.jpg`;
+}
+
 /**
  * Checks if a Supabase auth session has reached its expiration time.
  * @param {object|null} session

@@ -210,4 +210,104 @@ CREATE POLICY "teachers_readable_by_authenticated" ON public."userTable"
   FOR SELECT TO authenticated
   USING (role = 'teacher' OR id = auth.uid());
 
+-- 10. Add is_archived column to classroomTable for archiving classrooms
+ALTER TABLE public."classroomTable"
+  ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false;
+
+-- Allow teachers to update their classrooms (including archiving)
+DROP POLICY IF EXISTS classroom_teacher_update ON public."classroomTable";
+CREATE POLICY classroom_teacher_update ON public."classroomTable"
+  FOR UPDATE TO authenticated
+  USING (teacher_id = auth.uid())
+  WITH CHECK (teacher_id = auth.uid());
+
+-- 11. RPC for updating classroom archive state (SECURITY DEFINER with ownership check)
+CREATE OR REPLACE FUNCTION public.archive_classroom(target_classroom_id UUID, should_archive BOOLEAN)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  caller_id UUID;
+  caller_role TEXT;
+  affected_rows INT;
+BEGIN
+  caller_id := auth.uid();
+  IF caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  SELECT role INTO caller_role FROM public."userTable" WHERE id = caller_id;
+
+  IF caller_role = 'admin' THEN
+    UPDATE public."classroomTable"
+    SET is_archived = should_archive
+    WHERE id = target_classroom_id;
+    GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  ELSE
+    UPDATE public."classroomTable"
+    SET is_archived = should_archive
+    WHERE id = target_classroom_id AND teacher_id = caller_id;
+    GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  END IF;
+
+  RETURN affected_rows > 0;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.archive_classroom(UUID, BOOLEAN) TO authenticated;
+
+-- 12. RPC for student to leave / unenroll from a classroom (SECURITY DEFINER with student check)
+CREATE OR REPLACE FUNCTION public.leave_classroom(target_classroom_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  caller_id UUID;
+  affected_rows INT;
+BEGIN
+  caller_id := auth.uid();
+  IF caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  DELETE FROM public."classroomMembers"
+  WHERE classroom_id = target_classroom_id
+    AND student_id = caller_id;
+
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  RETURN affected_rows > 0;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.leave_classroom(UUID) TO authenticated;
+
+-- Allow students to delete their own membership (leave classroom)
+DROP POLICY IF EXISTS membership_student_delete ON public."classroomMembers";
+CREATE POLICY membership_student_delete ON public."classroomMembers"
+  FOR DELETE TO authenticated
+  USING (student_id = auth.uid());
+
+-- Section 10: Avatars Storage Bucket & Public Access
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public avatar access" ON storage.objects;
+CREATE POLICY "Public avatar access" ON storage.objects
+  FOR SELECT TO public
+  USING (bucket_id = 'avatars');
+
+DROP POLICY IF EXISTS "Users can upload their own avatar" ON storage.objects;
+CREATE POLICY "Users can upload their own avatar" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'avatars' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '.png'));
+
+DROP POLICY IF EXISTS "Users can update their own avatar" ON storage.objects;
+CREATE POLICY "Users can update their own avatar" ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (bucket_id = 'avatars' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '.png'));
+
 COMMIT;
+
