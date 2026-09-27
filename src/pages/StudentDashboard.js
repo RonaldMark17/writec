@@ -1,21 +1,10 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
 import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
 import useSubmissionTranscription from "./dashboard/useSubmissionTranscription";
 import SubmissionTranscription from "./dashboard/SubmissionTranscription";
 import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
 import { apiFetch, getBackendUrl } from "../apiFetch";
-
-function resolveBackendUrl() {
-  if (typeof getBackendUrl === "function") {
-    try {
-      const u = getBackendUrl();
-      if (u) return u;
-    } catch {}
-  }
-  return process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-}
 import ClassroomDetail from "./dashboard/ClassroomDetail";
-import { useCallback, useEffect, useMemo, useState } from "react";
-
 import { supabase } from "../supabaseClient";
 import {
   ASSIGNMENT_TABLE,
@@ -56,6 +45,16 @@ import {
   getFileKind,
 } from "./dashboard/plagiarismScan";
 import HighlightedText from "./HighlightedText";
+
+function resolveBackendUrl() {
+  if (typeof getBackendUrl === "function") {
+    try {
+      const u = getBackendUrl();
+      if (u) return u;
+    } catch {}
+  }
+  return process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+}
 
 const submissionModes = [
   {
@@ -1057,11 +1056,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         return;
       }
 
-      setSuccessMessage(
-        savedSubmission?.already_submitted
-          ? "This assignment was already saved. Your existing submission is available below."
-          : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for plagiarism. Confirmation status will update below."
-      );
+      const savedMessage = savedSubmission?.already_submitted
+        ? "This assignment was already saved. Your existing submission is available below."
+        : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for plagiarism. Confirmation status will update below.";
+      setSuccessMessage(savedMessage);
       resetSubmissionDraft();
       setActivePage("submissions");
       await loadStudentData();
