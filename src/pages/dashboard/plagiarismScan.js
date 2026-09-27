@@ -1,4 +1,4 @@
-import { apiFetch } from "../../apiFetch";
+import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { extractTextFromImage } from "./ocrService";
 
 export const ACCEPTED_CHECK_FILE_TYPES =
@@ -134,7 +134,7 @@ export async function readTextFromFiles(files = [], options = {}) {
     if (/\.(pdf|docx)$/i.test(file.name)) {
       const form = new FormData();
       form.append("file", file);
-      const backend = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const backend = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
       const response = await apiFetch(`${backend}/api/documents/extract`, { method: "POST", body: form });
       const result = await response.json();
       if (!response.ok || !result.text?.trim()) {
@@ -334,7 +334,7 @@ export function analyzePlagiarismInput({ text = "", files = [] } = {}) {
   };
 }
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+const getBackend = () => (typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"));
 
 /**
  * Initiates a plagiarism scan with the backend (Copyleaks service).
@@ -360,12 +360,12 @@ export async function checkPlagiarismViaBackend({
     formData.append("user_id", userId);
     if (sandbox !== null) formData.append("sandbox", String(sandbox));
 
-    response = await apiFetch(`${BACKEND_URL}/api/plagiarism/check`, {
+    response = await apiFetch(`${getBackend()}/api/plagiarism/check`, {
       method: "POST",
       body: formData,
     });
   } else {
-    response = await apiFetch(`${BACKEND_URL}/api/plagiarism/check`, {
+    response = await apiFetch(`${getBackend()}/api/plagiarism/check`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -423,7 +423,7 @@ export async function checkPeerSimilarityViaBackend({
   }
 
   try {
-    const response = await apiFetch(`${BACKEND_URL}/api/plagiarism/peer-check`, {
+    const response = await apiFetch(`${getBackend()}/api/plagiarism/peer-check`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -474,7 +474,7 @@ export async function pollPlagiarismScanResult(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      const response = await apiFetch(`${BACKEND_URL}/api/plagiarism/scans/${scanId}`);
+      const response = await apiFetch(`${getBackend()}/api/plagiarism/scans/${scanId}`);
       if (response.ok) {
         const scan = await response.json();
         if (onProgress) {
@@ -501,7 +501,7 @@ export async function pollPlagiarismScanResult(
   }
 
   // If still processing after timeout, try one last check
-  const finalRes = await apiFetch(`${BACKEND_URL}/api/plagiarism/scans/${scanId}`);
+  const finalRes = await apiFetch(`${getBackend()}/api/plagiarism/scans/${scanId}`);
   if (finalRes.ok) {
     return finalRes.json();
   }
@@ -515,7 +515,7 @@ export async function pollPlagiarismScanResult(
 export async function fetchUserPlagiarismScans(userId = "anonymous", limit = 10) {
   try {
     const res = await apiFetch(
-      `${BACKEND_URL}/api/plagiarism/scans?user_id=${encodeURIComponent(userId)}&limit=${limit}`
+      `${getBackend()}/api/plagiarism/scans?user_id=${encodeURIComponent(userId)}&limit=${limit}`
     );
     if (!res.ok) return [];
     return res.json();

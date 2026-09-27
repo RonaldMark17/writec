@@ -127,7 +127,8 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
     setServiceError("");
     const controller = new AbortController();
     const timeout = setTimeout(() => { setServiceError("Service status timed out."); controller.abort(); }, 12000);
-    apiFetch(`${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/api/preferences/services`, { signal: controller.signal })
+    const backendUrl = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
+    apiFetch(`${backendUrl}/api/preferences/services`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Service status unavailable.");
         const result = await response.json();

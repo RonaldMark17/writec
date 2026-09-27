@@ -19,15 +19,23 @@ export function getBackendUrl() {
 // Send session credentials only to our backend, never to external file URLs.
 export async function apiFetch(input, options = {}) {
   const backendUrl = getBackendUrl();
-  const url = new URL(input, window.location.origin);
+  let resolvedInput = input;
+  if (typeof resolvedInput === "string") {
+    if (resolvedInput.startsWith("/api/")) {
+      resolvedInput = `${backendUrl}${resolvedInput}`;
+    } else if (backendUrl && backendUrl !== "http://localhost:8000") {
+      resolvedInput = resolvedInput.replace(/^https?:\/\/(?:localhost|127\.0\.0\.1):8000/i, backendUrl);
+    }
+  }
+  const url = new URL(resolvedInput, window.location.origin);
   const backend = new URL(backendUrl);
   const ocrOrigin = new URL(process.env.REACT_APP_OCR_ENDPOINT || backend.href).origin;
-  if (url.origin !== backend.origin && url.origin !== ocrOrigin) return fetch(input, options);
+  if (url.origin !== backend.origin && url.origin !== ocrOrigin) return fetch(resolvedInput, options);
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
   const headers = new Headers(options.headers);
   if (data?.session?.access_token) headers.set("Authorization", `Bearer ${data.session.access_token}`);
-  return fetch(input, { ...options, headers });
+  return fetch(resolvedInput, { ...options, headers });
 }
 
 export async function adminRequest(path, options = {}) {

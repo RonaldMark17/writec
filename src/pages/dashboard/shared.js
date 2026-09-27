@@ -1,4 +1,4 @@
-import { apiFetch } from "../../apiFetch";
+import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { useState, useEffect } from "react";
 import ProfileEditor from "./ProfileEditor";
 import { supabase, signOutAndExpireToken } from "../../supabaseClient";
@@ -730,7 +730,7 @@ export async function downloadSubmissionFileBlob(fileUrl) {
     return await res.blob();
   }
 
-  const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+  const backendUrl = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
 
   // 2. If it is already a direct backend URL, fetch from backend immediately (fastest & bypasses Supabase 400)
   if (fileUrl.startsWith(backendUrl) || /^https?:\/\/[^/]+:(?:8000|5000)\/uploads/i.test(fileUrl)) {
@@ -827,7 +827,7 @@ export async function resolveStorageImageUrl(fileUrl) {
     return blobUrlCache.get(fileUrl);
   }
 
-  const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+  const backendUrl = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
 
   // If already a backend URL, it is immediately renderable by the browser
   if (fileUrl.startsWith(backendUrl) || /^https?:\/\/[^/]+:(?:8000|5000)\/uploads/i.test(fileUrl)) {

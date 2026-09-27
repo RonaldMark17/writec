@@ -64,6 +64,16 @@ import {
   getOcrEngineInfo,
 } from "./dashboard/ocrService";
 
+function resolveBackendUrl() {
+  if (typeof getBackendUrl === "function") {
+    try {
+      const u = getBackendUrl();
+      if (u) return u;
+    } catch {}
+  }
+  return process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+}
+
 const uploadModes = [
   {
     id: "picture",
@@ -276,7 +286,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       (manualCheckTitle && /\.(jpe?g|png|webp|gif)$/i.test(manualCheckTitle) ? manualCheckTitle : null);
 
     if (candidateName && /\.(jpe?g|png|webp|gif)$/i.test(candidateName)) {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = resolveBackendUrl();
       return `${backendUrl}/uploads/${candidateName}`;
     }
 
@@ -1973,7 +1983,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         unreadableFiles: fileText.unreadableFiles,
         imageUrl:
           manualImagePreview ||
-          (manualCheckFiles[0]?.name ? `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/uploads/${manualCheckFiles[0].name}` : ""),
+          (manualCheckFiles[0]?.name ? `${resolveBackendUrl()}/uploads/${manualCheckFiles[0].name}` : ""),
         imageName: manualCheckFiles[0]?.name || manualCheckTitle || "Submission image",
         summary: scanResult
           ? "Scanned via Copyleaks Authenticity API. Comprehensive database and source matching completed."
@@ -2194,7 +2204,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       const gradeVal = String(gradeInput ?? "").trim();
       const feedbackVal = String(feedbackInput ?? "").trim();
       const subId = reviewingSubmission.id;
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = resolveBackendUrl();
       const response = await apiFetch(`${backendUrl}/api/submissions/${subId}/grade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

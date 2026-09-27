@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiFetch } from "../../apiFetch";
+import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { extractTextFromImage } from "./ocrService";
 
 const empty = { file: null, status: "idle", text: "", error: "", progress: null };
@@ -28,7 +28,8 @@ export default function useSubmissionTranscription(file, mode) {
         } else if (/\.(pdf|docx)$/i.test(file.name)) {
           const form = new FormData();
           form.append("file", file);
-          const response = await apiFetch(`${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/api/documents/extract`, {
+          const backendUrl = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
+          const response = await apiFetch(`${backendUrl}/api/documents/extract`, {
             method: "POST", body: form, signal: controller.signal,
           });
           const result = await response.json();

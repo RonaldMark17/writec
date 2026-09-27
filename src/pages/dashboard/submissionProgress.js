@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../supabaseClient";
-import { apiFetch } from "../../apiFetch";
+import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { accountRequest } from "../../accountRequest";
 
 export async function loadTeacherSubmissionStatus() {
   return accountRequest(async (signal) => {
-    const response = await apiFetch(`${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/api/submissions/status`, { signal });
+    const backendUrl = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");
+    const response = await apiFetch(`${backendUrl}/api/submissions/status`, { signal });
     const data = await response.json();
     if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Unable to verify API results.");
     if (!Array.isArray(data.results) || !data.progress) throw new Error("The backend returned an incomplete submission status.");

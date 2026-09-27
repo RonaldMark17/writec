@@ -435,7 +435,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       }, {});
 
     const cachedArchivedSet = new Set();
-    const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+    const backendUrl = resolveBackendUrl();
 
     [
       `writecheck_archived_classes_${studentId}`,
@@ -998,7 +998,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           formData.append("file", uploadFile);
           formData.append("assignment_id", selectedAssignment.id);
 
-          const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+          const backendUrl = resolveBackendUrl();
           const res = await apiFetch(`${backendUrl}/api/submissions/upload`, {
             method: "POST",
             body: formData,
@@ -1028,7 +1028,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
       let savedSubmission, submissionError;
       try {
-        const response = await apiFetch(`${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/api/submissions/submit`, {
+        const response = await apiFetch(`${resolveBackendUrl()}/api/submissions/submit`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ assignment_id: String(selectedAssignment.id), title: essayTitle,
             file_url: uploadedFileUrl, text: reviewedText.trim() }),
