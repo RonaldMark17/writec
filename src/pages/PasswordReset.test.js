@@ -6,7 +6,7 @@ import { supabase } from "../supabaseClient";
 
 jest.mock("../supabaseClient", () => ({ supabase: { auth: { resetPasswordForEmail: jest.fn(), updateUser: jest.fn() }, rpc: jest.fn() } }));
 const show = (element) => render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{element}</MemoryRouter>);
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => { jest.clearAllMocks(); supabase.auth.updateUser.mockResolvedValue({ error: null }); });
 
 test("sends a recovery email with the reset route", async () => {
   supabase.auth.resetPasswordForEmail.mockResolvedValue({ error: null });

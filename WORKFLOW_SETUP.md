@@ -5,6 +5,40 @@ Apply `submission_processing.sql` in the Supabase SQL Editor after the existing
 New submissions enqueue in the same transaction as the submission insert. Existing
 submissions are left alone; the classroom teacher can queue them from the review window.
 
+## Student review, save, and API check
+
+### Local API readiness
+
+The local teacher dashboard reads `/api/submissions/status`, which checks a report
+against the stored Copyleaks callback and its scan ID. A ready flag or cached score
+alone is not sufficient evidence. It shows a credit warning when the account has
+zero credits, and preserves the original file and essay when a check fails.
+
+Localhost and the deployed backend currently share the Supabase queue. An older
+deployed worker can claim locally submitted jobs and write legacy fallback results.
+For reliable local acceptance testing, use a separate Supabase development project
+with the migrations applied, or stop the deployed queue worker for the test. A
+public HTTPS callback must deliver to a backend using that same development database.
+Do not interpret cached fallback reports as successful Copyleaks responses.
+
+1. A student selects Picture or File. Images stream YOLO–TrOCR text and line progress;
+   PDF/DOCX/text files show their extracted text. Nothing is submitted for grading yet.
+2. The student reviews or corrects the text. Submit is disabled while transcription
+   is incomplete or failed. Replacing a file cancels its preview and discards stale text.
+3. Submit uploads the original and calls `POST /api/submissions/submit`. The backend
+   verifies the enrolled student, assignment, upload ownership and deadline, then saves
+   the original file reference and reviewed text together. A stable submission ID makes
+   retries idempotent. Client-supplied grades or API results are rejected.
+4. The existing database trigger queues the API check in that same transaction. The
+   worker uses the saved reviewed text, so it does not repeat OCR for these submissions.
+5. The teacher can see the original and saved essay immediately. Copyleaks results and
+   source links appear after its authenticated completion callback. A provider failure
+   leaves the saved work visible and offers retry; it does not create a zero-score result.
+
+This flow uses the existing submission and job schema; no additional migration is
+required when `submission_processing.sql` is already installed. The separate legacy
+manual plagiarism endpoint is not used by this flow.
+
 Install backend dependencies with `python -m pip install -r backend/requirements.txt`.
 Set these variables in **backend/.env only**:
 
@@ -26,6 +60,13 @@ an external scan. Reports explicitly state that internet sources were not checke
 Real Copyleaks checks require configured credentials, credits and a reachable HTTPS
 webhook. Sandbox results are deliberately rejected for submission grading.
 
+Copyleaks is enabled by default. `COPYLEAKS_WEBHOOK_URL=http://localhost:8000`
+does not satisfy the automatic worker's callback requirement. Set
+`COPYLEAKS_WEBHOOK_BASE_URL=https://<your-backend-domain>` and restart the backend.
+New saved submissions then run automatically. Existing failed jobs can be retried from
+the teacher review window after configuration is fixed; they are not silently
+reported as completed or converted into classroom-only checks.
+
 Install JavaScript dependencies with `npm install`, then run `npm start` to start
 both the frontend and backend. To run them separately, use `npm run start:backend`
 and `npm run start:frontend` in separate terminals.
@@ -44,14 +85,29 @@ Corrections must be rechecked before saving a grade through the review interface
 Classroom comparison covers other submissions with saved transcriptions at check time;
 teachers can recheck after later submissions finish processing.
 
+The teacher upload station's **View submission & result** action opens the original
+student document and its saved automatic report. It does not create another scan.
+The dashboard discovers newly submitted work and updates processing results every
+five seconds while visible. Student and teacher views support image, PDF, and plain
+text previews; DOCX retains the original download and shows extracted text once ready.
+Unrelated manual checks are never used as a student's saved report.
+
+Manual PDF/DOCX checks also use the authenticated `/api/documents/extract` endpoint
+so plagiarism checking receives document text. Image-only PDFs use the OCR pipeline.
+
 Supported automatic extraction: UTF-8 text, DOCX, images, and PDFs. Image-only PDF
-pages use OCR on embedded images. Complex page layouts may need transcription corrections.
+pages use OCR on embedded images; mixed pages now read embedded images alongside
+selectable text. Complex page layouts may need transcription corrections.
 Legacy DOC/RTF formats fail explicitly; convert them to DOCX/PDF/TXT before submitting.
+
+See [medium-priority setup](MEDIUM_PRIORITY_SETUP.md) for cross-device profile
+preferences, automatic-check thresholds and peer controls, live service status,
+and the optional SMTP notification dispatcher.
 
 ## Verification
 
-The OCR API repairs adjacent YOLO boxes only when handwriting components cross
-their shared boundary. TrOCR compares original and contrast-enhanced line crops.
+The OCR API keeps individual YOLO lines separate by default; experimental merging
+requires `OCR_JOIN_SPLIT_LINES=1`. TrOCR compares original and contrast-enhanced line crops.
 Disagreement or low token likelihood marks a line for review; these scores are
 not calibrated accuracy percentages. Formatting does not substitute memorized
 sample text. No model weights are retrained by these changes.

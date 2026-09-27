@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { supabase, signOutAndExpireToken } from "../supabaseClient";
+import { accountRequest } from "../accountRequest";
+import { profilePreferences } from "../profilePreferences";
 import StudentDashboard from "./StudentDashboard";
 import TeacherDashboard from "./TeacherDashboard";
 import AdminDashboard from "./AdminDashboard";
@@ -29,25 +31,28 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
       running = true;
       try {
         if (!userId) throw new Error("Sign in to continue.");
-        let { data, error: profileError } = await supabase.rpc("current_account");
+        let { data, error: profileError } = await accountRequest((signal) => supabase.rpc("current_account").abortSignal(signal));
         if (profileError) throw profileError;
         if (!data) {
           // Metadata is only a registration hint; it can never grant admin access.
           const role = user?.user_metadata?.role === "teacher" ? "teacher" : "student";
-          const { error: createError } = await supabase.from("userTable").insert({
+          const { error: createError } = await accountRequest((signal) => supabase.from("userTable").insert({
             id: userId,
             full_name: user?.user_metadata?.full_name || user?.email,
             email: user?.email,
             role,
-          });
+          }).abortSignal(signal));
           if (createError && createError.code !== "23505") throw createError;
-          const response = await supabase.rpc("current_account");
+          const response = await accountRequest((signal) => supabase.rpc("current_account").abortSignal(signal));
           if (response.error) throw response.error;
           data = response.data;
         }
         if (!data || !["student", "teacher", "admin"].includes(data.role)) {
           throw new Error("Your account has no valid workspace role. Contact an administrator.");
         }
+        const { data: authData, error: authError } = await accountRequest(() => supabase.auth.getUser());
+        if (authError) throw authError;
+        const metadata = authData?.user?.user_metadata || {};
         if (!cancelled) {
           let localPrefs = {};
           if (data?.id && typeof window !== "undefined") {
@@ -56,14 +61,14 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
               if (stored) localPrefs = JSON.parse(stored);
             } catch {}
           }
-          const metaAvatar = user?.user_metadata?.avatar_url || "";
-          const metaColor = user?.user_metadata?.avatar_color || "";
+          const metaAvatar = metadata.avatar_url || "";
+          const metaColor = metadata.avatar_color || "";
           setProfile((prev) => ({
             ...(prev || {}),
             avatarUrl: metaAvatar,
             avatarColor: metaColor,
             ...data,
-            ...localPrefs,
+            ...profilePreferences(metadata.writecheck_preferences ?? localPrefs),
           }));
           setError("");
         }
@@ -89,7 +94,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
     };
   }, [userId, retry]);
 
-  if (loading) return <div className="p-12 text-center">Loading workspace?</div>;
+  if (loading) return <div role="status" className="p-12 text-center">Verifying your account…</div>;
   if (error || !profile || profile.account_status !== "active") return (
     <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
       <div className="max-w-md rounded-xl border bg-white p-8 text-center">

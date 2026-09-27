@@ -48,7 +48,7 @@ from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 from ultralytics import YOLO
 
 import plagiarism_db
-from ocr_regions import join_split_lines, choose_transcript, deskew_and_clean_image
+from ocr_regions import prepare_line_boxes, choose_transcript, deskew_and_clean_image
 from submission_access import (
     visible_submissions, require_submission, require_assignment, require_scan,
     require_file, local_file, storage_download,
@@ -240,25 +240,12 @@ def extract_adaptive_line_crops(raw_img, boxes):
     # Sort strictly by vertical centroid
     parsed_boxes.sort(key=lambda b: b["centroid_y"])
 
-    # Overlap filter (matching reference implementation)
-    filtered_boxes = []
-    for b in parsed_boxes:
-        if not filtered_boxes:
-            filtered_boxes.append(b)
-            continue
-        prev = filtered_boxes[-1]
-        overlap_y1 = max(prev["y1"], b["y1"])
-        overlap_y2 = min(prev["y2"], b["y2"])
-        overlap_h = max(0, overlap_y2 - overlap_y1)
-        min_h = min(prev["height"], b["height"])
-
-        if min_h > 0 and (overlap_h / min_h) > 0.65:
-            if b["conf"] > prev["conf"]:
-                filtered_boxes[-1] = b
-        else:
-            filtered_boxes.append(b)
-
-    filtered_boxes = join_split_lines(raw_img, filtered_boxes)
+    # TrOCR expects one writing line per crop. Adjacent lines on ruled paper
+    # can share connected strokes; merging them silently loses entire sentences.
+    # Keep this experimental repair opt-in rather than merging normal YOLO lines.
+    filtered_boxes = prepare_line_boxes(
+        raw_img, parsed_boxes, repair_split_lines=os.getenv("OCR_JOIN_SPLIT_LINES", "0") == "1"
+    )
     crops = []
     num_boxes = len(filtered_boxes)
 
@@ -495,9 +482,17 @@ def prepare_ocr_input(file, started_at):
 # ==========================================
 
 from admin_api import router as admin_router, install_account_guard
+from submission_intake import router as submission_intake_router
+from submission_status import router as submission_status_router
 
 app = FastAPI()
+from service_status import router as service_status_router
+from notifications import NotificationWorker
+app.include_router(service_status_router)
 app.include_router(admin_router)
+app.include_router(submission_intake_router)
+app.include_router(submission_status_router)
+app.state.upload_root = UPLOAD_DIR
 install_account_guard(app)
 
 app.add_middleware(
@@ -577,6 +572,7 @@ def warmup_models():
 
 
 warmup_models()
+app.state.ocr_ready = True
 
 # Background synchronization to Supabase for all local plagiarism.db records
 try:
@@ -1283,8 +1279,15 @@ def upload_image_stream(file: UploadFile = File(...)):
 
 
 from submission_worker import SubmissionWorker
+from local_ocr import require_local_ocr
 from submission_checker import check_submission
 import threading
+
+
+@app.post("/local-ocr/upload-stream")
+def local_upload_stream(request: Request, file: UploadFile = File(...)):
+    require_local_ocr(request)
+    return upload_image_stream(file)
 
 
 def submission_image_ocr(data, filename):
@@ -1295,17 +1298,34 @@ def submission_image_ocr(data, filename):
     return result['text']
 
 
+@app.post("/api/documents/extract")
+def extract_uploaded_document(file: UploadFile = File(...)):
+    """Extract uploaded documents through the same path as automatic submissions."""
+    from document_text import extract_document
+    data = file.file.read(25 * 1024 * 1024 + 1)
+    try:
+        text = extract_document(data, file.filename or '', submission_image_ocr)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "This document could not be read. Use a readable PDF, DOCX, text file, or image.") from exc
+    return {"text": text}
+
+
 submission_worker = SubmissionWorker(UPLOAD_DIR, submission_image_ocr, check_submission)
+notification_worker = NotificationWorker()
 
 
 @app.on_event("startup")
 def start_submission_worker():
     threading.Thread(target=submission_worker.run, daemon=True, name='submission-worker').start()
+    threading.Thread(target=notification_worker.run, daemon=True, name='notification-worker').start()
 
 
 @app.on_event("shutdown")
 def stop_submission_worker():
     submission_worker.stop.set()
+    notification_worker.stop.set()
 
 
 if __name__ == "__main__":

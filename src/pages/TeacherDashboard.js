@@ -1,4 +1,6 @@
-import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
+import SubmissionStation from "./dashboard/SubmissionStation";
+import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
+import { processingLabel, useSubmissionProgress, loadTeacherSubmissionStatus } from "./dashboard/submissionProgress";
 import { apiFetch } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,7 +10,6 @@ import {
   ASSIGNMENT_TABLE,
   CLASSROOM_TABLE,
   ClipboardIcon,
-  SUBMISSION_TABLE,
   ESSAY_BUCKET,
   resolveStorageImageUrl,
   DoorIcon,
@@ -710,7 +711,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     return list;
   }, [selectedScanRoster, scanRosterFilter, scanRosterSearch]);
 
-  const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, true);
+  const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, true, { assignments, members: classroomMembers });
 
   const loadTeacherData = useCallback(async () => {
     const teacherId = profile?.id;
@@ -733,6 +734,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       setIsLoading(false);
       return false;
     }
+
+    // Show classrooms as soon as they arrive; roster and reports fill in later.
+    if (requestId !== teacherDataRequestRef.current) return false;
+    setClassrooms((classroomRows ?? []).map((classroom, index) => normalizeClassroom(classroom, index)));
+    setIsLoading(false);
 
     if (profile?.id) {
       try {
@@ -763,8 +769,15 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     let memberRows = [];
     let assignmentRows = [];
     let submissionRows = [];
+    let submissionStates = {};
     let studentRows = [];
     const rosterNames = new Map();
+
+    const assignmentRequest = supabase
+        .from(ASSIGNMENT_TABLE)
+        .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date, accept_late_submissions")
+        .eq("teacher_id", teacherId)
+        .order("created_at", { ascending: false }).then((response) => response, (error) => ({ data: null, error }));
 
     if (classIds.length > 0) {
       const rosters = await Promise.all(classIds.map(async (classroomId) => {
@@ -790,12 +803,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       }));
     }
 
-    let { data: assignmentsData, error: assignmentError } =
-      await supabase
-        .from(ASSIGNMENT_TABLE)
-        .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date, accept_late_submissions")
-        .eq("teacher_id", teacherId)
-        .order("created_at", { ascending: false });
+    let { data: assignmentsData, error: assignmentError } = await assignmentRequest;
 
     if (assignmentError && (assignmentError.message?.includes("accept_late_submissions") || assignmentError.code === "42703" || assignmentError.code === "PGRST204")) {
       const fallback = await supabase
@@ -820,21 +828,15 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       assignmentRows.map((assignment) => assignment.id);
 
     if (assignmentIds.length > 0) {
-      const { data: submissionsData, error: submissionError } =
-        await supabase
-          .from(SUBMISSION_TABLE)
-          .select("*")
-          .in("assignment_id", assignmentIds)
-          .order("created_at", { ascending: false });
-
-      if (submissionError) {
-        setErrorMessage(submissionError.message);
+      try {
+        const status = await loadTeacherSubmissionStatus();
+        submissionRows = status.results;
+        submissionStates = status.progress;
+      } catch (submissionError) {
+        setErrorMessage(submissionError.message || "Unable to verify API results.");
         setIsLoading(false);
         return false;
       }
-
-      submissionRows =
-        submissionsData ?? [];
     }
 
     const studentIdsFromMembers = memberRows.map((member) => member.student_id).filter(Boolean);
@@ -915,22 +917,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     const assignmentsById =
       new Map(nextAssignments.map((assignment) => [assignment.id, assignment]));
 
-    let localGradesMap = {};
-    try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-      const res = await apiFetch(`${backendUrl}/api/submissions/grades`);
-      if (res.ok) {
-        localGradesMap = await res.json();
-      }
-    } catch {
-      // Ignore network errors fetching grades
-    }
-
     const nextSubmissions =
       submissionRows.map((submission) => {
         const assignment =
           assignmentsById.get(submission.assignment_id);
-        const gradeInfo = localGradesMap[submission.id] || {};
 
         return {
           id: submission.id,
@@ -944,11 +934,13 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
           fileUrl: submission.file_url,
-          status: submission.status || gradeInfo.status || "submitted",
-          grade: submission.grade ?? gradeInfo.grade ?? "",
-          feedback: submission.feedback ?? gradeInfo.feedback ?? "",
-          transcribedText: submission.transcribed_text ?? gradeInfo.transcribed_text ?? "",
-          scanResult: submission.scan_result ?? gradeInfo.scan_result ?? null,
+          status: submission.status || "submitted",
+          grade: submission.grade ?? "",
+          feedback: submission.feedback ?? "",
+          transcribedText: submission.transcribed_text ?? "",
+          scanResult: submission.scan_result ?? null,
+          processingState: submissionStates[submission.id]?.state || "submitted",
+          processingError: submissionStates[submission.id]?.error || null,
         };
       });
 
@@ -999,17 +991,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   }, [profile?.id, loadTeacherData]);
 
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.id) {
-        loadTeacherData();
-      }
-    });
 
-    return () => subscription?.unsubscribe?.();
-  }, [loadTeacherData]);
 
   useEffect(() => {
     const imageFile =
@@ -1606,119 +1588,22 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   };
 
-  const handleLoadSubmissionToScanStation = async (sub) => {
+  const loadedSubmission = loadedSubmissionInfo
+    ? submissions.find((row) => String(row.id) === String(loadedSubmissionInfo.id)) || loadedSubmissionInfo
+    : null;
+
+  const handleLoadSubmissionToScanStation = (sub) => {
     if (!sub) return;
-    setManualCheckError("");
     setManualCheckResult(null);
     setManualLiveOcrResult(null);
-    setTranscriptionResult(null);
-    setLoadingSubmissionId(sub.id);
-
-    const title = `${selectedScanAssignment?.title || sub.essayTitle || "Essay"} — ${sub.studentName || "Student"}`;
-    setManualCheckTitle(title);
-
-    const fileUrl = sub.fileUrl || sub.file_url;
-    setLoadedSubmissionInfo({
-      id: sub.id,
-      studentName: sub.studentName || "Student",
-      essayTitle: sub.essayTitle || "Essay submission",
-      assignmentTitle: selectedScanAssignment?.title || sub.assignmentTitle || "Assignment",
-      fileUrl: fileUrl || null,
-      submittedAt: sub.createdAt,
+    setManualCheckFiles([]);
+    setManualCheckText("");
+    setTranscribedText("");
+    setManualCheckError("");
+    setLoadedSubmissionInfo(sub);
+    requestAnimationFrame(() => {
+      document.getElementById("scan-station-form-top")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
-
-    try {
-      if (fileUrl) {
-        let blob = null;
-        try {
-          blob = await downloadSubmissionFileBlob(fileUrl);
-        } catch (fetchErr) {
-          console.warn("Could not download submission file blob directly:", fetchErr);
-        }
-
-        const isImgUrl = /\.(jpe?g|png|webp|gif|bmp|tiff)($|\?)/i.test(fileUrl);
-        const isImage = (blob && blob.type && blob.type.startsWith("image/")) || isImgUrl;
-
-        let cleanFilename = "";
-        try {
-          cleanFilename = decodeURIComponent(fileUrl.split("?")[0].split("/").pop());
-        } catch {
-          cleanFilename = "";
-        }
-        if (!cleanFilename || cleanFilename.length > 80 || cleanFilename.startsWith("blob:")) {
-          cleanFilename = `${sub.studentName || "student"}_${(sub.essayTitle || "essay").replace(/[^a-zA-Z0-9_-]/g, "_")}${isImage ? ".jpg" : ".pdf"}`;
-        }
-
-        if (blob) {
-          const file = new File([blob], cleanFilename, {
-            type: blob.type || (isImage ? "image/jpeg" : "application/pdf"),
-            lastModified: Date.now(),
-          });
-          setManualCheckFiles([file]);
-
-          if (isImage) {
-            setUploadMode("picture");
-            const previewUrl = URL.createObjectURL(blob);
-            setManualImagePreview(previewUrl);
-            if (sub.transcribedText) {
-              setTranscribedText(sub.transcribedText);
-            }
-          } else {
-            setUploadMode("file");
-            setManualImagePreview("");
-            // Automatically extract text in background so it's loaded and ready
-            try {
-              const fileTextResult = await readTextFromFiles([file]);
-              if (fileTextResult?.text) {
-                setManualCheckText(fileTextResult.text);
-              }
-            } catch (err) {
-              console.warn("Could not pre-read text from loaded submission file:", err);
-            }
-          }
-        } else {
-          // If blob download failed, fallback to text/transcribed or picture mode
-          if (isImage) {
-            setUploadMode("picture");
-            try {
-              const resolvedUrl = await resolveStorageImageUrl(fileUrl);
-              if (resolvedUrl) setManualImagePreview(resolvedUrl);
-            } catch {}
-            if (sub.transcribedText) setTranscribedText(sub.transcribedText);
-          } else if (sub.essayText || sub.transcribedText) {
-            setUploadMode("text");
-            setManualCheckText(sub.essayText || sub.transcribedText);
-          } else {
-            setUploadMode("file");
-          }
-        }
-      } else if (sub.essayText || sub.transcribedText) {
-        setUploadMode("text");
-        setManualCheckText(sub.essayText || sub.transcribedText);
-        setManualCheckFiles([]);
-        setManualImagePreview("");
-      }
-
-      if (sub.scanResult) {
-        const score = Math.round(sub.scanResult.plagiarism_score ?? sub.scanResult.score ?? 0);
-        setManualCheckResult({
-          ...sub.scanResult,
-          title: sub.essayTitle || title,
-          score,
-          label: sub.scanResult.label || (score >= 50 ? "High review" : score >= 20 ? "Medium review" : "Low review"),
-          tone: score >= 50 ? "red" : score >= 20 ? "amber" : "emerald",
-        });
-      }
-    } finally {
-      setLoadingSubmissionId(null);
-    }
-
-    const stationElem = document.getElementById("scan-station-form-top") || document.getElementById("scan-station-container");
-    if (stationElem) {
-      stationElem.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else {
-      window.scrollTo({ top: 180, behavior: "smooth" });
-    }
   };
 
   const handleOpenReview = (submission) => {
@@ -1739,9 +1624,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         s.id !== submission.id
     ).length;
 
-    if (submission.scanResult) {
+    if (submission.scanResult && (!submission.processingState || submission.processingState === "ready")) {
       let initialScanResult = { ...submission.scanResult };
-      if (classmateCount === 0) {
+      if (classmateCount === 0 && initialScanResult.peerComparisonEnabled !== false) {
         initialScanResult.peerSimilarity = {
           peer_similarity_score: 0.0,
           has_peer_match: false,
@@ -1763,19 +1648,15 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       }
       setReviewScanResult(initialScanResult);
       setReviewTranscribedText(submission.transcribedText || initialScanResult.transcribedText || "");
-    } else if (manualCheckResult && manualCheckResult.score !== undefined) {
-      setReviewScanResult(manualCheckResult);
-      setReviewTranscribedText(transcribedText || manualDetectedText || "");
     } else {
       setReviewScanResult(null);
-      setReviewTranscribedText("");
+      setReviewTranscribedText(submission.transcribedText || "");
     }
 
     // Load image preview
     const fileUrl = submission.fileUrl;
     if (!fileUrl) return;
     const isImageUrl = /\.(jpe?g|png|webp|gif)$/i.test(fileUrl) ||
-      fileUrl.includes("/submissions/") ||
       /\.(jpe?g|png|webp|gif)/i.test(fileUrl);
 
     if (isImageUrl) {
@@ -1843,11 +1724,15 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     if (!reviewingSubmission) return;
     const latest = submissions.find((row) => row.id === reviewingSubmission.id);
     if (!latest || !latest.processingState || (latest.processingState === reviewingSubmission.processingState
-      && latest.processingError === reviewingSubmission.processingError)) return;
+      && latest.processingError === reviewingSubmission.processingError
+      && latest.transcribedText === reviewingSubmission.transcribedText
+      && JSON.stringify(latest.scanResult) === JSON.stringify(reviewingSubmission.scanResult))) return;
     setReviewingSubmission((current) => ({ ...current, ...latest }));
     if (latest.processingState === "ready") {
       setReviewTranscribedText(latest.transcribedText || "");
       setReviewScanResult(latest.scanResult || null);
+    } else {
+      setReviewScanResult(null);
     }
   }, [submissions, reviewingSubmission]);
 
@@ -3081,7 +2966,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
               </div>
 
               <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6 lg:min-h-[720px]">
-                {manualCheckResult ? (
+                {loadedSubmission ? (
+                  <SubmissionStation submission={loadedSubmission} onReview={handleOpenReview} onClear={handleResetManualCheck} />
+                ) : manualCheckResult ? (
                   <div className="rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50/80 to-teal-50/40 p-5 shadow-xs transition">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                       <div className="flex items-center gap-3.5 min-w-0">
@@ -3345,6 +3232,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           </div>
                         )}
 
+                        {uploadMode === "file" && manualCheckFiles.map((file) => (
+                          <SubmissionFilePreview key={`${file.name}-${file.lastModified}`} file={file} />
+                        ))}
                         {uploadMode === "file" && manualCheckFiles.length > 0 ? (
                           <div className="flex flex-1 flex-col justify-between rounded-xl border-2 border-emerald-300 bg-white p-5 sm:p-6 shadow-sm">
                             <div className="space-y-4">
@@ -3421,7 +3311,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                               ) : (
                                 <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 text-xs font-semibold text-emerald-900">
                                   <SparklesIcon className="h-5 w-5 text-emerald-700 shrink-0" />
-                                  <span>Student document is loaded automatically into the scan station. Click <strong>"Scan for plagiarism"</strong> below to run originality and Copyleaks checks.</span>
+                                  <span>The original document is shown above. Its text will be extracted when you run this manual check.</span>
                                 </div>
                               )}
                             </div>
@@ -4192,6 +4082,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                       Missing
                                     </span>
                                   )}
+                                  {item.isSubmitted && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-800">{processingLabel(item.submission?.processingState)}</span>}
                                   {item.scanResult && (
                                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                                       (item.scanResult.plagiarism_score ?? item.scanResult.score ?? 0) >= 50
@@ -4218,7 +4109,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                     disabled={loadingSubmissionId === item.submission?.id}
                                     onClick={() => handleLoadSubmissionToScanStation(item.submission)}
                                     className="inline-flex items-center gap-1.5 rounded-lg border border-[#dadce0] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#3c4043] transition hover:bg-[#f1f3f4] hover:text-[#202124] shadow-2xs disabled:opacity-60"
-                                    title="Load student file/essay automatically into Scan station"
+                                    title="View original submission and automatic plagiarism result"
                                   >
                                     {loadingSubmissionId === item.submission?.id ? (
                                       <>
@@ -4228,7 +4119,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                     ) : (
                                       <>
                                         <UploadIcon className="h-3.5 w-3.5 text-[#5f6368]" />
-                                        <span>Load in Scan Station</span>
+                                        <span>View submission & result</span>
                                       </>
                                     )}
                                   </button>
@@ -4970,18 +4861,18 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       )}
 
                       {/* Matching Sources */}
-                      {reviewScanResult.matchedSources && reviewScanResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length > 0 && (
+                      {reviewScanResult.matchedSources && reviewScanResult.matchedSources.length > 0 && (
                         <div className="mt-6">
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-extrabold text-gray-800">
-                              Matching sources ({reviewScanResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).length})
+                              Matching sources ({reviewScanResult.matchedSources.length})
                             </p>
                             <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
                               Copyleaks Database
                             </span>
                           </div>
                           <div className="mt-3 space-y-2">
-                            {reviewScanResult.matchedSources.filter(s => !s.url?.includes("wikipedia.org")).map((source, sIdx) => (
+                            {reviewScanResult.matchedSources.map((source, sIdx) => (
                               <div
                                 key={source.id || sIdx}
                                 className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm"
@@ -5047,30 +4938,35 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         DETECTION RESULT
                       </p>
                       <h4 className="mt-1 text-lg font-black text-gray-900">
-                        No scan result recorded yet
+                        {reviewingSubmission.processingState === "failed" ? "Automatic check failed" : "Automatic check in progress"}
                       </h4>
                       <p className="mt-1 text-xs font-semibold text-gray-500">
-                        Transcribe student handwriting with YOLO26x + TrOCR and check plagiarism via Copyleaks.
+                        Uploaded work is processed automatically. Results update here when the check finishes.
                       </p>
                       <button
                         type="button"
                         onClick={handleRunReviewScan}
+                        disabled={["submitted", "processing"].includes(reviewingSubmission.processingState || "submitted")}
                         className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-emerald-800 shadow-sm"
                       >
                         <FileSearchIcon className="h-4 w-4" />
-                        <span>Run OCR & Plagiarism Check</span>
+                        <span>{reviewingSubmission.processingState === "failed" ? "Retry automatic check" : "Processing automatically"}</span>
                       </button>
                     </div>
                   )}
 
                   <StatusMessage error={errorMessage || submissionSyncError} message={successMessage} />
+                  {reviewScanResult?.provider === "copyleaks" && <p className="mt-3 text-sm font-semibold text-emerald-800">Copyleaks API result · Scan {reviewScanResult.scanId}</p>}
                   <p className="mt-3 text-sm font-bold">{processingLabel(reviewingSubmission.processingState)}</p>
                   {reviewingSubmission.processingError && <p role="alert" className="mt-2 text-sm text-red-700">{reviewingSubmission.processingError}</p>}
-                  <label className="mt-4 block text-sm font-bold" htmlFor="review-transcription">Correct transcription before rechecking</label>
+                  <label className="mt-4 block text-sm font-bold" htmlFor="review-transcription">Saved essay text — review or correct before rechecking</label>
                   <textarea id="review-transcription" rows={8} value={reviewTranscribedText}
                     disabled={["submitted", "processing"].includes(reviewingSubmission.processingState)}
                     onChange={(event) => setReviewTranscribedText(event.target.value)}
                     className="mt-2 w-full rounded-lg border border-gray-300 p-3 text-sm" />
+                  {reviewingSubmission.fileUrl && !/\.(jpe?g|png|webp|gif|bmp|tiff?)($|\?)/i.test(reviewingSubmission.fileUrl) && (
+                    <SubmissionFilePreview fileUrl={reviewingSubmission.fileUrl} transcript={reviewingSubmission.transcribedText} />
+                  )}
                   {/* Grading Form */}
                   <form onSubmit={handleSaveGrade} className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-5">
                     <h4 className="text-base font-black text-emerald-950">

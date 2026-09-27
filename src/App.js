@@ -18,6 +18,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Startup from "./pages/Startup";
+import Transcribe from "./pages/Transcribe";
 
 function ProtectedDashboard({ session, isAuthLoading, adminOnly = false }) {
   if (isAuthLoading) {
@@ -191,6 +192,7 @@ function App() {
     >
       {recovering && <Navigate to="/reset-password" replace />}
       <Routes>
+        <Route path="/transcribe" element={<Transcribe />} />
         <Route path="/admin/*" element={<ProtectedDashboard session={session} isAuthLoading={isAuthLoading} adminOnly />} />
         <Route path="/forgot-password" element={<PasswordReset key="request" />} />
         <Route path="/reset-password" element={<PasswordReset key="reset" mode="reset" session={session} isAuthLoading={isAuthLoading} onComplete={() => setRecovering(false)} />} />

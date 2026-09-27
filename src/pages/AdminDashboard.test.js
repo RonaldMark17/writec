@@ -6,7 +6,7 @@ import { adminRequest } from "../apiFetch";
 import { supabase } from "../supabaseClient";
 
 jest.mock("../apiFetch", () => ({ adminRequest: jest.fn() }));
-jest.mock("../supabaseClient", () => ({ supabase: { rpc: jest.fn() }, signOutAndExpireToken: jest.fn() }));
+jest.mock("../supabaseClient", () => ({ supabase: { rpc: jest.fn(), auth: { getUser: jest.fn() } }, signOutAndExpireToken: jest.fn() }));
 jest.mock("./StudentDashboard", () => () => <div>Student workspace</div>);
 jest.mock("./TeacherDashboard", () => () => <div>Teacher workspace</div>);
 const profile = { id: "admin1", full_name: "Admin Name", email: "admin@example.com", role: "admin", account_status: "active" };
@@ -14,7 +14,10 @@ const user = { id: "student1", full_name: "Alex Santos", email: "alex@example.co
 function show(path, element) {
   return render(<MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{element}</MemoryRouter>);
 }
-beforeEach(() => jest.clearAllMocks());
+function mockAccount(data) {
+  supabase.rpc.mockReturnValue({ abortSignal: jest.fn().mockResolvedValue({ data }) });
+}
+beforeEach(() => { jest.clearAllMocks(); supabase.auth.getUser.mockResolvedValue({ data: { user: { user_metadata: {} } } }); });
 
 test("user filters reach the server and status changes require confirmation", async () => {
   adminRequest.mockResolvedValue({ items: [user], total: 1 });
@@ -48,27 +51,27 @@ test("class detail shows enrolled students without teacher actions", async () =>
 });
 
 test.each(["student", "teacher"])("%s cannot open admin routes even with admin metadata", async (role) => {
-  supabase.rpc.mockResolvedValue({ data: { ...profile, role } });
+  mockAccount({ ...profile, role });
   show("/admin/users", <Routes><Route path="/admin/*" element={<Dashboard adminOnly session={{ user: { id: "u1", user_metadata: { role: "admin" } } }} />} /><Route path="/dashboard" element={<div>Regular workspace</div>} /></Routes>);
   expect(await screen.findByText("Regular workspace")).toBeInTheDocument();
   expect(adminRequest).not.toHaveBeenCalled();
 });
 
 test.each(["student", "teacher"])("active %s still opens their existing workspace", async (role) => {
-  supabase.rpc.mockResolvedValue({ data: { ...profile, role } });
+  mockAccount({ ...profile, role });
   show("/dashboard", <Dashboard session={{ user: { id: "u1" } }} />);
   expect(await screen.findByText(role === "student" ? "Student workspace" : "Teacher workspace")).toBeInTheDocument();
 });
 
 test("inactive account does not render a workspace", async () => {
-  supabase.rpc.mockResolvedValue({ data: { ...profile, account_status: "inactive" } });
+  mockAccount({ ...profile, account_status: "inactive" });
   show("/admin/dashboard", <Dashboard adminOnly session={{ user: { id: "u1" } }} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("inactive");
   expect(adminRequest).not.toHaveBeenCalled();
 });
 
 test("admin entering the regular dashboard is redirected to the admin route", async () => {
-  supabase.rpc.mockResolvedValue({ data: profile });
+  mockAccount(profile);
   show("/dashboard", <Routes><Route path="/dashboard" element={<Dashboard session={{ user: { id: "u1" } }} />} /><Route path="/admin/dashboard" element={<div>Admin destination</div>} /></Routes>);
   expect(await screen.findByText("Admin destination")).toBeInTheDocument();
 });

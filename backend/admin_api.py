@@ -122,7 +122,7 @@ def install_account_guard(app):
         if request.method != "OPTIONS" and protected and not callback:
             try:
                 account = await run_in_threadpool(authenticated_account, request)
-                if account.get("role") == "admin" and not path.startswith("/api/admin/"):
+                if account.get("role") == "admin" and not path.startswith(("/api/admin/", "/api/preferences/")):
                     raise HTTPException(403, "Admin accounts monitor the system and cannot perform classroom operations.")
             except HTTPException as exc:
                 return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)

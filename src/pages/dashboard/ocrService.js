@@ -77,7 +77,10 @@ async function extractTextFromImageJson(file, signal) {
   return buildOcrResult(data);
 }
 
-async function extractTextFromImageStream(file, signal, onProgress) {
+async function extractTextFromImageStream(file, signal, onProgress, local = false) {
+  const endpoint = local
+    ? `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/local-ocr/upload-stream`
+    : OCR_STREAM_ENDPOINT;
   const formData = new FormData();
 
   formData.append("file", file, file.name);
@@ -86,7 +89,7 @@ async function extractTextFromImageStream(file, signal, onProgress) {
 
   try {
     response =
-      await apiFetch(OCR_STREAM_ENDPOINT, {
+      await (local ? fetch : apiFetch)(endpoint, {
         method: "POST",
         body: formData,
         signal,
@@ -99,12 +102,13 @@ async function extractTextFromImageStream(file, signal, onProgress) {
     }
 
     throw new Error(
-      `Could not reach the OCR server at ${OCR_STREAM_ENDPOINT}. Start FastAPI with "uvicorn main:app --reload --port 8000", then try again.`
+      `Could not reach the OCR server at ${endpoint}. Start it with "npm run start:backend", then try again.`
     );
   }
 
   if (!response.ok || !response.body) {
     if (!response.body) {
+      if (local) throw new Error("This browser did not provide a transcription stream. Please retry in a current browser.");
       return extractTextFromImageJson(file, signal);
     }
 
@@ -136,6 +140,7 @@ async function extractTextFromImageStream(file, signal, onProgress) {
 
   let buffer = "";
   let latestResult = buildOcrResult();
+  let completed = false;
 
   const handleEvent = (event) => {
     if (event.type === "error") {
@@ -173,6 +178,7 @@ async function extractTextFromImageStream(file, signal, onProgress) {
     }
 
     if (event.type === "done") {
+      completed = true;
       latestResult = buildOcrResult(event);
       onProgress?.(latestResult);
     }
@@ -210,11 +216,17 @@ async function extractTextFromImageStream(file, signal, onProgress) {
     handleEvent(JSON.parse(buffer.trim()));
   }
 
+  if (!completed) {
+    throw new Error("Transcription stopped before completion. Check that the OCR backend is still running and try again.");
+  }
   return latestResult;
 }
 
 export async function extractTextFromImage(file, options = {}) {
   const controller = new AbortController();
+  const cancel = () => controller.abort();
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (options.signal?.aborted) cancel();
   const timeoutId =
     window.setTimeout(() => controller.abort(), OCR_TIMEOUT_MS);
 
@@ -223,20 +235,22 @@ export async function extractTextFromImage(file, options = {}) {
       return await extractTextFromImageStream(
         file,
         controller.signal,
-        options.onProgress
+        options.onProgress,
+        options.local
       );
     }
 
     return await extractTextFromImageJson(file, controller.signal);
   } finally {
     window.clearTimeout(timeoutId);
+    options.signal?.removeEventListener("abort", cancel);
   }
 }
 
 export async function getOcrEngineInfo() {
   try {
     const backend = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
-    const response = await apiFetch(`${backend}/health`);
+    const response = await fetch(`${backend}/health`);
     if (!response.ok) return null;
     return await response.json();
   } catch {

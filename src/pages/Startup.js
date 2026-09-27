@@ -522,6 +522,7 @@ export default function Startup({ initialAuthModal = null }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <Link to="/transcribe" className="rounded-lg px-3 py-2 text-sm font-semibold text-emerald-600 hover:underline">Transcribe handwriting</Link>
             <button
               type="button"
               onClick={() => setIsDark((current) => !current)}

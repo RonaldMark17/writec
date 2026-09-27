@@ -52,6 +52,23 @@ class CopyleaksService:
         self._lock = threading.Lock()
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0.0
+        self._credit_cache = None
+        self._credit_cache_until = 0.0
+
+    def get_credit_balance(self):
+        """Read account readiness without submitting or charging for a scan."""
+        if time.monotonic() < self._credit_cache_until:
+            return self._credit_cache
+        token = self.get_access_token()
+        response = requests.get(f'{COPYLEAKS_API_BASE}/scans/credits',
+            headers={'Authorization': f'Bearer {token}'}, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        amount = data.get('Amount', data.get('amount'))
+        if not isinstance(amount, (int, float)) or amount < 0:
+            raise ValueError('The provider did not return a valid credit balance.')
+        self._credit_cache, self._credit_cache_until = amount, time.monotonic() + 60
+        return amount
 
     @property
     def email(self) -> str:

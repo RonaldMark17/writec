@@ -13,12 +13,36 @@ import tempfile
 from unittest.mock import patch
 
 
+def error_rates(predicted, reference):
+    """Case-sensitive CER/WER with whitespace normalized across line wraps."""
+    def distance(left, right):
+        previous = list(range(len(right) + 1))
+        for i, a in enumerate(left, 1):
+            current = [i]
+            for j, b in enumerate(right, 1):
+                current.append(min(current[-1] + 1, previous[j] + 1,
+                                   previous[j - 1] + (a != b)))
+            previous = current
+        return previous[-1]
+
+    predicted, reference = ' '.join(predicted.split()), ' '.join(reference.split())
+    if not reference:
+        raise ValueError('Reference transcription must contain text')
+    return {'CER': distance(predicted, reference) / len(reference),
+            'WER': distance(predicted.split(), reference.split()) / len(reference.split())}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('image', type=Path)
     parser.add_argument('--expected-lines', type=int)
+    parser.add_argument('--reference', type=Path, help='UTF-8 ground-truth transcription for CER/WER')
+    parser.add_argument('--output', type=Path, help='Save recognition results and optional metrics as JSON')
     args = parser.parse_args()
     data = args.image.read_bytes()
+    reference = args.reference.read_text(encoding='utf-8-sig') if args.reference else None
+    if reference is not None and not reference.strip():
+        parser.error('Reference transcription must contain text')
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
     # Importing the app loads real models. Disable only unrelated cloud sync;
     # do not run the server lifespan or background submission worker.
@@ -40,8 +64,12 @@ def main():
         assert not result['truncated'], 'OCR was truncated'
         if args.expected_lines is not None:
             assert result['processed_line_count'] == args.expected_lines, 'Unexpected line count'
+        if reference is not None:
+            result['evaluation'] = error_rates(' '.join(result['lines']), reference)
+        if args.output:
+            args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
         print(json.dumps(result, indent=2, ensure_ascii=True))
-        print('Real-model checks passed. Compare the text against the image; this is not an accuracy benchmark.')
+        print('Real-model checks passed. CER/WER require --reference; one image is not a representative benchmark.')
 
 
 if __name__ == '__main__':

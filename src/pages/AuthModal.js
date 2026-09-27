@@ -152,51 +152,72 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
       return;
     }
 
+    if (isLoading) return;
     setIsLoading(true);
+    const normalizedEmail = email.trim().toLowerCase();
+    const duplicateEmailMessage =
+      "This email is already registered. Please sign in or reset your password.";
 
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: {
-          full_name: fullName.trim(),
-          role: role,
-        },
-      },
-    });
-
-    if (error) {
-      setErrorMessage(error.message);
-      setIsLoading(false);
-      return;
-    }
-
-    if (data.session && data.user?.id) {
-      const { error: profileError } = await supabase
-        .from("userTable")
-        .upsert([
-          {
-            id: data.user.id,
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          data: {
             full_name: fullName.trim(),
-            email: email.trim(),
-            role: role,
+            role,
           },
-        ]);
+        },
+      });
 
-      if (profileError) {
-        setErrorMessage(profileError.message);
-        setIsLoading(false);
+      if (error) {
+        const isDuplicate =
+          ["user_already_exists", "email_exists"].includes(error.code) ||
+          /already (registered|exists)/i.test(error.message || "");
+        setErrorMessage(isDuplicate ? duplicateEmailMessage : error.message);
         return;
       }
 
-      setIsLoading(false);
-      if (onClose) onClose();
-      navigate("/dashboard");
-      return;
-    }
+      // With email confirmation enabled, Supabase can conceal an existing
+      // account behind a successful response containing no identities.
+      if (Array.isArray(data?.user?.identities) && data.user.identities.length === 0) {
+        setErrorMessage(duplicateEmailMessage);
+        return;
+      }
 
-    setSuccessMessage("Verification email sent! Check your inbox to confirm your account.");
-    setIsLoading(false);
+      if (!data?.user?.id) {
+        setErrorMessage("Registration could not be completed. Please try again.");
+        return;
+      }
+
+      if (data.session) {
+        const { error: profileError } = await supabase
+          .from("userTable")
+          .upsert([
+            {
+              id: data.user.id,
+              full_name: fullName.trim(),
+              email: normalizedEmail,
+              role,
+            },
+          ]);
+
+        if (profileError) {
+          setErrorMessage(profileError.message);
+          return;
+        }
+
+        if (onClose) onClose();
+        navigate("/dashboard");
+        return;
+      }
+
+      setSuccessMessage("Verification email sent! Check your inbox to confirm your account.");
+    } catch (error) {
+      setErrorMessage("Registration could not be completed. Please check your connection and try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

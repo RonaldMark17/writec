@@ -70,6 +70,24 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
 # WriteCheck
 
+## Run YOLO–TrOCR locally
+
+Run `npm start`, then open `http://localhost:3000/transcribe` to upload a handwritten
+image and see the transcription arrive line by line. This standalone preview does
+not require Supabase login or call the plagiarism API. Classroom routes continue
+to require authentication.
+
+Enable the preview in `backend/.env` with `LOCAL_OCR_ENABLED=1`. The preview endpoint
+accepts only loopback clients and local browser origins; it is disabled by default.
+Use `localhost` on the same computer as the backend. Both model paths must point to
+the installed YOLO weights and TrOCR model folder.
+
+For this two-core CPU machine, `OCR_BATCH_SIZE=2` and `TORCH_THREADS=2` reduce memory
+pressure and show progress after each line. A full page can still take several
+minutes on CPU. Keep the page upright and well lit, and review the recognized text.
+Adjacent YOLO lines are kept separate by default. `OCR_JOIN_SPLIT_LINES=1` enables
+the experimental repair heuristic, which can incorrectly merge ruled-paper lines.
+
 ## Profile editing and password recovery
 
 - Run section 7 of `supabase_schema.sql` in Supabase SQL Editor to install `update_my_profile`. This function edits only the signed-in user's full name; email and role remain read-only in the profile form.

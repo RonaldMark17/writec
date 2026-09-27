@@ -27,6 +27,7 @@ yarn-error.log*
 /backend/uploads/
 /backend/__pycache__/
 /backend/*.log
+/backend/notifications.db*
 /backend/models/
 *.pt
 *.safetensors

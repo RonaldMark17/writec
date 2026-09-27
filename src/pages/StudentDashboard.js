@@ -1,3 +1,6 @@
+import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
+import useSubmissionTranscription from "./dashboard/useSubmissionTranscription";
+import SubmissionTranscription from "./dashboard/SubmissionTranscription";
 import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
 import { apiFetch } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
@@ -35,7 +38,6 @@ import {
   getTeacherAvatarTheme,
 } from "./dashboard/shared";
 import {
-  ACCEPTED_CHECK_FILE_TYPES,
   formatFileSize,
   getFileKind,
 } from "./dashboard/plagiarismScan";
@@ -122,6 +124,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const [submissionFile, setSubmissionFile] =
     useState(null);
+  const transcription = useSubmissionTranscription(submissionFile, submissionDraft.mode);
+  const reviewedText = submissionDraft.mode === "text" ? submissionDraft.text : transcription.text;
+  const canSubmitText = submissionDraft.mode === "text"
+    ? Boolean(submissionDraft.text.trim())
+    : transcription.status === "ready" && Boolean(transcription.text.trim());
 
   const [filePreview, setFilePreview] =
     useState("");
@@ -230,12 +237,21 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
-    let { data: classroomRows, error: classroomError } =
-      await supabase
+    let [
+      { data: classroomRows, error: classroomError },
+      { data: assignmentRows, error: assignmentError },
+    ] = await Promise.all([
+      supabase
         .from(CLASSROOM_TABLE)
         .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section, teacher_name")
         .in("id", classroomIds)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false }),
+      supabase
+        .from(ASSIGNMENT_TABLE)
+        .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date, accept_late_submissions")
+        .in("classroom_id", classroomIds)
+        .order("created_at", { ascending: false }),
+    ]);
 
     if (classroomError && (classroomError.message?.includes("teacher_name") || classroomError.code === "42703" || classroomError.code === "PGRST204")) {
       const fallback = await supabase
@@ -253,12 +269,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
-    let { data: assignmentRows, error: assignmentError } =
-      await supabase
-        .from(ASSIGNMENT_TABLE)
-        .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date, accept_late_submissions")
-        .in("classroom_id", classroomIds)
-        .order("created_at", { ascending: false });
+    // Opening the classroom list does not need to wait for every essay report.
+    setClassrooms((classroomRows ?? []).map((classroom, index) => normalizeClassroom(classroom, index)));
+    setIsLoading(false);
+
+
 
     if (assignmentError && (assignmentError.message?.includes("accept_late_submissions") || assignmentError.code === "42703" || assignmentError.code === "PGRST204")) {
       const fallback = await supabase
@@ -416,7 +431,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           feedback: submission.returned_at ? (submission.feedback ?? "") : "",
           transcribedText: submission.returned_at ? (submission.transcribed_text ?? "") : "",
           scanResult: submission.returned_at ? (submission.scan_result ?? null) : null,
-          processingState: submission.processing_state || "ready",
+          processingState: submission.processing_state || (submission.scan_result ? "ready" : "submitted"),
           processingError: submission.processing_error || null,
         };
       });
@@ -448,17 +463,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     }
   }, [profile?.id, loadStudentData]);
 
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.id) {
-        loadStudentData();
-      }
-    });
 
-    return () => subscription?.unsubscribe?.();
-  }, [loadStudentData]);
 
   useEffect(() => {
     if (!submissionFile || !submissionFile.type?.startsWith("image/")) {
@@ -658,6 +663,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const handleSubmitAssignment = async (event) => {
     event.preventDefault();
+    if (isSubmittingEssay) return;
     setErrorMessage("");
     setSuccessMessage("");
 
@@ -677,6 +683,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
     if (!submissionDraft.mode) {
       setErrorMessage("Choose a submission type first.");
+      return;
+    }
+
+    if (!canSubmitText) {
+      setErrorMessage("Wait for transcription to finish and review the essay text before submitting.");
       return;
     }
 
@@ -711,6 +722,14 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
+    if (uploadFile.size === 0 || uploadFile.size > 25 * 1024 * 1024) {
+      setErrorMessage("Choose a nonempty file up to 25 MB.");
+      return;
+    }
+    if (!/\.(png|jpe?g|webp|bmp|tiff?|pdf|docx|txt|md|csv|json)$/i.test(uploadFile.name)) {
+      setErrorMessage("Use an image, PDF, DOCX, TXT, MD, CSV, or JSON file. Convert DOC/RTF to DOCX or PDF first.");
+      return;
+    }
     setIsSubmittingEssay(true);
 
     const safeFileName =
@@ -765,17 +784,25 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         }
       }
 
-      const submissionId = crypto.randomUUID();
-      const { data: savedSubmission, error: submissionError } = await supabase.rpc("submit_assignment", {
-        submission_key: submissionId,
-        assignment_key: String(selectedAssignment.id),
-        title: essayTitle,
-        upload_path: uploadedFileUrl,
-      });
+      let savedSubmission, submissionError;
+      try {
+        const response = await apiFetch(`${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/api/submissions/submit`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignment_id: String(selectedAssignment.id), title: essayTitle,
+            file_url: uploadedFileUrl, text: reviewedText.trim() }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not save the submission.");
+        savedSubmission = result;
+      } catch (error) { submissionError = error; }
 
       // A lost response can follow a committed insert. Confirm using safe metadata.
-      const { data: confirmedRows, error: confirmationError } = await supabase.rpc("accessible_submissions");
-      const confirmed = !confirmationError && (confirmedRows || []).some((row) => String(row.id) === String(savedSubmission?.id || submissionId));
+      let confirmed = Boolean(savedSubmission?.id);
+      if (!confirmed) {
+        const { data: confirmedRows, error: confirmationError } = await supabase.rpc("accessible_submissions");
+        confirmed = !confirmationError && (confirmedRows || []).some((row) =>
+          String(row.assignment_id) === String(selectedAssignment.id) && String(row.student_id) === String(profile.id));
+      }
       if (!confirmed) {
         if (submissionError?.code === "23505") {
           setErrorMessage("You already submitted this assignment.");
@@ -787,10 +814,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         return;
       }
 
-      setSuccessMessage(savedSubmission?.already_submitted ? "This assignment was already saved. Your existing submission is available below." : "Assignment submitted and queued for processing. Results remain private until your teacher returns them.");
+      const savedMessage = savedSubmission?.already_submitted ? "This assignment was already saved. Your existing submission is available below." : "Your original file and essay text are saved. The API check is queued, and your teacher can view your work now.";
       resetSubmissionDraft();
       setActivePage("submissions");
       await loadStudentData();
+      setSuccessMessage(savedMessage);
     } catch (error) {
       setErrorMessage(error.message || "Could not submit assignment.");
     } finally {
@@ -1205,6 +1233,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         {assignment.submitted ? (
                           <button
                             type="button"
+                            disabled={isSubmittingEssay}
                             onClick={() =>
                               openSubmissionFile(
                                 assignment.submission?.file_url || assignment.submission?.fileUrl,
@@ -1253,6 +1282,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           <input
                             type="text"
                             value={submissionDraft.essayTitle}
+                            disabled={isSubmittingEssay}
                             onChange={(event) =>
                               setSubmissionDraft((currentDraft) => ({
                                 ...currentDraft,
@@ -1273,6 +1303,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                               <button
                                 key={id}
                                 type="button"
+                                disabled={isSubmittingEssay}
                                 onClick={() => handleSubmissionModeChange(id)}
                                 className={
                                   isActive
@@ -1328,10 +1359,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                 )}
                                 <input
                                   type="file"
+                                  disabled={isSubmittingEssay}
                                   accept={
                                     submissionDraft.mode === "picture"
                                       ? "image/png,image/jpeg,image/jpg,image/webp"
-                                      : ACCEPTED_CHECK_FILE_TYPES
+                                      : ".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.docx,.txt,.md,.csv,.json"
                                   }
                                   onChange={(event) =>
                                     setSubmissionFile(event.target.files?.[0] ?? null)
@@ -1340,6 +1372,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                 />
                               </label>
 
+                              {submissionFile && submissionDraft.mode === "file" && <SubmissionFilePreview file={submissionFile} />}
+                              {submissionFile && <SubmissionTranscription transcription={transcription} disabled={isSubmittingEssay} />}
                               {submissionFile && (
                                 <div className="mt-5 rounded-lg border border-gray-200 bg-white">
                                   <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
@@ -1371,6 +1405,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                               </span>
                               <textarea
                                 value={submissionDraft.text}
+                                disabled={isSubmittingEssay}
                                 onChange={(event) =>
                                   setSubmissionDraft((currentDraft) => ({
                                     ...currentDraft,
@@ -1400,11 +1435,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
                         <button
                           type="submit"
-                          disabled={isSubmittingEssay}
+                          disabled={isSubmittingEssay || !canSubmitText}
                           className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-base font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                         >
                           <UploadIcon className="h-5 w-5" />
-                          {isSubmittingEssay ? "Submitting..." : "Submit assignment"}
+                          {isSubmittingEssay ? "Saving your work..." : transcription.status === "processing" && submissionDraft.mode !== "text" ? "Transcribing…" : "Submit assignment"}
                         </button>
                       </form>
                     )}
@@ -1830,6 +1865,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   )}
                 </div>
 
+                <SubmissionFilePreview fileUrl={viewingSubmission.fileUrl} />
                 {/* Plagiarism Detection Result */}
                 {viewingSubmission.scanResult ? (() => {
                   const sr = viewingSubmission.scanResult;

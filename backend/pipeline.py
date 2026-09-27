@@ -4,7 +4,7 @@ WriteCheck OCR Pipeline: YOLO Line Segmentation + Fine-Tuned TrOCR
 Exact implementation matching high-accuracy 'New folder (19)' reference:
 - YOLO Line Detection with iou=0.40
 - Vertical centroid sorting
-- Duplicate suppression and ink-supported repair of split line detections
+- Duplicate suppression with optional repair of split line detections
 - Neighbor-bounded adaptive vertical padding (safe_pad_t, safe_pad_b)
 - CLAHE contrast normalization on every crop
 - Tuned TrOCR generation (repetition_penalty=1.2, no_repeat_ngram_size=3, max_new_tokens=64)
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from ocr_regions import join_split_lines
+from ocr_regions import prepare_line_boxes, deskew_and_clean_image
 from PIL import Image, ImageOps
 import torch
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
@@ -157,45 +157,6 @@ def calculate_metrics(hypothesis_text, reference_text):
     }
 
 
-def deskew_and_clean_image(raw_img: Image.Image) -> Image.Image:
-    """Detects paper tilt and automatically deskews the photo."""
-    try:
-        img_np = np.array(raw_img)
-        if len(img_np.shape) == 2:
-            gray = img_np
-        else:
-            gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-
-        thresh = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 15
-        )
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 3))
-        dilated = cv2.dilate(thresh, kernel, iterations=1)
-        contours, _ = cv2.findContours(dilated, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
-        angles = []
-        for c in contours:
-            if cv2.contourArea(c) < 120:
-                continue
-            rect = cv2.minAreaRect(c)
-            angle = rect[-1]
-            if angle < -45:
-                angle = 90 + angle
-            elif angle > 45:
-                angle = angle - 90
-            if abs(angle) <= 12.0:
-                angles.append(angle)
-
-        if len(angles) >= 6:
-            median_angle = float(np.median(angles))
-            if abs(median_angle) >= 0.75:
-                return raw_img.rotate(-median_angle, resample=Image.BILINEAR, expand=False)
-    except Exception as exc:
-        print(f"[pipeline] deskew notice: {exc}", flush=True)
-
-    return raw_img
-
-
 def preprocess_crop_clahe(crop_pil):
     """Enhance stroke contrast against yellow/ruled backgrounds using CLAHE."""
     img_np = np.array(crop_pil)
@@ -215,7 +176,7 @@ def extract_adaptive_line_crops(
     """
     Adaptive line extraction exactly matching New folder (19):
     1. Centroid Y sorting.
-    2. Duplicate suppression followed by ink-supported split-line repair.
+    2. Duplicate suppression with opt-in split-line repair.
     3. Safe vertical padding that cannot bleed into neighboring lines.
     4. CLAHE contrast enhancement.
     """
@@ -238,25 +199,9 @@ def extract_adaptive_line_crops(
     # Sort strictly by vertical centroid
     parsed_boxes.sort(key=lambda b: b["centroid_y"])
 
-    # Overlap filter
-    filtered_boxes = []
-    for b in parsed_boxes:
-        if not filtered_boxes:
-            filtered_boxes.append(b)
-            continue
-        prev = filtered_boxes[-1]
-        overlap_y1 = max(prev["y1"], b["y1"])
-        overlap_y2 = min(prev["y2"], b["y2"])
-        overlap_h = max(0, overlap_y2 - overlap_y1)
-        min_h = min(prev["height"], b["height"])
-
-        if min_h > 0 and (overlap_h / min_h) > 0.65:
-            if b["conf"] > prev["conf"]:
-                filtered_boxes[-1] = b
-        else:
-            filtered_boxes.append(b)
-
-    filtered_boxes = join_split_lines(raw_img, filtered_boxes)
+    filtered_boxes = prepare_line_boxes(
+        raw_img, parsed_boxes, repair_split_lines=os.getenv("OCR_JOIN_SPLIT_LINES", "0") == "1"
+    )
     crops = []
     num_boxes = len(filtered_boxes)
 

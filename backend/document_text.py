@@ -29,9 +29,18 @@ def extract_document(data, filename, image_ocr):
         parts = []
         for page in reader.pages:
             content = (page.extract_text() or '').strip()
-            if not content:
-                # Image-only PDF pages need OCR; never interpret PDF binary as text.
-                content = '\n'.join(image_ocr(img.data, img.name) for img in page.images)
+            # Mixed pages can contain a typed heading and a handwritten essay.
+            # Extract both; never treat a nonempty text layer as proof that the
+            # entire page was read. Preserve image order supplied by pypdf.
+            page_parts = [content] if content else []
+            seen = {' '.join(content.split()).casefold()} if content else set()
+            for img in page.images:
+                recognized = (image_ocr(img.data, img.name) or '').strip()
+                normalized = ' '.join(recognized.split()).casefold()
+                if recognized and normalized not in seen:
+                    page_parts.append(recognized)
+                    seen.add(normalized)
+            content = '\n'.join(page_parts)
             if not content.strip():
                 raise ValueError('A PDF page could not be read. Supply a readable document or corrected transcription.')
             parts.append(content)

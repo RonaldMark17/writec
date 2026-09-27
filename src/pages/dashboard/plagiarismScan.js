@@ -2,7 +2,7 @@ import { apiFetch } from "../../apiFetch";
 import { extractTextFromImage } from "./ocrService";
 
 export const ACCEPTED_CHECK_FILE_TYPES =
-  "image/png,image/jpeg,image/jpg,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/json,.txt,.md,.csv,.json,.rtf,.pdf,.doc,.docx";
+  "image/png,image/jpeg,image/jpg,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/json,.txt,.md,.csv,.json,.pdf,.docx";
 
 const readableExtensions = [
   ".txt",
@@ -128,6 +128,20 @@ export async function readTextFromFiles(files = [], options = {}) {
         textBlocks.push(`Image: ${file.name}\n${imageText}`);
       }
 
+      continue;
+    }
+
+    if (/\.(pdf|docx)$/i.test(file.name)) {
+      const form = new FormData();
+      form.append("file", file);
+      const backend = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const response = await apiFetch(`${backend}/api/documents/extract`, { method: "POST", body: form });
+      const result = await response.json();
+      if (!response.ok || !result.text?.trim()) {
+        throw new Error(typeof result.detail === "string" ? result.detail : "The document could not be read.");
+      }
+      readableFiles.push(file);
+      textBlocks.push(result.text.trim());
       continue;
     }
 

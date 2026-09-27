@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
+import { profilePreferences } from "../../profilePreferences";
+import { apiFetch } from "../../apiFetch";
 
 export function ProfileIcon({ className = "h-10 w-10" }) {
   return (
@@ -93,30 +95,39 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
   const dialogRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Load saved local preferences
-  const savedPrefs = (() => {
-    if (!profile?.id || typeof window === "undefined") return {};
-    try {
-      const stored = localStorage.getItem(`writecheck_profile_prefs_${profile.id}`);
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  })();
+  const savedPrefs = profilePreferences(profile);
 
   const [activeTab, setActiveTab] = useState("profile");
   const [name, setName] = useState(profile?.full_name || "");
   const [academicTitle, setAcademicTitle] = useState(savedPrefs.academicTitle || (profile?.full_name?.startsWith("Prof") ? "Professor" : profile?.full_name?.startsWith("Dr") ? "Doctor" : ""));
-  const [institution, setInstitution] = useState(savedPrefs.institution || (profile?.role === "teacher" ? "Department of Academic Integrity" : ""));
-  const [department, setDepartment] = useState(savedPrefs.department || (profile?.role === "teacher" ? "Language Arts & Writing" : ""));
+  const [institution, setInstitution] = useState(savedPrefs.institution || "");
+  const [department, setDepartment] = useState(savedPrefs.department || "");
   const [bio, setBio] = useState(savedPrefs.bio || "");
   const [avatarColor, setAvatarColor] = useState(savedPrefs.avatarColor || "emerald");
   const [avatarUrl, setAvatarUrl] = useState(savedPrefs.avatarUrl || profile?.avatarUrl || "");
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
   const [plagiarismSensitivity, setPlagiarismSensitivity] = useState(savedPrefs.plagiarismSensitivity || "standard");
   const [peerCrossCheck, setPeerCrossCheck] = useState(savedPrefs.peerCrossCheck ?? true);
-  const [notifyOnSubmissions, setNotifyOnSubmissions] = useState(savedPrefs.notifyOnSubmissions ?? true);
+  const [notifyOnSubmissions, setNotifyOnSubmissions] = useState(savedPrefs.notifyOnSubmissions ?? false);
   const [weeklyDigest, setWeeklyDigest] = useState(savedPrefs.weeklyDigest ?? false);
+  const [services, setServices] = useState(null);
+  const [serviceError, setServiceError] = useState("");
+
+  useEffect(() => {
+    if (activeTab !== "preferences") return;
+    setServices(null);
+    setServiceError("");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => { setServiceError("Service status timed out."); controller.abort(); }, 12000);
+    apiFetch(`${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}/api/preferences/services`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Service status unavailable.");
+        const result = await response.json();
+        if (!controller.signal.aborted) { setServices(result); setServiceError(""); }
+      }).catch(() => { if (!controller.signal.aborted) setServiceError("Service status unavailable."); })
+      .finally(() => clearTimeout(timeout));
+    return () => { controller.abort(); clearTimeout(timeout); };
+  }, [activeTab]);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -256,24 +267,17 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
         weeklyDigest,
       };
 
+      const { error: preferencesError } = await supabase.auth.updateUser({
+        data: { writecheck_preferences: updatedPrefs, avatar_url: avatarUrl, avatar_color: avatarColor },
+      });
+      if (preferencesError) throw new Error(`Name saved, but preferences were not saved: ${preferencesError.message}`);
+
       if (profile?.id && typeof window !== "undefined") {
         try {
           localStorage.setItem(`writecheck_profile_prefs_${profile.id}`, JSON.stringify(updatedPrefs));
         } catch {
           // ignore
         }
-      }
-
-      // Best effort sync with Supabase Auth metadata
-      try {
-        await supabase.auth.updateUser({
-          data: {
-            avatar_url: avatarUrl,
-            avatar_color: avatarColor,
-          },
-        });
-      } catch {
-        // non-fatal
       }
 
       window.dispatchEvent(new CustomEvent("writecheck:profile_updated", { detail: { profileId: profile?.id, ...updatedPrefs } }));
@@ -682,7 +686,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-2 py-0.5 text-[10px] font-bold text-[#137333]">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#137333] animate-pulse" /> Connected
+                      {services?.copyleaks || serviceError || "Checking status…"}
                     </span>
                   </div>
 
@@ -692,14 +696,17 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                     </label>
                     <select
                       id="plagiarism-sensitivity"
+                      disabled={profile?.role !== "teacher"}
                       value={plagiarismSensitivity}
                       onChange={(e) => setPlagiarismSensitivity(e.target.value)}
                       className="h-9 w-full rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs text-[#202124] outline-none focus:border-[#137333]"
                     >
                       <option value="standard">Standard (10% similarity alert — Recommended)</option>
-                      <option value="strict">Strict (5% similarity alert — Flags minor paraphrases)</option>
-                      <option value="permissive">Permissive (20% similarity alert — Verbatim focus)</option>
+                      <option value="strict">Strict (5% similarity alert)</option>
+                      <option value="permissive">Permissive (20% similarity alert)</option>
                     </select>
+                    <p className="mt-2 text-[11px] text-[#5f6368]">Applies to new automatic submission checks. Changes the review alert threshold, not the provider's similarity percentage. Saved checks retain their original settings.</p>
+                    {profile?.role !== "teacher" && <p className="mt-2 text-xs">The classroom teacher controls submission checks and email notifications.</p>}
                   </div>
                 </div>
 
@@ -717,7 +724,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                     </div>
                   </div>
                   <span className="rounded bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-900">
-                    Active
+                    {services?.ocr || serviceError || "Checking status…"}
                   </span>
                 </div>
 
@@ -731,6 +738,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                     <input
                       type="checkbox"
                       checked={peerCrossCheck}
+                      disabled={profile?.role !== "teacher"}
                       onChange={(e) => setPeerCrossCheck(e.target.checked)}
                       className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
                     />
@@ -744,6 +752,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                     <input
                       type="checkbox"
                       checked={notifyOnSubmissions}
+                      disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
                       onChange={(e) => setNotifyOnSubmissions(e.target.checked)}
                       className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
                     />
@@ -751,16 +760,18 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
 
                   <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
                     <div>
-                      <p className="text-xs font-semibold text-[#202124]">Weekly Integrity Digest</p>
-                      <p className="text-[11px] text-[#5f6368]">Receive a weekly summary report of scan scores</p>
+                      <p className="text-xs font-semibold text-[#202124]">Weekly Submission Digest</p>
+                      <p className="text-[11px] text-[#5f6368]">Receive a submission-count summary on Mondays (UTC)</p>
                     </div>
                     <input
                       type="checkbox"
                       checked={weeklyDigest}
+                      disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
                       onChange={(e) => setWeeklyDigest(e.target.checked)}
                       className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
                     />
                   </label>
+                  <p className="text-xs text-[#5f6368]">{services?.notifications?.message || serviceError || "Checking email availability…"}</p>
                 </div>
               </div>
             )}

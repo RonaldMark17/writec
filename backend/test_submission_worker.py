@@ -67,6 +67,43 @@ class WorkerTests(unittest.TestCase):
         self.job = {'submission_id': 's', 'id': 'j', 'lease': 'lease', 'checkpoint': {'text': 'Persisted OCR'}}
         self.worker.rpc = Mock(return_value=True)
 
+    @patch('submission_worker.storage_download')
+    @patch('submission_worker.supabase_request', return_value=[{'id': 's', 'assignment_id': 'a', 'transcribed_text': 'Reviewed student transcription'}])
+    def test_saved_student_text_is_sent_to_checker_without_running_ocr_again(self, db, download):
+        self.job['checkpoint'] = {}
+        self.worker.process(self.job)
+        download.assert_not_called()
+        self.worker.image_ocr.assert_not_called()
+        self.assertEqual(self.checker.call_args.args[2], 'Reviewed student transcription')
+        self.assertEqual(self.worker.rpc.call_args.args[1]['result_text'], 'Reviewed student transcription')
+
+    @patch('submission_worker.supabase_request', return_value=[{'id': 's', 'transcribed_text': 'Saved original text'}])
+    def test_teacher_corrected_text_takes_priority_over_saved_student_text(self, db):
+        self.job['checkpoint'] = {}
+        self.job['input_text'] = 'Teacher corrected text'
+        self.worker.process(self.job)
+        self.assertEqual(self.checker.call_args.args[2], 'Teacher corrected text')
+
+    @patch('submission_worker.storage_download', return_value=b'Uploaded student essay')
+    @patch('submission_worker.supabase_request', return_value=[{'id': 's', 'assignment_id': 'a', 'file_url': 'student/assignment/essay.txt'}])
+    def test_new_text_submission_automatically_checks_and_saves(self, db, download):
+        self.job['checkpoint'] = {}
+        self.worker.process(self.job)
+        self.worker.image_ocr.assert_not_called()
+        self.assertEqual(self.checker.call_args.args[2], 'Uploaded student essay')
+        self.assertEqual(self.worker.rpc.call_args.args[0], 'finish_submission_job')
+        self.assertEqual(self.worker.rpc.call_args.args[1]['result_scan'], {'score': 20})
+
+    @patch('submission_worker.storage_download', return_value=b'handwritten-image')
+    @patch('submission_worker.supabase_request', return_value=[{'id': 's', 'assignment_id': 'a', 'file_url': 'student/assignment/essay.jpg'}])
+    def test_new_image_submission_automatically_runs_ocr_then_check(self, db, download):
+        self.job['checkpoint'] = {}
+        self.worker.image_ocr.return_value = 'Handwritten essay transcription'
+        self.worker.process(self.job)
+        self.worker.image_ocr.assert_called_once_with(b'handwritten-image', 'student/assignment/essay.jpg')
+        self.assertEqual(self.checker.call_args.args[2], 'Handwritten essay transcription')
+        self.assertEqual(self.worker.rpc.call_args.args[1]['result_text'], 'Handwritten essay transcription')
+
     @patch('submission_worker.supabase_request', return_value=[{'id': 's', 'assignment_id': 'a'}])
     def test_restart_reuses_checkpoint_and_confirms_finish(self, db):
         self.worker.process(self.job)

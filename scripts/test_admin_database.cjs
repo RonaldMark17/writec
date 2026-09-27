@@ -236,6 +236,28 @@ async function main() {
     const corrected = await rpc('SELECT public.claim_submission_job() AS result');
     assert.notEqual(corrected.id, firstJob.id);
     assert.equal(corrected.input_text, 'Corrected text');
+    // Reviewed student text is committed with the original file before the API
+    // worker can claim the transactionally enqueued job.
+    await db.exec('RESET ROLE; GRANT SELECT,INSERT ON public."submissionTable" TO service_role');
+    await asWorker();
+    const reviewedId = '00000000-0000-0000-0000-000000000014';
+    await db.query('INSERT INTO public."submissionTable"(id,student_id,assignment_id,classroom_id,essay_title,file_url,transcribed_text,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [reviewedId,student,queueAssignment,classId,'Reviewed essay',`${student}/${queueAssignment}/reviewed.jpg`,'Student reviewed text','submitted']);
+    const reviewedJob = await rpc('SELECT public.claim_submission_job() AS result');
+    assert.equal(reviewedJob.submission_id, reviewedId);
+    const savedText = (await db.query('SELECT transcribed_text FROM public."submissionTable" WHERE id=$1',[reviewedId])).rows[0];
+    assert.equal(savedText.transcribed_text, 'Student reviewed text');
+    await asUser(teacher);
+    let teacherPreview = (await rpc('SELECT public.list_submission_results() AS result')).find(row => row.id === reviewedId);
+    assert.equal(teacherPreview.transcribed_text, 'Student reviewed text');
+    assert.equal(teacherPreview.file_url, `${student}/${queueAssignment}/reviewed.jpg`);
+    assert.equal(teacherPreview.scan_result, null);
+    await asWorker();
+    await rpc('SELECT public.finish_submission_job($1,$2,NULL,NULL,$3) AS result', [reviewedId,reviewedJob.lease,'API unavailable']);
+    await asUser(teacher);
+    teacherPreview = (await rpc('SELECT public.list_submission_results() AS result')).find(row => row.id === reviewedId);
+    assert.equal(teacherPreview.transcribed_text, 'Student reviewed text');
+    assert.equal(teacherPreview.scan_result, null);
     await db.exec("RESET ROLE; SET ROLE anon; SELECT set_config('request.jwt.claim.sub','',false)");
     await assert.rejects(() => db.query("SELECT public.admin_read('dashboard')"), /permission denied/);
     console.log('Database integration checks passed: RPCs, RLS, private results, return controls, atomic submission queue, duplicate retries, lease recovery, stale worker rejection, and repeat migrations.');

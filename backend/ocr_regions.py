@@ -6,9 +6,32 @@ from PIL import Image
 
 def choose_transcript(original, enhanced, original_score, enhanced_score):
     """Do not reward a shorter candidate for omitting difficult words."""
-    if len(original.strip()) >= 0.8 * len(enhanced.strip()) and original_score > enhanced_score:
+    original_length, enhanced_length = len(original.strip()), len(enhanced.strip())
+    if original_length < 0.8 * enhanced_length:
+        return 1
+    if enhanced_length < 0.8 * original_length:
         return 0
-    return 1
+    return 0 if original_score >= enhanced_score else 1
+
+
+def suppress_duplicate_boxes(boxes):
+    """Suppress overlapping detections in both axes, retaining distinct regions."""
+    kept = []
+    for candidate in sorted(boxes, key=lambda b: b['conf'], reverse=True):
+        if candidate['x2'] <= candidate['x1'] or candidate['y2'] <= candidate['y1']:
+            continue
+        duplicate = False
+        for other in kept:
+            overlap_x = max(0, min(candidate['x2'], other['x2']) - max(candidate['x1'], other['x1']))
+            overlap_y = max(0, min(candidate['y2'], other['y2']) - max(candidate['y1'], other['y1']))
+            width = min(candidate['x2'] - candidate['x1'], other['x2'] - other['x1'])
+            height = min(candidate['y2'] - candidate['y1'], other['y2'] - other['y1'])
+            if overlap_x / width > 0.65 and overlap_y / height > 0.65:
+                duplicate = True
+                break
+        if not duplicate:
+            kept.append(dict(candidate))
+    return sorted(kept, key=lambda b: (b['centroid_y'], b['x1']))
 
 
 def join_split_lines(image, boxes):
@@ -51,10 +74,16 @@ def join_split_lines(image, boxes):
     return output
 
 
+def prepare_line_boxes(image, boxes, repair_split_lines=False):
+    """Retain individual YOLO lines unless experimental repair is requested."""
+    filtered = suppress_duplicate_boxes(boxes)
+    return join_split_lines(image, filtered) if repair_split_lines else filtered
+
+
 def deskew_and_clean_image(raw_img: Image.Image) -> Image.Image:
     """
     Detects paper tilt and automatically deskews the photo up to +/- 45 degrees.
-    Balances contrast for low-lighting or shadowed phone captures.
+    Expands the canvas to preserve writing near page edges.
     """
     try:
         img_np = np.array(raw_img)
@@ -87,7 +116,7 @@ def deskew_and_clean_image(raw_img: Image.Image) -> Image.Image:
             median_angle = float(np.median(angles))
             if abs(median_angle) >= 0.75:
                 print(f"[ocr] auto-deskew rotating by {median_angle:.2f} deg", flush=True)
-                return raw_img.rotate(median_angle, resample=Image.BILINEAR, expand=False, fillcolor="white")
+                return raw_img.rotate(median_angle, resample=Image.BILINEAR, expand=True, fillcolor="white")
     except Exception as exc:
         print(f"[ocr] deskew notice: {exc}", flush=True)
 

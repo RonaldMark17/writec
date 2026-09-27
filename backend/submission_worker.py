@@ -53,7 +53,7 @@ class SubmissionWorker:
                 raise ValueError('Submission no longer exists.')
             submission = rows[0]
             checkpoint = dict(job.get('checkpoint') or {})
-            text = checkpoint.get('text') or job.get('input_text')
+            text = checkpoint.get('text') or job.get('input_text') or submission.get('transcribed_text')
             if not text:
                 kind, key = file_reference(submission['file_url'])
                 if kind == 'local':
