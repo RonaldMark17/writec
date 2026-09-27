@@ -1,15 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../supabaseClient";
-<<<<<<< HEAD
 import { profilePreferences } from "../../profilePreferences";
-import { apiFetch } from "../../apiFetch";
-
-=======
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { isCustomAvatarUrl, getTeacherAvatarTheme, getAvatarPublicUrl } from "./shared";
 import { Link } from "react-router-dom";
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
 export function ProfileIcon({ className = "h-10 w-10" }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
@@ -108,15 +103,10 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
   const [activeTab, setActiveTab] = useState("profile");
   const [name, setName] = useState(profile?.full_name || "");
   const [academicTitle, setAcademicTitle] = useState(savedPrefs.academicTitle || (profile?.full_name?.startsWith("Prof") ? "Professor" : profile?.full_name?.startsWith("Dr") ? "Doctor" : ""));
-<<<<<<< HEAD
-  const [institution, setInstitution] = useState(savedPrefs.institution || "");
-  const [department, setDepartment] = useState(savedPrefs.department || "");
-=======
   const [gradeLevel, setGradeLevel] = useState(savedPrefs.gradeLevel || "");
   const [courseTrack, setCourseTrack] = useState(savedPrefs.courseTrack || (!isTeacher ? savedPrefs.department || "" : ""));
   const [institution, setInstitution] = useState(savedPrefs.institution || (isTeacher ? "Department of Academic Integrity" : ""));
   const [department, setDepartment] = useState(savedPrefs.department || (isTeacher ? "Language Arts & Writing" : ""));
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
   const [bio, setBio] = useState(savedPrefs.bio || "");
   const defaultTheme = getTeacherAvatarTheme(profile?.id || profile?.full_name || "teacher");
   const [avatarColor, setAvatarColor] = useState(savedPrefs.avatarColor || profile?.avatarColor || defaultTheme.id);
@@ -288,12 +278,6 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
         weeklyDigest,
       };
 
-<<<<<<< HEAD
-      const { error: preferencesError } = await supabase.auth.updateUser({
-        data: { writecheck_preferences: updatedPrefs, avatar_url: avatarUrl, avatar_color: avatarColor },
-      });
-      if (preferencesError) throw new Error(`Name saved, but preferences were not saved: ${preferencesError.message}`);
-=======
       // Publish avatar to server & Supabase Storage so students and rosters can display it
       let publicAvatarUrl = (avatarUrl && !avatarUrl.startsWith("data:")) ? avatarUrl : null;
       if (avatarUrl && avatarUrl.startsWith("data:") && profile?.id) {
@@ -315,7 +299,26 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
           console.warn("Avatar storage upload notice:", avatarErr);
         }
       }
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
+
+      // Best effort sync with Supabase Auth metadata.
+      // CRITICAL: Never store base64 data URLs in Supabase Auth user_metadata.
+      // Supabase serializes user_metadata into the JWT on every session mint.
+      // Base64 images inflate the JWT to >11KB, exceeding web server/reverse proxy
+      // (Nginx/Cloudflare) header buffer limits and causing "400 Bad Request: Request Header Or Cookie Too Large".
+      const safeAvatarUrl = publicAvatarUrl || ((avatarUrl && !avatarUrl.startsWith("data:")) ? avatarUrl : null);
+      const safePrefs = {
+        ...updatedPrefs,
+        avatarUrl: safeAvatarUrl || "",
+      };
+
+      const { error: preferencesError } = await supabase.auth.updateUser({
+        data: {
+          writecheck_preferences: safePrefs,
+          avatar_url: safeAvatarUrl,
+          avatar_color: avatarColor,
+        },
+      });
+      if (preferencesError) throw new Error(`Name saved, but preferences were not saved: ${preferencesError.message}`);
 
       if (profile?.id && typeof window !== "undefined") {
         try {
@@ -324,27 +327,6 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
           // ignore
         }
       }
-
-<<<<<<< HEAD
-=======
-      // Best effort sync with Supabase Auth metadata.
-      // CRITICAL: Never store base64 data URLs in Supabase Auth user_metadata.
-      // Supabase serializes user_metadata into the JWT on every session mint.
-      // Base64 images inflate the JWT to >11KB, exceeding web server/reverse proxy
-      // (Nginx/Cloudflare) header buffer limits and causing "400 Bad Request: Request Header Or Cookie Too Large".
-      try {
-        const safeAvatarUrl = publicAvatarUrl || ((avatarUrl && !avatarUrl.startsWith("data:")) ? avatarUrl : null);
-        await supabase.auth.updateUser({
-          data: {
-            avatar_url: safeAvatarUrl,
-            avatar_color: avatarColor,
-          },
-        });
-      } catch {
-        // non-fatal
-      }
-
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
       window.dispatchEvent(new CustomEvent("writecheck:profile_updated", { detail: { profileId: profile?.id, ...updatedPrefs } }));
 
       if (onSaved) onSaved({ ...profile, full_name: data[0].full_name, ...updatedPrefs });
@@ -840,7 +822,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                           </div>
                         </div>
                         <span className="inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-2 py-0.5 text-[10px] font-bold text-[#137333]">
-                          <span className="h-1.5 w-1.5 rounded-full bg-[#137333] animate-pulse" /> Connected
+                          {services?.copyleaks || serviceError || "Checking status…"}
                         </span>
                       </div>
 
@@ -850,76 +832,19 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                         </label>
                         <select
                           id="plagiarism-sensitivity"
+                          disabled={profile?.role !== "teacher"}
                           value={plagiarismSensitivity}
                           onChange={(e) => setPlagiarismSensitivity(e.target.value)}
                           className="h-9 w-full rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs text-[#202124] outline-none focus:border-[#137333]"
                         >
                           <option value="standard">Standard (10% similarity alert — Recommended)</option>
-                          <option value="strict">Strict (5% similarity alert — Flags minor paraphrases)</option>
-                          <option value="permissive">Permissive (20% similarity alert — Verbatim focus)</option>
+                          <option value="strict">Strict (5% similarity alert)</option>
+                          <option value="permissive">Permissive (20% similarity alert)</option>
                         </select>
+                        <p className="mt-2 text-[11px] text-[#5f6368]">Applies to new automatic submission checks. Changes the review alert threshold, not the provider's similarity percentage. Saved checks retain their original settings.</p>
+                        {profile?.role !== "teacher" && <p className="mt-2 text-xs">The classroom teacher controls submission checks and email notifications.</p>}
                       </div>
                     </div>
-<<<<<<< HEAD
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-2 py-0.5 text-[10px] font-bold text-[#137333]">
-                      {services?.copyleaks || serviceError || "Checking status…"}
-                    </span>
-                  </div>
-
-                  <div>
-                    <label htmlFor="plagiarism-sensitivity" className="block text-[11px] font-semibold text-[#444746] mb-1">
-                      Detection Sensitivity Threshold
-                    </label>
-                    <select
-                      id="plagiarism-sensitivity"
-                      disabled={profile?.role !== "teacher"}
-                      value={plagiarismSensitivity}
-                      onChange={(e) => setPlagiarismSensitivity(e.target.value)}
-                      className="h-9 w-full rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs text-[#202124] outline-none focus:border-[#137333]"
-                    >
-                      <option value="standard">Standard (10% similarity alert — Recommended)</option>
-                      <option value="strict">Strict (5% similarity alert)</option>
-                      <option value="permissive">Permissive (20% similarity alert)</option>
-                    </select>
-                    <p className="mt-2 text-[11px] text-[#5f6368]">Applies to new automatic submission checks. Changes the review alert threshold, not the provider's similarity percentage. Saved checks retain their original settings.</p>
-                    {profile?.role !== "teacher" && <p className="mt-2 text-xs">The classroom teacher controls submission checks and email notifications.</p>}
-                  </div>
-                </div>
-
-                {/* YOLO26x + TrOCR Engine Info */}
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#137333] text-white shadow-2xs">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-[#0d652d]">Handwriting AI OCR</p>
-                      <p className="text-[11px] text-[#137333]">YOLO26x Line Detector + TrOCR Transformer</p>
-                    </div>
-                  </div>
-                  <span className="rounded bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-900">
-                    {services?.ocr || serviceError || "Checking status…"}
-                  </span>
-                </div>
-
-                {/* Toggles */}
-                <div className="space-y-3 pt-1">
-                  <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
-                    <div>
-                      <p className="text-xs font-semibold text-[#202124]">Peer-to-Peer Cross Check</p>
-                      <p className="text-[11px] text-[#5f6368]">Compare student essays against classmates' submissions</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={peerCrossCheck}
-                      disabled={profile?.role !== "teacher"}
-                      onChange={(e) => setPeerCrossCheck(e.target.checked)}
-                      className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
-                    />
-                  </label>
-=======
 
                     {/* YOLO26x + TrOCR Engine Info */}
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 flex items-center justify-between">
@@ -935,7 +860,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                         </div>
                       </div>
                       <span className="rounded bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-900">
-                        Active
+                        {services?.ocr || serviceError || "Checking status…"}
                       </span>
                     </div>
 
@@ -949,6 +874,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                         <input
                           type="checkbox"
                           checked={peerCrossCheck}
+                          disabled={profile?.role !== "teacher"}
                           onChange={(e) => setPeerCrossCheck(e.target.checked)}
                           className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
                         />
@@ -962,51 +888,27 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                         <input
                           type="checkbox"
                           checked={notifyOnSubmissions}
+                          disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
                           onChange={(e) => setNotifyOnSubmissions(e.target.checked)}
                           className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
                         />
                       </label>
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
 
                       <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
                         <div>
-                          <p className="text-xs font-semibold text-[#202124]">Weekly Integrity Digest</p>
-                          <p className="text-[11px] text-[#5f6368]">Receive a weekly summary report of scan scores</p>
+                          <p className="text-xs font-semibold text-[#202124]">Weekly Submission Digest</p>
+                          <p className="text-[11px] text-[#5f6368]">Receive a submission-count summary on Mondays (UTC)</p>
                         </div>
                         <input
                           type="checkbox"
                           checked={weeklyDigest}
+                          disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
                           onChange={(e) => setWeeklyDigest(e.target.checked)}
                           className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
                         />
                       </label>
+                      <p className="text-xs text-[#5f6368]">{services?.notifications?.message || serviceError || "Checking email availability…"}</p>
                     </div>
-<<<<<<< HEAD
-                    <input
-                      type="checkbox"
-                      checked={notifyOnSubmissions}
-                      disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
-                      onChange={(e) => setNotifyOnSubmissions(e.target.checked)}
-                      className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
-                    <div>
-                      <p className="text-xs font-semibold text-[#202124]">Weekly Submission Digest</p>
-                      <p className="text-[11px] text-[#5f6368]">Receive a submission-count summary on Mondays (UTC)</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={weeklyDigest}
-                      disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
-                      onChange={(e) => setWeeklyDigest(e.target.checked)}
-                      className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
-                    />
-                  </label>
-                  <p className="text-xs text-[#5f6368]">{services?.notifications?.message || serviceError || "Checking email availability…"}</p>
-                </div>
-=======
                   </>
                 ) : (
                   <>
@@ -1025,7 +927,11 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                           </div>
                         </div>
                         <span className="inline-flex items-center gap-1 rounded-full bg-[#e6f4ea] px-2 py-0.5 text-[10px] font-bold text-[#137333]">
-                          <span className="h-1.5 w-1.5 rounded-full bg-[#137333] animate-pulse" /> Connected
+                          {services?.copyleaks || serviceError || (
+                            <>
+                              <span className="h-1.5 w-1.5 rounded-full bg-[#137333] animate-pulse" /> Connected
+                            </>
+                          )}
                         </span>
                       </div>
 
@@ -1059,7 +965,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                         </div>
                       </div>
                       <span className="rounded bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-900">
-                        Active
+                        {services?.ocr || serviceError || "Active"}
                       </span>
                     </div>
 
@@ -1106,7 +1012,6 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                     </div>
                   </>
                 )}
->>>>>>> 619429dd5297a5135620ece977f2fc62ed704a75
               </div>
             )}
 
