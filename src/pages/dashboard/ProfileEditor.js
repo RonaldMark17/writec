@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../supabaseClient";
+import { passwordRecoveryError } from "../../passwordRecoveryError";
 import { profilePreferences } from "../../profilePreferences";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { isCustomAvatarUrl, getTeacherAvatarTheme, getAvatarPublicUrl } from "./shared";
@@ -184,7 +185,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
       if (resetError) throw resetError;
       setResetSentMessage(`Password reset link sent to ${profile.email}. Check your inbox.`);
     } catch (err) {
-      setError(err.message || "Could not send reset email. Please try again.");
+      setError(passwordRecoveryError(err, "Could not send reset email. Please try again."));
     } finally {
       setIsSendingReset(false);
     }

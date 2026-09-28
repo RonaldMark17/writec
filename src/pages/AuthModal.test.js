@@ -70,5 +70,18 @@ test("a network failure allows retrying", async () => {
 test("unrelated errors are not reported as duplicate emails", async () => {
   supabase.auth.signUp.mockResolvedValue({ data: null, error: { code: "over_email_send_rate_limit", message: "Too many attempts" } });
   register();
-  expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts");
+  expect(await screen.findByRole("alert")).toHaveTextContent("email sending limit has been reached");
+});
+
+test.each(["{}", "", undefined])("empty server error %j gets a useful fallback", async (message) => {
+  supabase.auth.signUp.mockResolvedValue({ data: null, error: { message } });
+  register();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Registration could not be completed");
+  expect(screen.getByRole("button", { name: "Create Student Account" })).toBeEnabled();
+});
+
+test("email delivery errors explain the verification failure", async () => {
+  supabase.auth.signUp.mockResolvedValue({ data: null, error: { message: "Error sending confirmation email" } });
+  register();
+  expect(await screen.findByRole("alert")).toHaveTextContent("couldn't send your verification email");
 });

@@ -2,6 +2,20 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 
+function registrationError(error) {
+  const message = typeof error?.message === "string" ? error.message.trim() : "";
+  if (error?.code === "over_email_send_rate_limit" || /email rate limit exceeded/i.test(message)) {
+    return "The email sending limit has been reached. Please try again later or contact support.";
+  }
+  if (/error sending (confirmation|verification) email/i.test(message)) {
+    return "We couldn't send your verification email. Please contact support or try again later.";
+  }
+  if (!message || ["{}", "[]", "null", "[object Object]"].includes(message)) {
+    return "Registration could not be completed. Please try again later or contact support.";
+  }
+  return message;
+}
+
 /* ─── SVG Icons ─────────────────────────────────────────────── */
 function EyeIcon({ open, className = "h-5 w-5" }) {
   return open ? (
@@ -174,7 +188,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
         const isDuplicate =
           ["user_already_exists", "email_exists"].includes(error.code) ||
           /already (registered|exists)/i.test(error.message || "");
-        setErrorMessage(isDuplicate ? duplicateEmailMessage : error.message);
+        setErrorMessage(isDuplicate ? duplicateEmailMessage : registrationError(error));
         return;
       }
 

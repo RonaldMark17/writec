@@ -66,6 +66,8 @@ class NotificationTests(unittest.TestCase):
         self.db.side_effect = self.query
 
     def query(self, path, token):
+        if '/assignmentTable?' in path:
+            return []
         if '/submissionTable?' in path:
             return [{'id': 'essay', 'classroom_id': 'class', 'created_at': self.now.isoformat()}]
         if '/classroomTable?' in path:

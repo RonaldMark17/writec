@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../supabaseClient";
+import { passwordRecoveryError } from "../passwordRecoveryError";
 
 /* ─── Google Classroom Chalkboard Icon ─────────────────────── */
 function ClassroomIcon({ className = "h-6 w-6" }) {
@@ -55,7 +56,9 @@ export default function PasswordReset({ mode = "request", session, isAuthLoading
         setMessage("If an account exists for that email, you’ll receive a password reset link. Check your inbox and spam folder.");
       }
     } catch (err) {
-      setError(err.message || "Unable to reset your password. Please try again.");
+      setError(resetting
+        ? err.message || "Unable to reset your password. Please try again."
+        : passwordRecoveryError(err, "Unable to send a password reset email. Please try again."));
     } finally {
       setBusy(false);
     }

@@ -68,6 +68,55 @@ class NotificationWorker:
         db.execute('INSERT INTO receipts VALUES (?,?)', (key, now.isoformat()))
         db.commit()
 
+    def pages(self, path, token):
+        offset = 0
+        while True:
+            page = supabase_request(path + '&limit=500&offset=' + str(offset), token)
+            yield from page
+            if len(page) < 500:
+                return
+            offset += len(page)
+
+    def assignment_notifications(self, db, since, token, now):
+        assignments = self.pages('/rest/v1/assignmentTable?select=id,classroom_id,title,instructions,due_date'
+            + '&created_at=gte.' + quote(since.isoformat(), safe='')
+            + '&order=created_at.asc,id.asc', token)
+        for assignment in assignments:
+            try:
+                cid = quote(str(assignment['classroom_id']), safe='')
+                classes = supabase_request('/rest/v1/classroomTable?id=eq.' + cid
+                    + '&select=classroom_name', token)
+                if not classes:
+                    continue
+                members = self.pages('/rest/v1/classroomMembers?classroom_id=eq.' + cid
+                    + '&select=student_id&order=student_id.asc', token)
+                for member in members:
+                    student = str(member['student_id'])
+                    key = f"assignment:{assignment['id']}:{student}"
+                    if db.execute('SELECT 1 FROM receipts WHERE key=?', (key,)).fetchone():
+                        continue
+                    try:
+                        profile = supabase_request('/rest/v1/userTable?id=eq.' + quote(student, safe='')
+                            + '&select=account_status,role', token)
+                        if not profile or profile[0].get('account_status') != 'active' or profile[0].get('role') != 'student':
+                            continue
+                        user = supabase_request('/auth/v1/admin/users/' + quote(student, safe=''), token)
+                        if not user.get('email') or not user.get('email_confirmed_at'):
+                            continue
+                        title = assignment.get('title') or 'New assignment'
+                        body = (f"A new assignment has been posted in {classes[0].get('classroom_name') or 'your class'}.\n\n"
+                            f"Assignment: {title}\nDue: {assignment.get('due_date') or 'No deadline'}\n\n"
+                            f"{assignment.get('instructions') or ''}\n\nSign in to WriteCheck to view and submit your work.")
+                        app_url = os.getenv('APP_URL', '').strip().rstrip('/')
+                        if app_url:
+                            body += '\n' + app_url
+                        # Keep user-entered titles out of email headers.
+                        self.deliver(db, key, user['email'], 'WriteCheck: new assignment posted', body, now)
+                    except Exception:
+                        log.warning('Assignment notification deferred; delivery will be retried.')
+            except Exception:
+                log.warning('Assignment recipients unavailable; delivery will be retried.')
+
     def tick(self, now=None):
         if not configured():
             return
@@ -80,6 +129,10 @@ class NotificationWorker:
             # Never send a backlog predating dispatcher activation. Retain failed
             # notifications for seven days, retrying once per minute.
             since = max(activated, now - timedelta(days=7))
+            try:
+                self.assignment_notifications(db, since, token, now)
+            except Exception:
+                log.warning('Assignment notifications unavailable; retrying in one minute.')
             rows = []
             offset = 0
             while True:

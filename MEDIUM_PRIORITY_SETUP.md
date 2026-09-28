@@ -54,6 +54,7 @@ SMTP_FROM=<verified sender address>
 SMTP_USER=<SMTP username>
 SMTP_PASSWORD=<SMTP password>
 SMTP_SSL=0
+APP_URL=http://localhost:3000
 # Optional absolute path on persistent disk:
 # NOTIFICATIONS_DB=C:/persistent/writecheck-notifications.db
 ```
@@ -61,6 +62,11 @@ SMTP_SSL=0
 Use `SMTP_SSL=1` and port 465 for implicit TLS; otherwise STARTTLS is required.
 The existing server-only Supabase service key is used. Never put credentials in
 frontend environment variables or commit them. Restart the backend after setup.
+Supabase Auth SMTP only sends authentication emails; it does not configure this
+dispatcher. A Gmail configuration template is in `backend/.env.smtp.example`.
+Copy its settings into `backend/.env`, replacing placeholders with your sender
+and Google App Password; retain your existing Supabase service-role key. Set
+`APP_URL` to your deployed frontend URL for the link included in assignment emails.
 
 Run the dispatcher on **one backend only**. Each teacher then opts in through
 Profile Preferences and saves:
@@ -70,7 +76,16 @@ Profile Preferences and saves:
 - Weekly submission digest: one count summary on Monday UTC for teachers with
   submissions in the previous seven days. It does not invent or email scan scores.
 
-Only active teachers with a confirmed Auth email receive messages. The dispatcher
+New assignments also generate an email for each currently enrolled, active student
+with a confirmed Auth email. These classroom notices are automatic while the
+dispatcher is enabled and do not depend on the teacher's submission-alert preference.
+They include the class, title, instructions, due date, and optional application link.
+Assignment creation is the publication event in the current system; editing an
+assignment does not send another notice. Membership is checked at delivery time,
+so a student joining during the seven-day window may receive a recent assignment.
+Each assignment/student pair has its own persistent delivery receipt.
+
+Only active teachers with a confirmed Auth email receive teacher alerts. The dispatcher
 polls every minute and retries failed deliveries. Persistent SQLite receipts
 prevent normal duplicate delivery across restarts. Keep the receipts file; it is
 ignored by Git. SMTP acceptance and the receipt commit cannot be atomic, so a
@@ -81,6 +96,11 @@ Monday digest is not backfilled later in the week. Emails contain no essay text.
 
 Live SMTP delivery needs a configured sender and a real acceptance test. Unit
 tests use a mocked sender and never send email.
+
+To verify setup, restart the backend with SMTP enabled, then post a new assignment
+in a class with a confirmed student account. Allow a polling interval (60 seconds,
+plus delivery time), check the student's inbox, and confirm the next poll does not
+send a duplicate. Keep the backend running for notifications to be delivered.
 
 ## Mixed-content PDFs
 
