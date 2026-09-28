@@ -20,7 +20,7 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Startup from "./pages/Startup";
 import Transcribe from "./pages/Transcribe";
-import ThemeToggle from "./ThemeToggle";
+import { GlobalThemeToggle as ThemeToggle } from "./ThemeToggle";
 
 function ProtectedDashboard({ session, isAuthLoading, adminOnly = false }) {
   if (isAuthLoading) {

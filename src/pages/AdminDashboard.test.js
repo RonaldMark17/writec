@@ -19,6 +19,16 @@ function mockAccount(data) {
 }
 beforeEach(() => { jest.clearAllMocks(); supabase.auth.getUser.mockResolvedValue({ data: { user: { user_metadata: {} } } }); });
 
+test("admin header toggles and persists the workspace theme", () => {
+  document.documentElement.dataset.theme = "light";
+  show("/admin/profile", <AdminDashboard profile={profile} />);
+  fireEvent.click(screen.getByRole("button", { name: "Switch workspace to dark mode" }));
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(localStorage.getItem("writecheck-theme")).toBe("dark");
+  fireEvent.click(screen.getByRole("button", { name: "Switch workspace to light mode" }));
+  expect(document.documentElement.dataset.theme).toBe("light");
+});
+
 test("user filters reach the server and status changes require confirmation", async () => {
   adminRequest.mockResolvedValue({ items: [user], total: 1 });
   show("/admin/users", <AdminDashboard profile={profile} />);

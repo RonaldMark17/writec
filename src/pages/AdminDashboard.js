@@ -3,6 +3,19 @@ import { Navigate, NavLink, useLocation } from "react-router-dom";
 import { adminRequest } from "../apiFetch";
 import { signOutAndExpireToken } from "../supabaseClient";
 import ProfileEditor, { ProfileIcon } from "./dashboard/ProfileEditor";
+import ThemeToggle from "../ThemeToggle";
+import { downloadAdminCsv } from "../adminCsv";
+
+function AdminIcon({ name }) {
+  const paths = {
+    dashboard: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
+    users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+    classes: "M3 3h18v14H3z M8 21l4-4 4 4 M7 7h10 M7 11h6",
+    "activity-logs": "M9 3H5v18h14V3h-4 M9 2h6v4H9z M8 11h8 M8 15h8",
+    profile: "M20 21v-2a6 6 0 0 0-6-6h-4a6 6 0 0 0-6 6v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+  };
+  return <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+}
 
 const navigation = [["dashboard", "Dashboard"], ["users", "Users"], ["classes", "Classes"], ["activity-logs", "Activity Logs"], ["profile", "Admin Profile"]];
 const control = "rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-100";
@@ -78,11 +91,11 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
     <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
       <header className="sticky top-0 z-20 flex min-h-[56px] sm:min-h-[64px] lg:min-h-[72px] items-center justify-between gap-4 border-b border-[#dadce0] bg-white px-4 sm:px-8">
         <div><span className="text-xl sm:text-2xl font-bold">WriteCheck</span><span className="ml-3 hidden text-sm text-emerald-700 sm:inline">Admin workspace</span></div>
-        <div className="flex items-center gap-2 sm:gap-3"><button className={action} aria-label="Open admin profile" onClick={() => setEditing(true)}>{profile?.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-6 w-6 rounded-full object-cover" /> : <ProfileIcon className="h-5 w-5 sm:h-6 sm:w-6" />}</button><button className={action} onClick={() => signOutAndExpireToken("/login")}>Logout</button></div>
+        <div className="flex items-center gap-2 sm:gap-3"><ThemeToggle inline /><button className={action} aria-label="Open admin profile" onClick={() => setEditing(true)}>{profile?.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-6 w-6 rounded-full object-cover" /> : <ProfileIcon className="h-5 w-5 sm:h-6 sm:w-6" />}</button><button className={action} onClick={() => signOutAndExpireToken("/login")}>Logout</button></div>
       </header>
       <div className="mx-auto flex max-w-[1440px] flex-col gap-6 p-4 sm:p-6 lg:flex-row lg:p-8">
         <aside className="shrink-0 lg:w-52"><nav aria-label="Admin navigation" className="flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-3 lg:flex-col">
-          {navigation.map(([key, label]) => <NavLink key={key} to={`/admin/${key}`} onClick={() => { resetFilters(); setDetail(null); setNotice(""); }} className={({ isActive }) => `rounded-lg px-4 py-3 text-base font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-gray-600 hover:bg-gray-50"}`}>{label}</NavLink>)}
+          {navigation.map(([key, label]) => <NavLink key={key} to={`/admin/${key}`} onClick={() => { resetFilters(); setDetail(null); setNotice(""); }} className={({ isActive }) => `flex items-center gap-3 rounded-lg px-4 py-3 text-base font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-gray-600 hover:bg-gray-50"}`}><AdminIcon name={key} /><span>{label}</span></NavLink>)}
         </nav></aside>
         <main className="min-w-0 flex-1 space-y-6">
           <div className="flex items-center justify-between"><div><p className="text-sm font-semibold text-emerald-700">System administration</p><h1 className="mt-1 text-3xl font-semibold">{navigation.find(([key]) => key === page)?.[1]}</h1></div><button className={action} disabled={loading} onClick={() => setReload(reload + 1)}>Refresh</button></div>
@@ -94,6 +107,10 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
             {page === "users" && <label className="flex flex-col gap-1 text-sm">Status<select value={status} onChange={(e) => { setStatus(e.target.value); setPageNumber(1); }} className={control}><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>}
             {page === "activity-logs" && <label className="flex flex-col gap-1 text-sm">Date (UTC)<input type="date" value={date} onChange={(e) => { setDate(e.target.value); setPageNumber(1); }} className={control} /></label>}
             <button className={`${action} self-end`} onClick={resetFilters}>Clear filters</button>
+            <button className={`${action} self-end`} disabled={loading || !rows.length} onClick={() => {
+              try { downloadAdminCsv(page, rows, pageNumber); setNotice(`Exported ${rows.length} records from page ${pageNumber}.`); }
+              catch { setError("Could not export records. Please try again."); }
+            }}>Export current page (CSV)</button>
           </div>}
           {loading ? <p role="status" className="rounded-xl border bg-white p-8">Loading…</p> : <>
             {page === "dashboard" && data && <>
