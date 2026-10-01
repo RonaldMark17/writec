@@ -23,8 +23,9 @@ test("xlsx round trip retains numeric grades, dates, and literal user text", asy
   const restored = new ExcelJS.Workbook();
   await restored.xlsx.load(await workbook.xlsx.writeBuffer());
   const sheet = restored.getWorksheet("Grades");
-  expect(sheet.getCell("I2").value).toBe(85.5);
-  expect(sheet.getCell("I3").value).toBeNull();
+  expect(sheet.getRow(1).values.slice(1, 5)).toEqual(["Subject", "Assignment", "Student Name", "Grade"]);
+  expect(sheet.getCell("D2").value).toBe(85.5);
+  expect(sheet.getCell("D3").value).toBeNull();
   expect(sheet.getCell("H2").value.toISOString()).toBe("2026-09-01T09:00:00.000Z");
   expect(sheet.getCell("M2").value).toBe('=HYPERLINK("test")');
   expect(sheet.getCell("M2").formula).toBeUndefined();

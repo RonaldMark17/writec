@@ -13,6 +13,8 @@ export default function ClassroomDetail({
   onCopyClassroom,
   onExportCSV,
   onLeaveClassroom,
+  onMemberRemoved,
+  onExportGrades,
 }) {
   const [tab, setTab] = useState("homework");
   const homework = assignments.filter((assignment) => assignment.classroomId === classroom.id);
@@ -25,6 +27,8 @@ export default function ClassroomDetail({
           &larr; Back to classes
         </button>
         <div className="flex items-center gap-2">
+          {onExportGrades && <button type="button" onClick={() => onExportGrades(classroom.id)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Export Excel</button>}
           {onCopyClassroom && (
             <button
               type="button"
@@ -151,7 +155,7 @@ export default function ClassroomDetail({
       {tab === "people" ? (
         <section className="rounded-xl border border-[#dadce0] bg-white p-6" aria-label="Classroom people">
           <h3 className="mb-5 text-lg font-medium text-[#202124]">People</h3>
-          <ClassroomRoster classroomId={classroom.id} teacher={teacher} />
+          <ClassroomRoster classroomId={classroom.id} teacher={teacher} canRemove={Boolean(onMemberRemoved)} onMemberRemoved={onMemberRemoved} />
         </section>
       ) : (
         <section className="space-y-4" aria-label="Classroom homework">
@@ -172,6 +176,7 @@ export default function ClassroomDetail({
               <button type="button" key={assignment.id} onClick={() => onOpenAssignment(assignment)}
                 className="block w-full rounded-xl border border-gray-200 bg-white p-5 text-left hover:border-[#137333] hover:shadow-sm transition">
                 <h4 className="font-medium break-words">{assignment.title}</h4>
+                {assignment.submitted && <span className="mt-2 block text-sm font-medium text-[#137333]">Turned In</span>}
                 <p className="mt-2 text-sm text-gray-500">Due: {formatDateTime(assignment.dueDate)}</p>
                 {assignment.instructions && <p className="mt-2 text-sm text-gray-600 line-clamp-2">{assignment.instructions}</p>}
                 <span className="mt-3 block text-sm font-medium text-[#137333]">Open homework &rarr;</span>

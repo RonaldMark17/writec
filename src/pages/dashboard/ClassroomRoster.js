@@ -33,7 +33,7 @@ function Avatar({ id, name, size = "h-10 w-10", text = "text-sm", avatarUrl = ""
   );
 }
 
-function PersonRow({ id, name, email, badge, badgeColor, avatarUrl, avatarColor }) {
+function PersonRow({ id, name, email, badge, badgeColor, avatarUrl, avatarColor, action }) {
   return (
     <div className="flex items-center gap-3 py-3">
       <Avatar id={id} name={name} avatarUrl={avatarUrl} avatarColor={avatarColor} />
@@ -41,6 +41,7 @@ function PersonRow({ id, name, email, badge, badgeColor, avatarUrl, avatarColor 
         <p className="truncate text-sm font-medium text-[#202124]">{name}</p>
         {email && <p className="truncate text-xs text-[#5f6368]">{email}</p>}
       </div>
+      {action}
       {badge && (
         <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${badgeColor}`}>
           {badge}
@@ -80,11 +81,30 @@ const StudentsIcon = () => (
   </svg>
 );
 
-export default function ClassroomRoster({ classroomId, teacher }) {
+export default function ClassroomRoster({ classroomId, teacher, canRemove = false, onMemberRemoved }) {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const [removing, setRemoving] = useState(null);
+  const [removeError, setRemoveError] = useState("");
+
+  async function removeStudent(student) {
+    if (removing || !window.confirm(`Are you sure you want to remove ${student.name} from this classroom?`)) return;
+    setRemoving(student.id);
+    setRemoveError("");
+    try {
+      const { error } = await supabase.rpc("remove_classroom_student", {
+        requested_classroom_id: String(classroomId), requested_student_id: String(student.id),
+      });
+      if (error) throw error;
+      setStudents((current) => current.filter((item) => item.id !== student.id));
+      setAttempt((value) => value + 1);
+      onMemberRemoved?.(classroomId, student.id);
+    } catch (error) {
+      setRemoveError(error.message || "Unable to remove student. Please try again.");
+    } finally { setRemoving(null); }
+  }
 
   // Fallback to resolve teacher details if incomplete
   const resolvedTeacher = (() => {
@@ -195,6 +215,7 @@ export default function ClassroomRoster({ classroomId, teacher }) {
 
   return (
     <div className="space-y-7">
+      {removeError && <p role="alert" className="text-sm text-red-700">{removeError}</p>}
       {/* ── Teacher section ── */}
       <div>
         <SectionHeading icon={<TeacherIcon />} title="Teacher" />
@@ -264,6 +285,10 @@ export default function ClassroomRoster({ classroomId, teacher }) {
                   id={s.id}
                   name={s.name}
                   email={s.email}
+                  action={canRemove && <button type="button" disabled={Boolean(removing)}
+                    onClick={() => removeStudent(s)} className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">
+                    {removing === s.id ? "Removing..." : "Remove Student"}
+                  </button>}
                   badge={`${i + 1}`}
                   badgeColor="bg-[#f1f3f4] text-[#5f6368]"
                 />

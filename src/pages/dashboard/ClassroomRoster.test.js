@@ -48,3 +48,37 @@ test("does not retain students when the classroom changes", async () => {
   expect(await screen.findByText("Sam Reyes")).toBeInTheDocument();
   expect(screen.queryByText("Alex Santos")).not.toBeInTheDocument();
 });
+
+test("confirms removal and refreshes only the selected classroom", async () => {
+  const confirm = jest.spyOn(window, "confirm").mockReturnValue(true);
+  const onMemberRemoved = jest.fn();
+  supabase.rpc.mockImplementation((name) => Promise.resolve({ data: name === "get_classroom_roster"
+    ? [{ student_id: "s1", student_name: "Alex Santos" }] : true }));
+  render(<ClassroomRoster classroomId="class-1" canRemove onMemberRemoved={onMemberRemoved} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Remove Student" }));
+  expect(confirm).toHaveBeenCalledWith("Are you sure you want to remove Alex Santos from this classroom?");
+  await screen.findByRole("button", { name: "Remove Student" });
+  expect(supabase.rpc).toHaveBeenCalledWith("remove_classroom_student", {
+    requested_classroom_id: "class-1", requested_student_id: "s1",
+  });
+  expect(onMemberRemoved).toHaveBeenCalledWith("class-1", "s1");
+  expect(supabase.rpc.mock.calls.filter(([name]) => name === "get_classroom_roster")).toHaveLength(2);
+  confirm.mockRestore();
+});
+
+test("cancelling removal leaves the member alone", async () => {
+  const confirm = jest.spyOn(window, "confirm").mockReturnValue(false);
+  supabase.rpc.mockResolvedValue({ data: [{ student_id: "s1", student_name: "Alex Santos" }] });
+  render(<ClassroomRoster classroomId="class-1" canRemove />);
+  fireEvent.click(await screen.findByRole("button", { name: "Remove Student" }));
+  expect(supabase.rpc).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Alex Santos")).toBeInTheDocument();
+  confirm.mockRestore();
+});
+
+test("student roster has no removal action", async () => {
+  supabase.rpc.mockResolvedValue({ data: [{ student_id: "s1", student_name: "Alex Santos" }] });
+  render(<ClassroomRoster classroomId="class-1" />);
+  await screen.findByText("Alex Santos");
+  expect(screen.queryByRole("button", { name: "Remove Student" })).not.toBeInTheDocument();
+});

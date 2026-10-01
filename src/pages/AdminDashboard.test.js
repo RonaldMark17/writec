@@ -19,6 +19,42 @@ function mockAccount(data) {
 }
 beforeEach(() => { jest.clearAllMocks(); supabase.auth.getUser.mockResolvedValue({ data: { user: { user_metadata: {} } } }); });
 
+test("dedicated approval queue requests all pending registrations and supports approval", async () => {
+  adminRequest.mockResolvedValue({ items: [{ ...user, account_status: "pending" }], total: 31 });
+  show("/admin/approvals", <AdminDashboard profile={profile} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+  expect(adminRequest).toHaveBeenCalledWith(expect.stringMatching(/^users\?.*status=pending/));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  expect(await screen.findByText("Account approved.")).toBeInTheDocument();
+  expect(adminRequest).toHaveBeenCalledWith("users/student1/status", expect.objectContaining({ body: '{"status":"active"}' }));
+});
+
+test.each(["student", "teacher"])("admin creates an approved %s without replacing the browser session", async (role) => {
+  adminRequest.mockImplementation((path, options) => Promise.resolve(options?.method === "POST" ? { id: "new", account_status: "active" } : { items: [], total: 0 }));
+  show("/admin/users", <AdminDashboard profile={profile} />);
+  fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+  fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New Name" } });
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@school.edu.ph" } });
+  fireEvent.change(screen.getByLabelText("Account role"), { target: { value: role } });
+  fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "test-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create and approve" }));
+  expect(await screen.findByText(/Account created and approved/)).toBeInTheDocument();
+  expect(adminRequest).toHaveBeenCalledWith("users", expect.objectContaining({ method: "POST", body: JSON.stringify({ full_name: "New Name", email: "new@school.edu.ph", password: "test-password", role }) }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+test("creation failures leave the form open and never claim success", async () => {
+  adminRequest.mockImplementation((path, options) => options?.method === "POST" ? Promise.reject(new Error("This email is already registered.")) : Promise.resolve({ items: [], total: 0 }));
+  show("/admin/users", <AdminDashboard profile={profile} />);
+  fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+  fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New Name" } });
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@school.edu.ph" } });
+  fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "test-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create and approve" }));
+  await waitFor(() => expect(screen.getByRole("dialog")).toHaveTextContent("already registered"));
+  expect(screen.queryByText(/Account created and approved/)).not.toBeInTheDocument();
+});
+
 test("admin header toggles and persists the workspace theme", () => {
   document.documentElement.dataset.theme = "light";
   show("/admin/profile", <AdminDashboard profile={profile} />);
@@ -62,26 +98,58 @@ test("class detail shows enrolled students without teacher actions", async () =>
 
 test.each(["student", "teacher"])("%s cannot open admin routes even with admin metadata", async (role) => {
   mockAccount({ ...profile, role });
-  show("/admin/users", <Routes><Route path="/admin/*" element={<Dashboard adminOnly session={{ user: { id: "u1", user_metadata: { role: "admin" } } }} />} /><Route path="/dashboard" element={<div>Regular workspace</div>} /></Routes>);
+  show("/admin/users", <Routes><Route path="/admin/*" element={<Dashboard adminOnly session={{ user: { id: "admin1", user_metadata: { role: "admin" } } }} />} /><Route path="/dashboard" element={<div>Regular workspace</div>} /></Routes>);
   expect(await screen.findByText("Regular workspace")).toBeInTheDocument();
   expect(adminRequest).not.toHaveBeenCalled();
 });
 
 test.each(["student", "teacher"])("active %s still opens their existing workspace", async (role) => {
   mockAccount({ ...profile, role });
-  show("/dashboard", <Dashboard session={{ user: { id: "u1" } }} />);
+  show("/dashboard", <Dashboard session={{ user: { id: "admin1" } }} />);
   expect(await screen.findByText(role === "student" ? "Student workspace" : "Teacher workspace")).toBeInTheDocument();
 });
 
 test("inactive account does not render a workspace", async () => {
   mockAccount({ ...profile, account_status: "inactive" });
-  show("/admin/dashboard", <Dashboard adminOnly session={{ user: { id: "u1" } }} />);
+  show("/admin/dashboard", <Dashboard adminOnly session={{ user: { id: "admin1" } }} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("inactive");
   expect(adminRequest).not.toHaveBeenCalled();
 });
 
 test("admin entering the regular dashboard is redirected to the admin route", async () => {
   mockAccount(profile);
-  show("/dashboard", <Routes><Route path="/dashboard" element={<Dashboard session={{ user: { id: "u1" } }} />} /><Route path="/admin/dashboard" element={<div>Admin destination</div>} /></Routes>);
+  show("/dashboard", <Routes><Route path="/dashboard" element={<Dashboard session={{ user: { id: "admin1" } }} />} /><Route path="/admin/dashboard" element={<div>Admin destination</div>} /></Routes>);
   expect(await screen.findByText("Admin destination")).toBeInTheDocument();
+});
+
+
+test.each(["pending", "rejected"])("%s accounts cannot enter workspaces even with active local preferences", async (status) => {
+  localStorage.setItem("writecheck_profile_prefs_admin1", JSON.stringify({ account_status: "active", role: "admin" }));
+  mockAccount({ ...profile, role: "student", account_status: status });
+  show("/dashboard", <Dashboard session={{ user: { id: "admin1", user_metadata: { role: "admin", account_status: "active" } } }} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(status === "pending" ? "awaiting administrator approval" : "rejected");
+  expect(screen.queryByText("Student workspace")).not.toBeInTheDocument();
+  localStorage.removeItem("writecheck_profile_prefs_admin1");
+});
+
+test("unavailable authoritative profile never grants access from session metadata", async () => {
+  mockAccount(null);
+  show("/dashboard", <Dashboard session={{ user: { id: "admin1", user_metadata: { role: "teacher" } } }} />);
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(screen.queryByText("Teacher workspace")).not.toBeInTheDocument();
+});
+
+test.each([["Approve", "active"], ["Reject", "rejected"]])("admin can %s a pending registration", async (label, status) => {
+  adminRequest.mockResolvedValue({ items: [{ ...user, account_status: "pending" }], total: 1 });
+  show("/admin/users", <AdminDashboard profile={profile} />);
+  fireEvent.click(await screen.findByText(label));
+  fireEvent.click(screen.getByText("Confirm"));
+  await waitFor(() => expect(adminRequest).toHaveBeenCalledWith("users/student1/status", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ status }) })));
+});
+
+test("a profile for a different account never authorizes the current session", async () => {
+  mockAccount({ ...profile, id: "different-account" });
+  show("/dashboard", <Dashboard session={{ user: { id: "admin1" } }} />);
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(screen.queryByText("Student workspace")).not.toBeInTheDocument();
 });

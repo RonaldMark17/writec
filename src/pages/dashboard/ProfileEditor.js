@@ -92,7 +92,7 @@ export function processProfileImage(file) {
   });
 }
 
-export default function ProfileEditor({ profile, onSaved, onClose }) {
+export default function ProfileEditor({ profile, onSaved, onClose, setupMode = false }) {
   const dialogRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -256,6 +256,10 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
       setError("Enter your full name.");
       return;
     }
+    if (isStudent && (!gradeLevel.trim() || !courseTrack.trim() || !institution.trim())) {
+      setError("Enter your college level, course, and university.");
+      return;
+    }
     setBusy(true);
     try {
       const { data, error: saveError } = await supabase.rpc("update_my_profile", {
@@ -266,9 +270,9 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
 
       const updatedPrefs = {
         academicTitle: isTeacher ? academicTitle : "",
-        gradeLevel: isStudent ? gradeLevel : "",
-        courseTrack: isStudent ? courseTrack : "",
-        institution,
+        gradeLevel: isStudent ? gradeLevel.trim() : "",
+        courseTrack: isStudent ? courseTrack.trim() : "",
+        institution: institution.trim(),
         department: isTeacher ? department : courseTrack,
         bio,
         avatarColor,
@@ -373,6 +377,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
       >
         {/* Top Decorative Google Classroom Accent Bar */}
         <div className="h-1.5 w-full bg-gradient-to-r from-[#0d652d] via-[#137333] to-[#34a853]" />
+        {setupMode && <div className="px-6 pt-6 pr-16"><h2 className="text-lg font-semibold text-[#137333]">Complete your student profile</h2><p className="mt-1 text-sm text-[#5f6368]">Add your college level, course, and university. You can update these later in your profile.</p></div>}
 
         {/* Hidden File Input for Avatar Photo */}
         <input
@@ -521,6 +526,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
             >
               Profile & Info
             </button>
+            {isTeacher && (
             <button
               type="button"
               onClick={() => setActiveTab("preferences")}
@@ -531,6 +537,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
             >
               AI & Preferences
             </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveTab("security")}
@@ -730,7 +737,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label htmlFor="student-grade-level" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                          Grade / Year Level
+                          College level / Year level
                         </label>
                         <select
                           id="student-grade-level"
@@ -752,6 +759,8 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                             <option value="2nd Year College">2nd Year College</option>
                             <option value="3rd Year College">3rd Year College</option>
                             <option value="4th Year College">4th Year College</option>
+                            <option value="5th Year College">5th Year College</option>
+                            <option value="6th Year College">6th Year College</option>
                             <option value="Graduate Studies">Graduate Studies</option>
                           </optgroup>
                         </select>
@@ -759,10 +768,11 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
 
                       <div>
                         <label htmlFor="student-course-track" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                          Course / Program / Strand
+                          Course / Program
                         </label>
                         <input
                           id="student-course-track"
+                          maxLength={150}
                           value={courseTrack}
                           onChange={(e) => setCourseTrack(e.target.value)}
                           placeholder="e.g. BS Information Technology, STEM"
@@ -774,7 +784,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
                     {/* School / College / University */}
                     <div>
                       <label htmlFor="institution-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                        School / College / University
+                        University / College
                       </label>
                       <input
                         id="institution-input"
@@ -805,7 +815,7 @@ export default function ProfileEditor({ profile, onSaved, onClose }) {
             )}
 
             {/* TAB 2: AI & Preferences */}
-            {activeTab === "preferences" && (
+            {isTeacher && activeTab === "preferences" && (
               <div className="space-y-4 animate-fadeIn">
                 {isTeacher ? (
                   <>

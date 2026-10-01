@@ -59,3 +59,10 @@ test("allows archiving an active classroom from the detail header button", () =>
   fireEvent.click(screen.getByRole("button", { name: /Archive class/i }));
   expect(toggle).toHaveBeenCalledWith("c2", true);
 });
+
+test("exports the opened classroom ID", () => {
+  const exportGrades = jest.fn();
+  render(<ClassroomDetail classroom={{ id: "c1", name: "English" }} assignments={[]} onExportGrades={exportGrades} />);
+  fireEvent.click(screen.getByRole("button", { name: "Export Excel" }));
+  expect(exportGrades).toHaveBeenCalledWith("c1");
+});

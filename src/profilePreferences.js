@@ -1,6 +1,6 @@
 // Only these presentation/preferences fields may be merged into a profile.
 // Role, ID, account status, email and name always come from the account RPC.
-const fields = ["academicTitle", "institution", "department", "bio", "avatarColor", "avatarUrl",
+const fields = ["academicTitle", "gradeLevel", "courseTrack", "institution", "department", "bio", "avatarColor", "avatarUrl",
   "plagiarismSensitivity", "peerCrossCheck", "notifyOnSubmissions", "weeklyDigest"];
 
 export function profilePreferences(value) {

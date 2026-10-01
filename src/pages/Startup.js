@@ -920,7 +920,7 @@ export default function Startup({ initialAuthModal = null }) {
               Features
             </a>
             <a
-              href="mailto:support@writecheck.ai"
+              href="/contact"
               className="hover:text-[var(--page-text)] transition"
             >
               Contact

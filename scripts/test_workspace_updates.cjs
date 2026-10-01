@@ -1,0 +1,62 @@
+/** Run with an external @electric-sql/pglite package path; no application dependency. */
+const fs = require('fs');
+const assert = require('node:assert/strict');
+const { PGlite } = require(process.argv[2] || '@electric-sql/pglite');
+(async () => {
+  const db = new PGlite();
+  const [t, other, s, peer, outsider, A, B, a, b, work] = Array.from({length:10}, (_,i)=>`00000000-0000-0000-0000-${String(i+1).padStart(12,'0')}`);
+  const a2 = '00000000-0000-0000-0000-000000000011';
+  await db.exec(`CREATE ROLE authenticated; CREATE ROLE anon; CREATE SCHEMA auth;
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('test.uid',true),'')::uuid $$;
+    GRANT USAGE ON SCHEMA auth TO authenticated, anon;
+    CREATE TABLE "userTable" (id uuid PRIMARY KEY, full_name text, role text, account_status text DEFAULT 'active');
+    CREATE TABLE "classroomTable" (id uuid PRIMARY KEY, teacher_id uuid, is_archived boolean);
+    CREATE TABLE "classroomMembers" (classroom_id uuid, student_id uuid);
+    CREATE TABLE "assignmentTable" (id uuid PRIMARY KEY, classroom_id uuid, teacher_id uuid);
+    CREATE TABLE "submissionTable" (id uuid PRIMARY KEY, assignment_id uuid, classroom_id uuid, student_id uuid);
+    INSERT INTO "userTable" (id,full_name,role) VALUES ('${t}','Teacher','teacher'),('${other}','Other','teacher'),('${s}','Alex Santos','student'),('${peer}','Peer','student'),('${outsider}','Outsider','student');
+    INSERT INTO "classroomTable" VALUES ('${A}','${t}',true),('${B}','${other}',true);
+    INSERT INTO "classroomMembers" VALUES ('${A}','${s}'),('${A}','${peer}'),('${B}','${outsider}');
+    INSERT INTO "assignmentTable" VALUES ('${a}','${A}','${t}'),('${b}','${B}','${other}'),('${a2}','${A}','${t}');
+    INSERT INTO "submissionTable" VALUES ('${work}','${a}','${A}','${s}');`);
+  for (const [file,names] of [['admin_schema.sql',['writecheck_active']], ['submission_security.sql',['can_manage_classroom','can_use_assignment','can_access_submission']]]) {
+    const source=fs.readFileSync(file,'utf8');
+    for (const name of names) {const start=source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);const end=source.indexOf('$$;',source.indexOf('AS $$',start)); await db.exec(source.slice(start,end+3));}
+  }
+  await db.exec(fs.readFileSync('assignment_comments.sql','utf8'));
+  const as = async id => {await db.exec('RESET ROLE'); await db.query("SELECT set_config('test.uid',$1,false)",[id]); await db.exec('SET ROLE authenticated');};
+  const list = async (assignment=a,room=A) => (await db.query('SELECT public.list_assignment_comments($1,$2) AS rows',[assignment,room])).rows[0].rows;
+  const archive = async () => (await db.query('SELECT public.list_my_archived_classrooms() AS rows')).rows[0].rows;
+  await as(s);
+  await db.query('SELECT public.post_assignment_comment($1,$2,$3)',[a,A,'My question']);
+  assert.equal((await list())[0].student_name,'Alex Santos');
+  assert.deepEqual(await list(a2,A),[]);
+  assert.deepEqual(await archive(),[{id:A}]);
+  await assert.rejects(db.query('SELECT public.post_assignment_comment($1,$2,$3)',[a,B,'Wrong room']));
+  await assert.rejects(db.query('SELECT public.post_assignment_comment($1,$2,$3)',[b,B,'Not enrolled']));
+  await assert.rejects(db.query('SELECT public.post_assignment_comment($1,$2,$3)',[a,A,'   ']));
+  await assert.rejects(db.query('SELECT * FROM public.assignment_comments'));
+  await as(peer);
+  assert.deepEqual(await list(),[]);
+  assert.equal((await db.query('SELECT public.can_access_submission($1) AS allowed',[work])).rows[0].allowed,false);
+  await as(t);
+  assert.equal((await list()).length,1);
+  assert.deepEqual(await archive(),[{id:A}]);
+  await assert.rejects(list(b,B));
+  await as(other);
+  await assert.rejects(list());
+  assert.deepEqual(await list(b,B),[]);
+  await as(outsider);
+  await assert.rejects(list());
+  assert.deepEqual(await archive(),[{id:B}]);
+  await db.exec('RESET ROLE');
+  await db.query('DELETE FROM "classroomMembers" WHERE student_id=$1',[s]);
+  await db.query('UPDATE "classroomTable" SET is_archived=false WHERE id=$1',[A]);
+  await as(s);
+  await assert.rejects(list());
+  await assert.rejects(db.query('SELECT public.post_assignment_comment($1,$2,$3)',[a,A,'Removed member']));
+  assert.deepEqual(await archive(),[]);
+  await as(t); assert.deepEqual(await archive(),[]);
+  await db.close();
+  console.log('PASS: comment creation/name/date scope, teacher visibility, student privacy, denied non-enrollment/mismatched classroom/blank comments/direct access, submission privacy, account-specific archive records and final restore.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -5,6 +5,7 @@ import { accountRequest } from "../accountRequest";
 import { profilePreferences } from "../profilePreferences";
 import { apiFetch, getBackendUrl } from "../apiFetch";
 import StudentDashboard from "./StudentDashboard";
+import StudentProfileSetup from "./dashboard/StudentProfileSetup";
 import TeacherDashboard from "./TeacherDashboard";
 import AdminDashboard from "./AdminDashboard";
 import { isCustomAvatarUrl, getAvatarPublicUrl } from "./dashboard/shared";
@@ -26,7 +27,8 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
     let cancelled = false;
 
     // Only show loading spinner on initial mount when there is no profile yet
-    if (!profileRef.current) {
+    if (!profileRef.current || profileRef.current.id !== userId) {
+      setProfile(null);
       setLoading(true);
     }
 
@@ -71,41 +73,8 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           } catch (tErr) {}
         }
 
-        // 3. If profile still doesn't exist in userTable, try to insert default profile
-        if (!data && typeof supabase?.from === "function") {
-          const role = user?.user_metadata?.role === "teacher" ? "teacher" : "student";
-          try {
-            const { error: createError } = await supabase.from("userTable").insert({
-              id: userId,
-              full_name: user?.user_metadata?.full_name || user?.email,
-              email: user?.email,
-              role,
-              account_status: "active",
-            });
-            if (!createError || createError.code === "23505") {
-              const { data: createdRow } = await supabase
-                .from("userTable")
-                .select("id, full_name, email, role, account_status, registered_at")
-                .eq("id", userId)
-                .maybeSingle();
-              if (createdRow) data = createdRow;
-            }
-          } catch (cErr) {}
-        }
-
-        // 4. Fallback to session metadata if table query was unavailable
-        if (!data && user) {
-          const metaRole = user?.user_metadata?.role === "teacher" ? "teacher" : "student";
-          data = {
-            id: userId,
-            full_name: user?.user_metadata?.full_name || user?.email,
-            email: user?.email,
-            role: metaRole,
-            account_status: "active",
-            registered_at: user?.created_at || null,
-          };
-        }
-        if (!data || !["student", "teacher", "admin"].includes(data.role)) {
+        // Authorization must come from the database, never metadata or browser storage.
+        if (!data || data.id !== userId || !["student", "teacher", "admin"].includes(data.role)) {
           throw new Error("Your account has no valid workspace role. Contact an administrator.");
         }
         let metadata = {};
@@ -159,7 +128,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
             avatarUrl: finalAvatarUrl,
             avatarColor: metaColor,
             ...data,
-            ...localPrefs,
+            ...profilePreferences(localPrefs),
             ...profilePreferences(metadata.writecheck_preferences ?? localPrefs),
             avatarUrl: finalAvatarUrl,
           }));
@@ -167,9 +136,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
         }
       } catch (err) {
         if (!cancelled) {
-          if (!profileRef.current) {
-            setError(err.message || "Unable to verify your account.");
-          }
+          setError(err.message || "Unable to verify your account.");
         }
       } finally {
         if (!cancelled) {
@@ -187,7 +154,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
     };
   }, [userId, retry]);
 
-  if (loading) {
+  if (loading || (!error && profile && profile.id !== userId)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] px-4">
         <div className="flex flex-col items-center gap-4 text-center">
@@ -230,7 +197,9 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
     <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
       <div className="max-w-md rounded-xl border bg-white p-8 text-center">
         <h1 className="text-xl font-bold">Workspace unavailable</h1>
-        <p role="alert" className="mt-4 text-sm text-red-700">{error || "This account is inactive. Contact an administrator to reactivate it."}</p>
+        <p role="alert" className="mt-4 text-sm text-red-700">{error || (profile?.account_status === "pending" ? "Your account is awaiting administrator approval." :
+          profile?.account_status === "rejected" ? "Your registration was rejected. Contact an administrator for assistance." :
+          "This account is inactive. Contact an administrator to reactivate it.")}</p>
         <button onClick={() => setRetry(retry + 1)} className="m-3 text-emerald-700 underline">Retry</button>
         <button onClick={() => signOutAndExpireToken("/login")} className="m-3 text-emerald-700 underline">Sign out</button>
       </div>
@@ -238,7 +207,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
   );
   if (adminOnly && profile.role !== "admin") return <Navigate to="/dashboard" replace />;
   if (profile.role === "admin") return adminOnly ? <AdminDashboard key={location.pathname} profile={profile} onProfileUpdated={setProfile} /> : <Navigate to="/admin/dashboard" replace />;
-  if (profile.role === "student") return <StudentDashboard profile={profile} onProfileUpdated={setProfile} />;
+  if (profile.role === "student") return <><StudentDashboard profile={profile} onProfileUpdated={setProfile} /><StudentProfileSetup key={profile.id} profile={profile} onSaved={setProfile} /></>;
   return <TeacherDashboard profile={profile} onProfileUpdated={setProfile} />;
 }
 

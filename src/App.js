@@ -1,3 +1,4 @@
+import Contact from "./pages/Contact";
 import {
   BrowserRouter,
   Routes,
@@ -195,6 +196,7 @@ function App() {
       <ThemeToggle />
       {recovering && <Navigate to="/reset-password" replace />}
       <Routes>
+        <Route path="/contact" element={<Contact />} />
         <Route path="/transcribe" element={<Transcribe />} />
         <Route path="/admin/*" element={<ProtectedDashboard session={session} isAuthLoading={isAuthLoading} adminOnly />} />
         <Route path="/forgot-password" element={<PasswordReset key="request" />} />

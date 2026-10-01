@@ -156,6 +156,11 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
     setErrorMessage("");
     setSuccessMessage("");
 
+    if (!/^[^\s@]+@(edu\.com\.ph|([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+edu\.ph)$/i.test(email.trim())) {
+      setErrorMessage("Registration is only available for approved institutional email addresses ending in @edu.com.ph or .edu.ph.");
+      return;
+    }
+
     if (password !== confirmPassword) {
       setErrorMessage("Passwords do not match.");
       return;
@@ -204,29 +209,11 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
         return;
       }
 
-      if (data.session) {
-        const { error: profileError } = await supabase
-          .from("userTable")
-          .upsert([
-            {
-              id: data.user.id,
-              full_name: fullName.trim(),
-              email: normalizedEmail,
-              role,
-            },
-          ]);
+      // Profiles and pending status are created by the database Auth trigger.
+      setSuccessMessage(data.session
+        ? "Your account is awaiting administrator approval."
+        : "Verification email sent! Confirm your email; your account is awaiting administrator approval.");
 
-        if (profileError) {
-          setErrorMessage(profileError.message);
-          return;
-        }
-
-        if (onClose) onClose();
-        navigate("/dashboard");
-        return;
-      }
-
-      setSuccessMessage("Verification email sent! Check your inbox to confirm your account.");
     } catch (error) {
       setErrorMessage("Registration could not be completed. Please check your connection and try again.");
     } finally {
@@ -336,7 +323,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     id="modal-login-email"
                     type="email"
                     autoComplete="email"
-                    placeholder="name@school.edu"
+                    placeholder="name@school.edu.ph"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -529,7 +516,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     id="modal-register-email"
                     type="email"
                     autoComplete="email"
-                    placeholder="name@school.edu"
+                    placeholder="name@school.edu.ph"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required

@@ -38,12 +38,13 @@ export async function buildGradeWorkbook(rows, teacher, scope) {
   workbook.created = new Date();
   const sheet = workbook.addWorksheet("Grades", { views: [{ state: "frozen", ySplit: 1 }] });
   const columns = [
-    ["Student name", "student", 28], ["Student account ID", "studentId", 38],
-    ["Class", "classroom", 24], ["Section", "section", 18], ["Subject", "subject", 24],
-    ["Assignment title", "assignment", 35], ["Due date (UTC)", "due", 24],
-    ["Submitted date (UTC)", "submitted", 24], ["Score as recorded", "score", 20],
-    ["Status", "status", 20], ["Submission timing", "timing", 20],
-    ["Returned date (UTC)", "returned", 24], ["Teacher feedback", "feedback", 50],
+    ["Subject", "subject", 24], ["Assignment", "assignment", 35],
+    ["Student Name", "student", 28], ["Grade", "score", 20],
+    ["Student account ID", "studentId", 38], ["Class", "classroom", 24],
+    ["Section", "section", 18], ["Submitted date (UTC)", "submitted", 24],
+    ["Due date (UTC)", "due", 24], ["Status", "status", 20],
+    ["Submission timing", "timing", 20], ["Returned date (UTC)", "returned", 24],
+    ["Teacher feedback", "feedback", 50],
   ];
   sheet.columns = columns.map(([header, key, width]) => ({ header, key, width }));
   const dateValue = (value) => value && Number.isFinite(new Date(value).getTime()) ? new Date(value) : null;
@@ -59,7 +60,7 @@ export async function buildGradeWorkbook(rows, teacher, scope) {
     ["Teacher", teacher], ["Exported at (UTC)", new Date().toISOString()], ["Scope", scope],
     ["Rows", rows.length], ["Submission selection", "Latest submission per student and assignment. Includes enrolled students with no submission."],
     ["Scores", "Saved scores are preserved as recorded. Blank means ungraded or not submitted; no percentage or maximum score is assumed."],
-    ["Data source", "Teacher dashboard data loaded at export time. Refresh the dashboard before exporting for the latest saved grades."],
+    ["Data source", "Classroom records queried from the database at export time."],
   ]);
   return workbook;
 }

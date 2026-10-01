@@ -490,6 +490,8 @@ from submission_status import router as submission_status_router
 app = FastAPI()
 from service_status import router as service_status_router
 from notifications import NotificationWorker
+from contact_api import router as contact_router
+app.include_router(contact_router)
 app.include_router(service_status_router)
 app.include_router(admin_router)
 app.include_router(submission_intake_router)
@@ -777,29 +779,12 @@ class ArchiveClassroomRequest(BaseModel):
 
 @app.get("/api/classrooms/archived")
 def get_archived_classrooms_endpoint(request: Request):
-    """
-    Returns list of archived classroom IDs.
-    Queries using service role key to ensure consistent persistence for both teachers and students.
-    """
+    """Return only the authenticated account's archived classroom IDs."""
     authenticated_account(request)
-    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    url = os.getenv("SUPABASE_URL", "https://qtqvnutcalmmqmmbwueu.supabase.co").rstrip("/")
-    if not service_key:
-        raise HTTPException(500, "SUPABASE_SERVICE_ROLE_KEY is not configured.")
-
-    req = urllib.request.Request(
-        f"{url}/rest/v1/classroomTable?is_archived=eq.true&select=id",
-        headers={
-            "apikey": service_key,
-            "Authorization": f"Bearer {service_key}",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            rows = json.load(resp)
-            return {"success": True, "archived_ids": [str(r["id"]) for r in rows if "id" in r]}
-    except Exception as exc:
-        return {"success": False, "archived_ids": [], "error": str(exc)}
+    rows = supabase_request('/rest/v1/rpc/list_my_archived_classrooms', request.state.access_token, {})
+    if not isinstance(rows, list):
+        raise HTTPException(503, "Archived classrooms are unavailable.")
+    return {"success": True, "archived_ids": [str(row["id"]) for row in rows]}
 
 
 @app.post("/api/classrooms/{classroom_id}/archive")

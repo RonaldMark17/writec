@@ -28,10 +28,12 @@ def configured():
             and all(os.getenv(key) for key in ('SMTP_HOST', 'SMTP_FROM', 'SUPABASE_SERVICE_ROLE_KEY')))
 
 
-def send_email(recipient, subject, body, key):
+def send_email(recipient, subject, body, key, reply_to=None):
     message = EmailMessage()
     message['From'] = os.environ['SMTP_FROM']
     message['To'] = recipient
+    if reply_to:
+        message['Reply-To'] = reply_to
     message['Subject'] = subject
     message['Message-ID'] = '<' + sha256(key.encode()).hexdigest() + '@writecheck.notifications>'
     message.set_content(body)
@@ -43,8 +45,9 @@ def send_email(recipient, subject, body, key):
     with smtp(os.environ['SMTP_HOST'], port, timeout=20, **kwargs) as client:
         if not implicit:
             client.starttls(context=ssl.create_default_context())
-        if os.getenv('SMTP_USER'):
-            client.login(os.environ['SMTP_USER'], os.environ.get('SMTP_PASSWORD', ''))
+        username = os.getenv('SMTP_USERNAME') or os.getenv('SMTP_USER')
+        if username:
+            client.login(username, os.environ.get('SMTP_PASSWORD', ''))
         refused = client.send_message(message)
         if refused:
             raise RuntimeError('Notification recipient rejected.')

@@ -590,7 +590,7 @@ export function getAssignmentDueInfo(dueDate, submitted = false, referenceDate =
   if (submitted) {
     return {
       status: "submitted",
-      label: "Turned in",
+      label: "Turned In",
       isOverdue: false,
       isDueSoon: false,
       badgeColor: "bg-[#e6f4ea] text-[#137333] border-[#ceead6]",
@@ -601,7 +601,7 @@ export function getAssignmentDueInfo(dueDate, submitted = false, referenceDate =
   if (!dueDate) {
     return {
       status: "no_due_date",
-      label: "No due date",
+      label: "Assigned",
       isOverdue: false,
       isDueSoon: false,
       badgeColor: "bg-[#f1f3f4] text-[#5f6368] border-[#dadce0]",

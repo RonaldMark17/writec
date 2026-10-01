@@ -183,7 +183,7 @@ describe('Student To Do and Due Soon Feature', () => {
     const submitted = getAssignmentDueInfo('2026-09-19T12:00:00.000Z', true, refDate);
     expect(submitted.status).toBe('submitted');
     expect(submitted.isOverdue).toBe(false);
-    expect(submitted.label).toBe('Turned in');
+    expect(submitted.label).toBe('Turned In');
   });
 
   test('filterAndSortTodoAssignments separates todo, due soon, and completed, sorting due soon by nearest date', () => {

@@ -1,6 +1,8 @@
+import AssignmentComments from "./dashboard/AssignmentComments";
+import { useClassroomArchiveSync } from "./dashboard/useClassroomArchiveSync";
 import SubmissionStation from "./dashboard/SubmissionStation";
 import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
-import { gradeExportRows, downloadGrades } from "./dashboard/gradeExport";
+import { downloadGrades } from "./dashboard/gradeExport";
 import { processingLabel, useSubmissionProgress, loadTeacherSubmissionStatus } from "./dashboard/submissionProgress";
 import { apiFetch, getBackendUrl } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
@@ -146,9 +148,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
   const [submissions, setSubmissions] =
     useState([]);
-
-  const [selectedClassroomId, setSelectedClassroomId] =
-    useState("");
 
   const [classroomForm, setClassroomForm] =
     useState(emptyClassroomForm);
@@ -347,23 +346,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     () => classrooms.filter((classroom) => Boolean(classroom.isArchived)),
     [classrooms]
   );
-  const visibleClassrooms = classroomTab === "active" ? activeClassrooms : archivedClassrooms;
+  useClassroomArchiveSync(classrooms, setClassrooms);
 
-  const selectedClassroom =
-    classrooms.find((classroom) => classroom.id === selectedClassroomId) ??
-    activeClassrooms[0] ??
-    classrooms[0] ??
-    {
-      id: "",
-      name: "No classroom yet",
-      section: "Create a classroom to get started",
-      subject: "",
-      code: "------",
-      students: 0,
-      assignments: 0,
-      submissions: 0,
-      accent: "bg-emerald-700",
-    };
+  const visibleClassrooms = classroomTab === "active" ? activeClassrooms : archivedClassrooms;
 
   const selectedAssignment = useMemo(() => {
     return assignments.find((a) => a.id === selectedAssignmentId) || null;
@@ -507,17 +492,23 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       (selectedSubmissionsClassroomId === "all" || String(assignment.classroomId) === String(selectedSubmissionsClassroomId));
   });
 
-  async function handleExportGrades() {
+  async function handleExportGrades(requestedClassroomId) {
     if (exportingGrades) return;
     setExportingGrades(true);
     setErrorMessage("");
     try {
-      const selected = gradeClasswork.filter((a) =>
-        (selectedSubmissionsAssignmentId === "all" || String(a.id) === String(selectedSubmissionsAssignmentId)) &&
-        (!selectedAssignment || a.id === selectedAssignment.id));
-      const rows = gradeExportRows(selected, submissions, classroomMembers);
-      if (!rows.length) { setErrorMessage("No student grade records match the current filters."); return; }
-      await downloadGrades(rows, profile.full_name || "Teacher", selected.map((a) => `${a.classroomName}: ${a.title}`).join("; "));
+      const classroomId = typeof requestedClassroomId === "string" ? requestedClassroomId :
+        (selectedSubmissionsClassroomId !== "all" ? selectedSubmissionsClassroomId :
+          assignments.find((a) => a.id === selectedSubmissionsAssignmentId)?.classroomId);
+      if (!classroomId) { setErrorMessage("Open a classroom or select one classroom before exporting grades."); return; }
+      const { data, error } = await supabase.rpc("export_classroom_grades", { requested_classroom_id: String(classroomId) });
+      if (error) throw error;
+      const rows = (data || []).filter((row) => typeof requestedClassroomId === "string" ||
+        (selectedSubmissionsAssignmentId === "all" || row.assignmentId === selectedSubmissionsAssignmentId))
+        .map((row) => ({ ...row, score: row.score == null || String(row.score).trim() === "" ? null :
+          Number.isFinite(Number(row.score)) ? Number(row.score) : row.score }));
+      if (!rows.length) { setErrorMessage("No student grade records in this classroom."); return; }
+      await downloadGrades(rows, profile.full_name || "Teacher", classrooms.find((c) => c.id === classroomId)?.name || classroomId);
       setSuccessMessage(`Exported ${rows.length} student assignment records to Excel.`);
     } catch {
       setErrorMessage("Could not export grades. Please try again.");
@@ -840,7 +831,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       });
     } catch {}
 
-    // Query backend for archived classrooms (authoritative service-role check from DB)
+    // Query backend for archived classrooms (account-scoped database check)
     let backendArchivedIds = null;
     if (process.env.NODE_ENV !== "test") {
       try {
@@ -997,7 +988,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         let isArchived = false;
 
         // Authoritative resolution:
-        // 1. Authoritative check from backend service role DB query:
+        // 1. Account-scoped check from backend database query:
         if (backendArchivedIds !== null) {
           isArchived = backendArchivedIds.has(classIdStr);
         }
@@ -1005,9 +996,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         else if (typeof classroom.is_archived === "boolean") {
           isArchived = classroom.is_archived;
         }
-        // 3. Fallback to cached set only if database column was missing:
+        // 3. No confirmed archive record: do not infer it from browser storage:
         else {
-          isArchived = cachedArchivedSet.has(classIdStr);
+          isArchived = false;
         }
 
         // Keep local cache strictly in sync with authoritative database value:
@@ -1120,17 +1111,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         ? currentId
         : null
     );
-    setSelectedClassroomId((currentId) =>
-      nextClassrooms.some((classroom) => classroom.id === currentId)
-        ? currentId
-        : nextClassrooms[0]?.id ?? ""
-    );
     setAssignmentForm((currentForm) => ({
       ...currentForm,
       classroomId:
         nextClassrooms.some((classroom) => classroom.id === currentForm.classroomId)
           ? currentForm.classroomId
-          : nextClassrooms[0]?.id ?? "",
+          : "",
     }));
     setIsLoading(false);
     return true;
@@ -1187,6 +1173,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isLoading && archivedClassrooms.length === 0 && classroomTab === "archived") setClassroomTab("active");
+  }, [isLoading, archivedClassrooms.length, classroomTab, setClassroomTab]);
 
   const handleArchiveClassroom = async (classroomId, archive = true) => {
     if (!classroomId) return;
@@ -1559,7 +1549,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setIsSavingAssignment(true);
 
     const classroomId =
-      assignmentForm.classroomId || selectedClassroom.id;
+      assignmentForm.classroomId;
+    if (!classroomId || !activeClassrooms.some((c) => c.id === classroomId)) {
+      setErrorMessage("Open an active classroom before creating an assignment.");
+      setIsSavingAssignment(false);
+      return;
+    }
 
     const dueDate =
       assignmentForm.dueDate
@@ -1640,6 +1635,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         .from(ASSIGNMENT_TABLE)
         .update(updatePayload)
         .eq("id", editingAssignment.id)
+        .eq("classroom_id", editingAssignment.classroomId)
         .eq("teacher_id", profile.id);
 
       if (updateError && (updateError.message?.includes("accept_late_submissions") || updateError.code === "42703" || updateError.code === "PGRST204")) {
@@ -1648,6 +1644,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           .from(ASSIGNMENT_TABLE)
           .update(updatePayload)
           .eq("id", editingAssignment.id)
+          .eq("classroom_id", editingAssignment.classroomId)
           .eq("teacher_id", profile.id);
         updateError = retry.error;
       }
@@ -1669,6 +1666,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         .from(ASSIGNMENT_TABLE)
         .select("id, created_at, classroom_id, teacher_id, title, instructions, due_date")
         .eq("id", editingAssignment.id)
+        .eq("classroom_id", editingAssignment.classroomId)
         .eq("teacher_id", profile.id)
         .maybeSingle();
 
@@ -2705,6 +2703,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           </div>
         </div>
         )}
+        <AssignmentComments key={`${selectedAssignment.classroomId}:${selectedAssignment.id}`} assignmentId={selectedAssignment.id} classroomId={selectedAssignment.classroomId} profile={profile} />
       </div>
     );
   };
@@ -2720,6 +2719,13 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         onPageChange={(page) => {
           setSuccessMessage("");
           setErrorMessage("");
+          if ((page === "assignments" || page === "submissions") && openedClassroomId) {
+            setAssignmentFilterClassroomId(openedClassroomId);
+            setSelectedSubmissionsClassroomId(openedClassroomId);
+            setSelectedSubmissionsAssignmentId("all");
+            setGradeSubject("all");
+            setSelectedAssignmentId(null);
+          }
           setActivePage(page);
         }}
       />
@@ -2826,21 +2832,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
               </div>
 
               <form onSubmit={handleCreateAssignment} className="mt-5 space-y-4">
-                <label className="block">
-                  <span className="text-xs font-medium text-[#3c4043]">Classroom & Section</span>
-                  <select
-                    value={assignmentForm.classroomId || selectedClassroom.id}
-                    onChange={(e) => setAssignmentForm((f) => ({ ...f, classroomId: e.target.value }))}
-                    className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] bg-white px-3 text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                    required
-                  >
-                    {activeClassrooms.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} — Section {c.section} {c.subject ? `(${c.subject})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <p className="text-sm text-[#5f6368]">{classrooms.find((c) => c.id === assignmentForm.classroomId)?.name}</p>
 
                 <label className="block">
                   <span className="text-xs font-medium text-[#3c4043]">Title</span>
@@ -2943,6 +2935,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             }}
             onCopyClassroom={handleOpenCopyModal}
             onExportCSV={handleExportClassroomCSV}
+            onExportGrades={handleExportGrades}
+            onMemberRemoved={() => { loadTeacherData(); }}
           />
         )}
 
@@ -2995,6 +2989,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 </span>
               </button>
 
+              {archivedClassrooms.length > 0 && (
               <button
                 type="button"
                 onClick={() => setClassroomTab("archived")}
@@ -3012,6 +3007,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   </span>
                 )}
               </button>
+              )}
             </div>
 
             {isLoading ? (
@@ -3163,6 +3159,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           <button
                             type="button"
                             onClick={() => {
+                              setOpenedClassroomId(classroom.id);
                               setAssignmentFilterClassroomId(classroom.id);
                               setSelectedAssignmentId(null);
                               setActivePage("assignments");
@@ -3176,6 +3173,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           <button
                             type="button"
                             onClick={() => {
+                              setOpenedClassroomId(classroom.id);
                               setSelectedSubmissionsClassroomId(classroom.id);
                               setGradeSubject("all");
                               setSelectedSubmissionsAssignmentId("all");
@@ -3289,10 +3287,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <button
                       type="button"
                       onClick={() => {
-                        setAssignmentForm({
-                          ...emptyAssignmentForm,
-                          classroomId: activeClassrooms[0]?.id || "",
-                        });
+                        const classroom = activeClassrooms.find((c) => c.id === assignmentFilterClassroomId);
+                        if (!classroom) {
+                          setOpenedClassroomId(null);
+                          setActivePage("classrooms");
+                          setSuccessMessage("Open a classroom to create its assignment.");
+                          return;
+                        }
+                        setAssignmentForm({ ...emptyAssignmentForm, classroomId: classroom.id });
                         setIsCreatingAssignment(true);
                       }}
                       disabled={activeClassrooms.length === 0}
@@ -3310,7 +3312,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <select
                           id="section-filter"
                           value={assignmentFilterClassroomId}
-                          onChange={(e) => setAssignmentFilterClassroomId(e.target.value)}
+                          onChange={(e) => { setAssignmentFilterClassroomId(e.target.value); setOpenedClassroomId(e.target.value === "all" ? null : e.target.value); }}
                           className="h-9 w-full sm:w-auto max-w-[170px] sm:max-w-[220px] rounded-lg border border-[#dadce0] bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] truncate"
                         >
                           <option value="all">All sections</option>
@@ -3342,10 +3344,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <button
                       type="button"
                       onClick={() => {
-                        setAssignmentForm({
-                          ...emptyAssignmentForm,
-                          classroomId: activeClassrooms[0]?.id || "",
-                        });
+                        const classroom = activeClassrooms.find((c) => c.id === assignmentFilterClassroomId);
+                        if (!classroom) {
+                          setOpenedClassroomId(null);
+                          setActivePage("classrooms");
+                          setSuccessMessage("Open a classroom to create its assignment.");
+                          return;
+                        }
+                        setAssignmentForm({ ...emptyAssignmentForm, classroomId: classroom.id });
                         setIsCreatingAssignment(true);
                       }}
                       className="mt-4 sm:mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2 text-xs sm:text-sm font-medium text-white hover:bg-[#0f5b28]"
@@ -4800,7 +4806,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" /></svg>
                     {exportingGrades ? "Exporting…" : "Export grades (.xlsx)"}
                   </button>
-                  <span className="text-xs text-[#5f6368]">Uses current filters and the open assignment, if any.</span>
+                  <span className="text-xs text-[#5f6368]">Select one classroom or assignment to export its grades.</span>
                 </div>
               </div>
 
@@ -4818,6 +4824,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       onChange={(event) => {
                         setGradeSubject(event.target.value);
                         setSelectedSubmissionsClassroomId("all");
+                        setOpenedClassroomId(null);
                         setSelectedSubmissionsAssignmentId("all");
                         setSelectedAssignmentId(null);
                       }}
@@ -4840,6 +4847,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       value={selectedSubmissionsClassroomId}
                       onChange={(event) => {
                         setSelectedSubmissionsClassroomId(event.target.value);
+                        setOpenedClassroomId(event.target.value === "all" ? null : event.target.value);
                         setSelectedSubmissionsAssignmentId("all");
                         setSelectedAssignmentId(null);
                       }}
@@ -4884,6 +4892,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     onClick={() => {
                       setGradeSubject("all");
                       setSelectedSubmissionsClassroomId("all");
+                        setOpenedClassroomId(null);
                       setSelectedSubmissionsAssignmentId("all");
                       setSelectedAssignmentId(null);
                     }}
@@ -5091,28 +5100,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 </div>
 
                 <form onSubmit={handleUpdateAssignment} className="mt-5 space-y-4">
-                  <label className="block">
-                    <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
-                      Classroom
-                    </span>
-                    <select
-                      value={editingAssignment.classroomId}
-                      onChange={(e) =>
-                        setEditingAssignment((prev) => ({
-                          ...prev,
-                          classroomId: e.target.value,
-                        }))
-                      }
-                      className="mt-1.5 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
-                      required
-                    >
-                      {classrooms.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <p className="text-sm text-gray-600">{classrooms.find((c) => c.id === editingAssignment.classroomId)?.name}</p>
 
                   <label className="block">
                     <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">

@@ -14,10 +14,10 @@ function AdminIcon({ name }) {
     "activity-logs": "M9 3H5v18h14V3h-4 M9 2h6v4H9z M8 11h8 M8 15h8",
     profile: "M20 21v-2a6 6 0 0 0-6-6h-4a6 6 0 0 0-6 6v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
   };
-  return <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+  return <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name === "approvals" ? "users" : name]} /></svg>;
 }
 
-const navigation = [["dashboard", "Dashboard"], ["users", "Users"], ["classes", "Classes"], ["activity-logs", "Activity Logs"], ["profile", "Admin Profile"]];
+const navigation = [["dashboard", "Dashboard"], ["users", "Users"], ["approvals", "Pending Approvals"], ["classes", "Classes"], ["activity-logs", "Activity Logs"], ["profile", "Admin Profile"]];
 const control = "rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-100";
 const action = "rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50";
 const dateLabel = (value) => value ? new Date(value).toLocaleString() : "Not available";
@@ -49,6 +49,9 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
   const [confirmation, setConfirmation] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newAccount, setNewAccount] = useState({ full_name: "", email: "", password: "", role: "student" });
+  const createInFlight = useRef(false);
   const validPage = navigation.some(([key]) => key === page);
 
   useEffect(() => {
@@ -59,8 +62,8 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
     if (page === "profile" || !validPage) { setLoading(false); return undefined; }
     const timer = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ search, role, status, date, page: String(pageNumber) });
-        const result = await adminRequest(`${page}?${params}`);
+        const params = new URLSearchParams({ search, role, status: page === "approvals" ? "pending" : status, date, page: String(pageNumber) });
+        const result = await adminRequest(`${page === "approvals" ? "users" : page}?${params}`);
         if (!cancelled) setData(result);
       } catch (err) { if (!cancelled) setError(err.message); }
       finally { if (!cancelled) setLoading(false); }
@@ -71,7 +74,7 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
   function resetFilters() { setSearch(""); setRole("all"); setStatus("all"); setDate(""); setPageNumber(1); }
   async function view(record) {
     setDetailLoading(true); setError("");
-    try { setDetail(await adminRequest(`${page}/${encodeURIComponent(record.id)}`)); }
+    try { setDetail(await adminRequest(`${page === "approvals" ? "users" : page}/${encodeURIComponent(record.id)}`)); }
     catch (err) { setError(err.message); }
     finally { setDetailLoading(false); }
   }
@@ -79,10 +82,27 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
     setSaving(true); setError(""); setNotice("");
     try {
       await adminRequest(`users/${encodeURIComponent(confirmation.id)}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: confirmation.nextStatus }) });
-      setNotice(`Account ${confirmation.nextStatus === "active" ? "reactivated" : "disabled"}.`);
+      setNotice(`Account ${confirmation.nextStatus === "rejected" ? "rejected" : confirmation.nextStatus === "active" ? (["pending", "rejected"].includes(confirmation.account_status) ? "approved" : "reactivated") : "disabled"}.`);
       setConfirmation(null); setReload((n) => n + 1);
     } catch (err) { setError(err.message); }
     finally { setSaving(false); }
+  }
+
+  async function createAccount(event) {
+    event.preventDefault();
+    if (createInFlight.current) return;
+    if (!/^[^\s@]+@(edu\.com\.ph|([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+edu\.ph)$/i.test(newAccount.email.trim())) {
+      setError("Use an institutional email ending in @edu.com.ph or .edu.ph."); return;
+    }
+    createInFlight.current = true;
+    setSaving(true); setError(""); setNotice("");
+    try {
+      const result = await adminRequest("users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newAccount) });
+      setNotice(result.warning || "Account created and approved. Share the password securely with the account owner.");
+      setCreating(false); setNewAccount({ full_name: "", email: "", password: "", role: "student" });
+      resetFilters(); setReload((n) => n + 1);
+    } catch (err) { setError(err.message); }
+    finally { createInFlight.current = false; setSaving(false); }
   }
 
   if (!validPage || location.pathname === "/admin" || location.pathname === "/admin/") return <Navigate to="/admin/dashboard" replace />;
@@ -99,16 +119,21 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
         </nav></aside>
         <main className="min-w-0 flex-1 space-y-6">
           <div className="flex items-center justify-between"><div><p className="text-sm font-semibold text-emerald-700">System administration</p><h1 className="mt-1 text-3xl font-semibold">{navigation.find(([key]) => key === page)?.[1]}</h1></div><button className={action} disabled={loading} onClick={() => setReload(reload + 1)}>Refresh</button></div>
+          {["dashboard", "users", "approvals"].includes(page) && <div className="flex flex-wrap gap-3">
+            <button className={action} onClick={() => { setCreating(true); setError(""); }}>Create account</button>
+            {page === "dashboard" && <NavLink to="/admin/approvals" onClick={resetFilters} className={action}>Pending Approvals{data?.pending != null ? ` (${data.pending})` : ""}</NavLink>}
+          </div>}
+          {page === "approvals" && <p className="text-sm text-gray-600">Student and teacher registrations awaiting approval. Approve an account to grant workspace access, or reject its registration.</p>}
           {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
           {notice && <p role="status" className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}
-          {["users", "classes", "activity-logs"].includes(page) && <div className="flex flex-wrap gap-3">
-            <label className="flex flex-1 flex-col gap-1 text-sm">Search<input type="search" maxLength={200} value={search} onChange={(e) => { setSearch(e.target.value); setPageNumber(1); }} placeholder={page === "classes" ? "Class name or teacher" : page === "users" ? "Name or email" : "User, action, or related record"} className={control} /></label>
+          {["users", "approvals", "classes", "activity-logs"].includes(page) && <div className="flex flex-wrap gap-3">
+            <label className="flex flex-1 flex-col gap-1 text-sm">Search<input type="search" maxLength={200} value={search} onChange={(e) => { setSearch(e.target.value); setPageNumber(1); }} placeholder={page === "classes" ? "Class name or teacher" : ["users", "approvals"].includes(page) ? "Name or email" : "User, action, or related record"} className={control} /></label>
             {page !== "classes" && <label className="flex flex-col gap-1 text-sm">Role<select value={role} onChange={(e) => { setRole(e.target.value); setPageNumber(1); }} className={control}><option value="all">All roles</option><option value="student">Student</option><option value="teacher">Teacher</option>{page === "activity-logs" && <option value="admin">Admin</option>}</select></label>}
-            {page === "users" && <label className="flex flex-col gap-1 text-sm">Status<select value={status} onChange={(e) => { setStatus(e.target.value); setPageNumber(1); }} className={control}><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>}
+            {page === "users" && <label className="flex flex-col gap-1 text-sm">Status<select value={status} onChange={(e) => { setStatus(e.target.value); setPageNumber(1); }} className={control}><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="pending">Pending approval</option><option value="rejected">Rejected</option></select></label>}
             {page === "activity-logs" && <label className="flex flex-col gap-1 text-sm">Date (UTC)<input type="date" value={date} onChange={(e) => { setDate(e.target.value); setPageNumber(1); }} className={control} /></label>}
             <button className={`${action} self-end`} onClick={resetFilters}>Clear filters</button>
             <button className={`${action} self-end`} disabled={loading || !rows.length} onClick={() => {
-              try { downloadAdminCsv(page, rows, pageNumber); setNotice(`Exported ${rows.length} records from page ${pageNumber}.`); }
+              try { downloadAdminCsv(page === "approvals" ? "users" : page, rows, pageNumber); setNotice(`Exported ${rows.length} records from page ${pageNumber}.`); }
               catch { setError("Could not export records. Please try again."); }
             }}>Export current page (CSV)</button>
           </div>}
@@ -118,7 +143,7 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
               <section className="space-y-3"><h2 className="text-xl font-semibold">Recent Registrations</h2>{data.recent_users.length ? <Table headings={["Name", "Email", "Role", "Date registered", "Status"]}>{data.recent_users.map((u) => <tr key={u.id}><Cell>{u.full_name}</Cell><Cell>{u.email}</Cell><Cell>{u.role}</Cell><Cell>{dateLabel(u.registered_at)}</Cell><Cell><Status value={u.account_status} /></Cell></tr>)}</Table> : <p className="text-sm text-gray-500">No registration dates available.</p>}</section>
               <section className="space-y-3"><h2 className="text-xl font-semibold">Recent System Activity</h2>{data.recent_activity.length ? <Logs items={data.recent_activity} /> : <p className="text-sm text-gray-500">No activity recorded yet.</p>}</section>
             </>}
-            {page === "users" && rows.length > 0 && <Table headings={["Name", "Email", "Role", "Date registered", "Status", "Actions"]}>{rows.map((u) => <tr key={u.id}><Cell>{u.full_name}</Cell><Cell>{u.email}</Cell><Cell>{u.role}</Cell><Cell>{dateLabel(u.registered_at)}</Cell><Cell><Status value={u.account_status} /></Cell><Cell><div className="flex gap-2"><button disabled={detailLoading} className={action} onClick={() => view(u)}>View</button><button className={action} onClick={() => setConfirmation({ ...u, nextStatus: u.account_status === "active" ? "inactive" : "active" })}>{u.account_status === "active" ? "Disable" : "Reactivate"}</button></div></Cell></tr>)}</Table>}
+            {["users", "approvals"].includes(page) && rows.length > 0 && <Table headings={["Name", "Email", "Role", "Date registered", "Status", "Actions"]}>{rows.map((u) => <tr key={u.id}><Cell>{u.full_name}</Cell><Cell>{u.email}</Cell><Cell>{u.role}</Cell><Cell>{dateLabel(u.registered_at)}</Cell><Cell><Status value={u.account_status} /></Cell><Cell><div className="flex gap-2"><button disabled={detailLoading} className={action} onClick={() => view(u)}>View</button><button className={action} onClick={() => setConfirmation({ ...u, nextStatus: u.account_status === "active" ? "inactive" : "active" })}>{u.account_status === "active" ? "Disable" : ["pending", "rejected"].includes(u.account_status) ? "Approve" : "Reactivate"}</button>{u.account_status === "pending" && <button className={action} onClick={() => setConfirmation({ ...u, nextStatus: "rejected" })}>Reject</button>}</div></Cell></tr>)}</Table>}
             {page === "classes" && rows.length > 0 && <Table headings={["Class", "Code", "Teacher", "Students", "Activities", "Created", "Status", "Actions"]}>{rows.map((c) => <tr key={c.id}><Cell>{c.classroom_name}<p className="text-xs text-gray-500">{c.section}</p></Cell><Cell>{c.classroom_code}</Cell><Cell>{c.teacher_name || "Not available"}</Cell><Cell>{c.students}</Cell><Cell>{c.activities}</Cell><Cell>{dateLabel(c.created_at)}</Cell><Cell><Status value={c.status} /></Cell><Cell><button disabled={detailLoading} className={action} onClick={() => view(c)}>View class</button></Cell></tr>)}</Table>}
             {page === "activity-logs" && rows.length > 0 && <Logs items={rows} />}
             {data?.items && <><p className="text-sm text-gray-500">{data.total} matching records{rows.length === 0 ? ". No records to display." : ""}</p><div className="flex items-center gap-3"><button disabled={pageNumber === 1} className={action} onClick={() => setPageNumber(pageNumber - 1)}>Previous</button><span className="text-sm">Page {pageNumber}</span><button disabled={pageNumber * 25 >= data.total} className={action} onClick={() => setPageNumber(pageNumber + 1)}>Next</button></div></>}
@@ -126,11 +151,22 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
           </>}
         </main>
       </div>
+      {creating && <AdminModal title="Create account" onClose={() => { if (!saving) { setCreating(false); setNewAccount({ full_name: "", email: "", password: "", role: "student" }); } }}>
+        <p className="text-sm text-gray-600">Create an approved student or teacher account. Its email will be marked confirmed; verify the address belongs to the intended person. No email is sent automatically.</p>
+        <form onSubmit={createAccount} className="space-y-4">
+          <label className="flex flex-col gap-1">Full name<input required maxLength={150} className={control} value={newAccount.full_name} onChange={(e) => setNewAccount({ ...newAccount, full_name: e.target.value })} /></label>
+          <label className="flex flex-col gap-1">Email address<input required type="email" maxLength={254} placeholder="name@school.edu.ph" className={control} value={newAccount.email} onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })} /></label>
+          <label className="flex flex-col gap-1">Account role<select className={control} value={newAccount.role} onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}><option value="student">Student</option><option value="teacher">Teacher</option></select></label>
+          <label className="flex flex-col gap-1">Password<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} className={control} value={newAccount.password} onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })} /></label>
+          {error && <p role="alert" className="text-red-700">{error}</p>}
+          <button disabled={saving} className={action} type="submit">{saving ? "Creating?" : "Create and approve"}</button>
+        </form>
+      </AdminModal>}
       {editing && <ProfileEditor profile={profile} onSaved={onProfileUpdated} onClose={() => setEditing(false)} />}
       {detail && <AdminModal title={page === "classes" ? "Class details" : "User details"} onClose={() => setDetail(null)}>
         {page === "classes" ? <><h3 className="text-xl font-semibold">{detail.classroom_name}</h3><p>Code: {detail.classroom_code}</p><p>Teacher: {detail.teacher_name || "Not available"}</p><p>Section: {detail.section}</p><p>Created: {dateLabel(detail.created_at)}</p><p>{detail.students.length} students · {detail.activities} activities · {detail.submissions} submissions</p><h4 className="font-semibold">Enrolled students</h4>{detail.students.length ? <ul className="divide-y">{detail.students.map((s) => <li key={s.id} className="py-2">{s.full_name}<span className="block text-sm text-gray-500">{s.email}</span></li>)}</ul> : <p>No students enrolled.</p>}</> : <><h3 className="text-xl font-semibold">{detail.full_name}</h3><p>{detail.email}</p><p>Role: {detail.role}</p><p>Registered: {dateLabel(detail.registered_at)}</p><Status value={detail.account_status} />{detail.student_id && <p>Student ID: {detail.student_id}</p>}{detail.faculty_id && <p>Faculty ID: {detail.faculty_id}</p>}{detail.role === "student" ? <p>{detail.joined_classes} joined classes · {detail.submissions} submissions</p> : <p>{detail.created_classes} created classes · {detail.activities} activities</p>}</>}
       </AdminModal>}
-      {confirmation && <AdminModal title="Confirm account status" onClose={() => { if (!saving) setConfirmation(null); }}><p>Are you sure you want to {confirmation.nextStatus === "inactive" ? "disable" : "reactivate"} this account?</p><p className="font-semibold">{confirmation.full_name} ({confirmation.email})</p>{confirmation.nextStatus === "inactive" && <p className="text-sm text-gray-600">Protected access will be blocked. Academic records will be retained.</p>}{error && <p role="alert" className="text-red-700">{error}</p>}<button disabled={saving} className="rounded-lg bg-emerald-700 px-4 py-2 text-white disabled:opacity-50" onClick={changeStatus}>{saving ? "Saving…" : "Confirm"}</button></AdminModal>}
+      {confirmation && <AdminModal title="Confirm account status" onClose={() => { if (!saving) setConfirmation(null); }}><p>Are you sure you want to {confirmation.nextStatus === "rejected" ? "reject" : confirmation.nextStatus === "inactive" ? "disable" : ["pending", "rejected"].includes(confirmation.account_status) ? "approve" : "reactivate"} this account?</p><p className="font-semibold">{confirmation.full_name} ({confirmation.email})</p>{confirmation.nextStatus === "inactive" && <p className="text-sm text-gray-600">Protected access will be blocked. Academic records will be retained.</p>}{error && <p role="alert" className="text-red-700">{error}</p>}<button disabled={saving} className="rounded-lg bg-emerald-700 px-4 py-2 text-white disabled:opacity-50" onClick={changeStatus}>{saving ? "Saving…" : "Confirm"}</button></AdminModal>}
     </div>
   );
 }

@@ -52,3 +52,30 @@ test("user-editable preferences cannot override identity or authorization", () =
   expect(profilePreferences({ role: "admin", account_status: "active", id: "other", institution: "School" }))
     .toEqual({ institution: "School" });
 });
+
+test("student academic details load and persist with the existing account preferences", async () => {
+  show({ profile: { id: "student", role: "student", full_name: "Alex", gradeLevel: "2nd Year College", courseTrack: "BS Computer Science", institution: "Test University" } });
+  expect(screen.getByLabelText("College level / Year level")).toHaveValue("2nd Year College");
+  expect(screen.getByLabelText("Course / Program")).toHaveValue("BS Computer Science");
+  fireEvent.change(screen.getByLabelText("University / College"), { target: { value: "New University" } });
+  fireEvent.click(screen.getByText("Save profile"));
+  await screen.findByText("Profile updated.");
+  expect(supabase.auth.updateUser).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    writecheck_preferences: expect.objectContaining({ gradeLevel: "2nd Year College", courseTrack: "BS Computer Science", institution: "New University" }) }) }));
+  const reloaded = profilePreferences(supabase.auth.updateUser.mock.calls[0][0].data.writecheck_preferences);
+  expect(reloaded).toEqual(expect.objectContaining({ gradeLevel: "2nd Year College", courseTrack: "BS Computer Science", institution: "New University" }));
+});
+
+test("student cannot save incomplete academic details", async () => {
+  show({ profile: { id: "student", role: "student", full_name: "Alex" } });
+  fireEvent.click(screen.getByText("Save profile"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("college level, course, and university");
+  expect(supabase.auth.updateUser).not.toHaveBeenCalled();
+});
+
+test("student profile hides AI preferences while preserving profile and security", () => {
+  show({ profile: { id: "student", role: "student", full_name: "Alex" } });
+  expect(screen.queryByRole("button", { name: /AI & Preferences/i })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Profile & Info/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Security/i })).toBeInTheDocument();
+});

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import AuthModal from "./AuthModal";
 import { supabase } from "../supabaseClient";
@@ -9,14 +9,14 @@ jest.mock("../supabaseClient", () => ({
 
 beforeEach(() => jest.resetAllMocks());
 
-function register(role = "student") {
+function register(role = "student", email = "Alex@EDU.COM.PH") {
   const onClose = jest.fn();
   render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <AuthModal initialMode="register" onClose={onClose} />
   </MemoryRouter>);
   if (role === "teacher") fireEvent.click(screen.getByRole("button", { name: /Teacher Create classes/i }));
   fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Alex Smith" } });
-  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "Alex@Example.COM" } });
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: email } });
   fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "password123" } });
   fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "password123" } });
   fireEvent.click(screen.getByRole("button", { name: /Create (Student|Teacher) Account/ }));
@@ -30,7 +30,7 @@ test.each(["student", "teacher"])("rejects concealed duplicate for %s without ch
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(supabase.from).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
-  expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@example.com" }));
+  expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@edu.com.ph" }));
 });
 
 test.each([
@@ -51,13 +51,12 @@ test("new accounts still receive the confirmation message", async () => {
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-test("new accounts with a session still create a profile", async () => {
-  const upsert = jest.fn().mockResolvedValue({ error: null });
-  supabase.from.mockReturnValue({ upsert });
+test("new accounts with a session wait for administrator approval", async () => {
   supabase.auth.signUp.mockResolvedValue({ data: { user: { id: "new", identities: [{ id: "identity" }] }, session: { access_token: "test" } }, error: null });
   const onClose = register();
-  await waitFor(() => expect(onClose).toHaveBeenCalled());
-  expect(upsert).toHaveBeenCalledWith([{ id: "new", full_name: "Alex Smith", email: "alex@example.com", role: "student" }]);
+  expect(await screen.findByRole("status")).toHaveTextContent("awaiting administrator approval");
+  expect(onClose).not.toHaveBeenCalled();
+  expect(supabase.from).not.toHaveBeenCalled();
 });
 
 test("a network failure allows retrying", async () => {
@@ -84,4 +83,20 @@ test("email delivery errors explain the verification failure", async () => {
   supabase.auth.signUp.mockResolvedValue({ data: null, error: { message: "Error sending confirmation email" } });
   register();
   expect(await screen.findByRole("alert")).toHaveTextContent("couldn't send your verification email");
+});
+
+
+test.each(["user@gmail.com", "user@other.edu.com.ph", "user@edu.com.ph.evil.com", "user@school.edu.ph.evil.com", "user@fakeedu.ph", "user@-school.edu.ph", "user@school..edu.ph"])("rejects non-approved domain %s before contacting Auth", (email) => {
+  render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthModal initialMode="register" /></MemoryRouter>);
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: email } });
+  fireEvent.submit(screen.getByRole("button", { name: "Create Student Account" }).closest("form"));
+  expect(screen.getByRole("alert")).toHaveTextContent("@edu.com.ph");
+  expect(supabase.auth.signUp).not.toHaveBeenCalled();
+});
+
+test.each(["student", "teacher"])("accepts .edu.ph registration for %s and still requires approval", async (role) => {
+  supabase.auth.signUp.mockResolvedValue({ data: { user: { id: "new", identities: [{ id: "identity" }] }, session: {} }, error: null });
+  register(role, "Alex@DEPT.SCHOOL.EDU.PH");
+  expect(await screen.findByRole("status")).toHaveTextContent("awaiting administrator approval");
+  expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@dept.school.edu.ph" }));
 });
