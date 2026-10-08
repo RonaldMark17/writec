@@ -1,16 +1,44 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import ClassroomRoster from "./ClassroomRoster";
 import { supabase } from "../../supabaseClient";
 
-jest.mock("../../supabaseClient", () => ({ supabase: { rpc: jest.fn(), from: jest.fn() } }));
+jest.mock("../../supabaseClient", () => ({ supabase: { rpc: jest.fn(), from: jest.fn(), channel: jest.fn(), removeChannel: jest.fn() } }));
+let membershipChanged;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  supabase.channel.mockImplementation(() => {
+    const channel = { on: (event, filter, callback) => { membershipChanged = callback; return channel; }, subscribe: () => channel };
+    return channel;
+  });
   supabase.from.mockReturnValue({
     select: jest.fn().mockReturnThis(),
     eq: jest.fn().mockResolvedValue({ data: [] }),
     in: jest.fn().mockResolvedValue({ data: [] }),
   });
+});
+
+test("surname order survives removal and a new membership reload", async () => {
+  let roster = [{ student_id: "s", student_name: "Maria Santos" },
+    { student_id: "c", student_name: "Juan Dela Cruz" }, { student_id: "g", student_name: "Ana Garcia" }];
+  const confirm = jest.spyOn(window, "confirm").mockReturnValue(true);
+  supabase.rpc.mockImplementation((name, args) => {
+    if (name === "remove_classroom_student") roster = roster.filter(row => row.student_id !== args.requested_student_id);
+    return Promise.resolve({ data: name === "get_classroom_roster" ? roster : true });
+  });
+  render(<ClassroomRoster classroomId="A" canRemove teacher={{ name: "Teacher Z" }} />);
+  await screen.findByText("Juan Dela Cruz");
+  const displayedNames = () => within(screen.getByRole("list", { name: "Student list" }))
+    .getAllByRole("listitem").map(item => item.querySelector("p").textContent);
+  expect(displayedNames()).toEqual(["Juan Dela Cruz", "Ana Garcia", "Maria Santos"]);
+  fireEvent.click(within(screen.getByText("Juan Dela Cruz").closest("li")).getByRole("button", { name: "Remove Student" }));
+  await screen.findByText("Ana Garcia");
+  expect(displayedNames()).toEqual(["Ana Garcia", "Maria Santos"]);
+  roster = [...roster, { student_id: "a", student_name: "Zoe Abel" }];
+  act(() => membershipChanged());
+  await screen.findByText("Zoe Abel");
+  expect(displayedNames()).toEqual(["Zoe Abel", "Ana Garcia", "Maria Santos"]);
+  confirm.mockRestore();
 });
 
 test("loads the selected classroom roster and displays teacher details", async () => {
@@ -81,4 +109,20 @@ test("student roster has no removal action", async () => {
   render(<ClassroomRoster classroomId="class-1" />);
   await screen.findByText("Alex Santos");
   expect(screen.queryByRole("button", { name: "Remove Student" })).not.toBeInTheDocument();
+});
+
+
+test("roster pagination stays in the selected classroom and starts a new class on page one", async () => {
+  const roster = prefix => Array.from({ length: 12 }, (_, i) => ({ student_id: `${prefix}${i}`, student_name: `${prefix} student ${String(i).padStart(2, "0")}` }));
+  supabase.rpc.mockResolvedValueOnce({ data: roster("A") }).mockResolvedValueOnce({ data: roster("B") });
+  const { rerender } = render(<ClassroomRoster classroomId="A" />);
+  await screen.findByText("A student 00");
+  expect(screen.queryByText("A student 11")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByText("A student 11")).toBeInTheDocument();
+  rerender(<ClassroomRoster classroomId="B" />);
+  await screen.findByText("B student 00");
+  expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+  expect(screen.queryByText("A student 11")).not.toBeInTheDocument();
+  expect(screen.queryByText("B student 11")).not.toBeInTheDocument();
 });

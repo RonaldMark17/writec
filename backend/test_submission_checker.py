@@ -9,11 +9,12 @@ from submission_checker import check_submission, normalize_provider, record_subm
 class CheckerTests(unittest.TestCase):
     def setUp(self):
         self.job = {'id': '00000000-0000-0000-0000-000000000010', 'submission_id': 'submission'}
-        self.submission = {'assignment_id': 'assignment'}
+        self.submission = {'assignment_id': 'assignment', 'classroom_id': 'classroom', 'student_id': 'student'}
         self.text = ' '.join(['Reviewed student essay content'] * 6)
         self.service = patch('submission_checker.copyleaks_service').start()
         self.service.is_sandbox = False
         self.db = patch('submission_checker.supabase_request').start()
+        self.classmates = patch('submission_checker.load_classmates', return_value=[]).start()
         self.peer = patch('submission_checker.compute_peer_similarity', return_value={'peer_similarity_score': 0}).start()
         self.preferences = patch('submission_checker.teacher_preferences', return_value={
             'plagiarismSensitivity': 'standard', 'peerCrossCheck': True}).start()

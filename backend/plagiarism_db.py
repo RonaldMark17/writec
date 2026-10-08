@@ -381,12 +381,13 @@ def compute_peer_similarity(
     current_submission_id: Optional[str] = None,
     assignment_id: Optional[str] = None,
     peer_submissions: Optional[List[Dict[str, Any]]] = None,
+    classroom_id: Optional[str] = None,
+    current_student_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Compares the given text against classmate student submissions in the SAME assignment
-    to detect cross-student copying (peer-to-peer plagiarism).
+    Compares the given text against supplied classmate submissions in the same classroom and assignment
+    to report text similarity for teacher review.
     """
-    init_db()
     clean_text = (text or "").strip()
     words_input = _tokenize_words(clean_text)
     if len(words_input) < 10:
@@ -402,9 +403,16 @@ def compute_peer_similarity(
 
     peer_records = []
 
-    # 1. If explicit classmate peer submissions were passed from the frontend for this assignment
+    # Callers supply authoritative database rows, never browser-provided peer text.
     if peer_submissions is not None:
         for p in peer_submissions:
+            if classroom_id is not None and (
+                str(p.get("classroom_id")) != str(classroom_id)
+                or str(p.get("assignment_id")) != str(assignment_id)
+                or not p.get("student_id")
+                or str(p.get("student_id")) == str(current_student_id)
+            ):
+                continue
             p_id = str(p.get("id") or p.get("submission_id") or p.get("submissionId") or "")
             if current_submission_id and p_id == str(current_submission_id):
                 continue
@@ -412,29 +420,10 @@ def compute_peer_similarity(
             if len(p_text) >= 15:
                 peer_records.append({
                     "submission_id": p_id,
+                    "student_id": p.get("student_id"),
                     "student_name": p.get("studentName") or p.get("student_name") or p.get("name") or f"Classmate #{p_id[:6]}",
                     "text": p_text,
                 })
-    else:
-        # 2. Database query: strictly require assignment_id so unrelated assignments are not mixed
-        if assignment_id:
-            with _get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT submission_id, grade, status, transcribed_text, updated_at FROM submission_grades WHERE assignment_id = ?",
-                    (str(assignment_id),),
-                )
-                for row in cursor.fetchall():
-                    d = dict(row)
-                    sub_id = str(d.get("submission_id") or "")
-                    if current_submission_id and sub_id == str(current_submission_id):
-                        continue
-                    t_text = (d.get("transcribed_text") or "").strip()
-                    if len(t_text) >= 15:
-                        peer_records.append({
-                            "submission_id": sub_id,
-                            "student_name": f"Classmate #{sub_id[:8]}",
-                            "text": t_text,
-                        })
 
     if not peer_records:
         return {
@@ -462,10 +451,12 @@ def compute_peer_similarity(
         intersect_3 = len(trigrams_input.intersection(trigrams_peer))
         intersect_4 = len(quadgrams_input.intersection(quadgrams_peer))
 
-        # Crucial: If zero 3-gram or 4-gram overlap, there is no peer copying
+        # No shared 3-grams or 4-grams means no phrase overlap was detected.
         if intersect_3 == 0 and intersect_4 == 0:
             scored_matches.append({
                 "submission_id": peer["submission_id"],
+                "student_id": peer.get("student_id"),
+                "student_name": peer["student_name"],
                 "score_percent": 0.0,
                 "identical_phrases_count": 0,
                 "matching_snippets": [],
@@ -487,6 +478,8 @@ def compute_peer_similarity(
 
         scored_matches.append({
             "submission_id": peer["submission_id"],
+            "student_id": peer.get("student_id"),
+            "student_name": peer["student_name"],
             "score_percent": score_percent,
             "identical_phrases_count": len(snippets),
             "matching_snippets": snippets,
@@ -500,10 +493,10 @@ def compute_peer_similarity(
         "peer_similarity_score": top_score,
         "has_peer_match": top_score >= 15.0,
         "highest_match_submission_id": top_match["submission_id"] if top_match else None,
-        "matched_submission_label": f"Classmate #{top_match['submission_id'][:8]}" if top_match else None,
+        "matched_submission_label": top_match["student_name"] if top_match else None,
         "matching_snippets": top_match["matching_snippets"] if top_match else [],
-        "all_matches": [m for m in scored_matches if m["score_percent"] >= 8.0][:5],
-        "total_peers_compared": len(peer_records),
+        "all_matches": [m for m in scored_matches if m["score_percent"] >= 15.0],
+        "total_peers_compared": len(scored_matches),
     }
 
 

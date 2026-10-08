@@ -70,6 +70,16 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
 # WriteCheck
 
+## Assignment calendar, To-do filters, and revisions
+
+- Students and teachers can open **Calendar**, switch months, filter by classroom/section, and open an assignment from its deadline. Times use the browser's local timezone; undated assignments appear below the calendar.
+- Student **To-do** supports title/subject/section search, submission status (including revision requests), and deadline filters. These combine with the existing classroom selector.
+- In a teacher's submission review, enter instructions in **Teacher Feedback**, then select **Request revision**. The student sees the instructions in To-do and can select **Revise assignment** from Submissions. Earlier files and text remain available under **Revision history**. A request permits one revision after the original deadline; archived classrooms remain read-only. Revised work receives a fresh processing job and clears the current grade until reviewed again.
+
+**Database setup:** Run [submission_revisions.sql](submission_revisions.sql) in the Supabase SQL Editor **after** `submission_security.sql`, `submission_release.sql`, `submission_processing.sql`, `submission_provenance.sql`, and `student_resubmission.sql`. Reapply it last if rerunning older migrations, which replace shared RPCs. Restart the Python backend after updating the code. Calendar and search do not require this migration; revision requests and history do.
+
+Run `npm run test:revisions` for isolated PostgreSQL tests covering teacher/student permissions, private results, history preservation, archived classes, deadline reopening, retries, and processing reset. These tests use PGlite and never connect to your Supabase project.
+
 ## Run YOLO–TrOCR locally
 
 Run `npm start`, then open `http://localhost:3000/transcribe` to upload a handwritten
@@ -81,6 +91,12 @@ Enable the preview in `backend/.env` with `LOCAL_OCR_ENABLED=1`. The preview end
 accepts only loopback clients and local browser origins; it is disabled by default.
 Use `localhost` on the same computer as the backend. Both model paths must point to
 the installed YOLO weights and TrOCR model folder.
+
+The selected TrOCR checkpoint is `backend/models/final_model_trocr/BEST_MODEL-TROCR/BEST_MODEL`.
+Both OCR entry points default to that folder; `TROCR_MODEL_PATH` can specify its
+installed location. Restart the backend after changing model configuration.
+See `WRITECHECK_UPDATE_REPORT.md` for the model verification, classmate matching,
+pagination changes, and remaining acceptance checks.
 
 For this two-core CPU machine, `OCR_BATCH_SIZE=2` and `TORCH_THREADS=2` reduce memory
 pressure and show progress after each line. A full page can still take several

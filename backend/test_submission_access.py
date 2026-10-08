@@ -34,6 +34,13 @@ class SubmissionAccessTests(unittest.TestCase):
             with self.assertRaises(HTTPException): access.file_reference(name)
         with self.assertRaises(HTTPException): access.local_file(Path.cwd(), '../outside')
 
+    def test_history_file_requires_database_authorization(self):
+        with patch.object(access, 'authenticated_account', return_value=self.student), patch.object(access, 'supabase_request') as db:
+            db.side_effect = [[self.row], [{'file_url': 's1/a1/earlier.txt'}]]
+            self.assertEqual(access.require_file(self.request, 's1/a1/earlier.txt'), ('storage', 's1/a1/earlier.txt'))
+            db.side_effect = [[self.row], []]
+            with self.assertRaises(HTTPException): access.require_file(self.request, 's2/a1/earlier.txt')
+
     def test_scan_owner_only(self):
         with patch.object(access, 'authenticated_account', return_value=self.student):
             self.assertEqual(access.require_scan(self.request, {'user_id': 's1'})['user_id'], 's1')

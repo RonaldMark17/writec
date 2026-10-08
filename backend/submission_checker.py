@@ -9,6 +9,7 @@ from urllib.parse import quote
 from admin_api import supabase_request
 from copyleaks_service import copyleaks_service
 from plagiarism_db import compute_peer_similarity
+from classmate_matching import load_classmates
 from user_preferences import teacher_preferences, review_badge
 
 
@@ -93,10 +94,10 @@ def check_submission(job, submission, text, checkpoint, save_checkpoint):
             raise ValueError('Similarity results have not arrived. Verify the webhook, then retry this check.')
     peer = None
     if preferences['peerCrossCheck']:
-        peers = supabase_request('/rest/v1/submissionTable?assignment_id=eq.'
-            + quote(str(submission['assignment_id']), safe='') + '&select=id,transcribed_text', token)
-        peer = compute_peer_similarity(text, job['submission_id'], submission['assignment_id'],
-            [{'id': str(row['id']), 'text': row.get('transcribed_text') or ''} for row in peers])
+        peers = load_classmates({**submission, 'id': job['submission_id']}, token)
+        peer = compute_peer_similarity(text, job['submission_id'], submission['assignment_id'], peers,
+            classroom_id=submission['classroom_id'], current_student_id=submission['student_id'])
+
     result = dict(provider or {'score': peer['peer_similarity_score'], 'wordCount': len(text.split()),
                                'identicalWords': 0, 'matchedSources': []})
     score = result['score']

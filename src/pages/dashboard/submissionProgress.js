@@ -23,6 +23,8 @@ export function applySubmissionResult(row, result, progress, teacher) {
   const isReady = progress?.state === "ready";
   return {
     ...row,
+    revisionRequest: result.revision_request || null,
+    revisionHistory: result.revision_history || [],
     status: result.status,
     returnedAt: result.returned_at,
     grade: visible ? (result.grade ?? "") : "",

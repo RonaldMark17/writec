@@ -20,7 +20,44 @@ jest.mock("./dashboard/shared", () => ({
 const student = "00000000-0000-0000-0000-000000000003";
 const assignment = "00000000-0000-0000-0000-000000000005";
 
+test("teacher-requested revision reopens a closed deadline and rejected saves preserve the draft", async () => {
+  jest.clearAllMocks();
+  useSubmissionProgress.mockImplementation(() => "");
+  const revision = { id: "00000000-0000-0000-0000-000000000040", message: "Add evidence to your conclusion." };
+  supabase.rpc.mockImplementation(name => Promise.resolve({ data: name === "list_submission_results" ? [{
+    id: "saved", assignment_id: assignment, classroom_id: "class", student_id: student,
+    essay_title: "Earlier essay", revision_request: revision, revision_history: [], status: "graded",
+  }] : [], error: null }));
+  supabase.from.mockImplementation(table => {
+    const data = table === "classroomMembers" ? [{ classroom_id: "class", student_id: student }]
+      : table === "classroomTable" ? [{ id: "class", classroom_name: "English", classroom_code: "ENG" }]
+      : table === "assignmentTable" ? [{ id: assignment, classroom_id: "class", title: "Revise this essay", due_date: "2000-01-01", accept_late_submissions: false }] : [];
+    const query = { then: resolve => Promise.resolve({ data, error: null }).then(resolve) };
+    for (const method of ["select", "eq", "in", "order"]) query[method] = () => query;
+    return query;
+  });
+  supabase.storage.from.mockReturnValue({ upload: jest.fn().mockResolvedValue({ error: null }) });
+  apiFetch.mockResolvedValue({ ok: false, json: async () => ({ detail: "Revision request was already completed." }) });
+  render(<StudentDashboard profile={{ id: student, role: "student", full_name: "Alex" }} />);
+  fireEvent.click(screen.getByText("Assignments tab"));
+  fireEvent.click(await screen.findByRole("button", { name: "Add or create" }));
+  expect(screen.getByLabelText("Essay title").closest("form").compareDocumentPosition(
+    screen.getByRole("region", { name: "Class Comments" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByText(revision.message)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Paste" }));
+  fireEvent.change(screen.getByLabelText("Paste text"), { target: { value: "Revised essay with evidence." } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit assignment" }));
+  await screen.findAllByText("Revision request was already completed.");
+  expect(screen.getByLabelText("Paste text")).toHaveValue("Revised essay with evidence.");
+  expect(JSON.parse(apiFetch.mock.calls[0][1].body).revision_request_id).toBe(revision.id);
+  expect(supabase.rpc).not.toHaveBeenCalledWith("accessible_submissions");
+  apiFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "saved" }) });
+  fireEvent.click(screen.getByRole("button", { name: "Submit assignment" }));
+  await screen.findAllByText("Revision submitted. Your previous work remains in revision history.");
+});
+
 test("student reviews streamed text before saving the original image and corrected essay", async () => {
+  jest.clearAllMocks();
   URL.createObjectURL = jest.fn(() => "blob:essay");
   URL.revokeObjectURL = jest.fn();
   let finishOcr;

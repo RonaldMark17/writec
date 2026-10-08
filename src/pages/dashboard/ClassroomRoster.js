@@ -1,3 +1,5 @@
+import { PaginatedList } from "./Pagination";
+import { compareStudentsByLastName } from "./rosterSort";
 import { useEffect, useState } from "react";
 import { supabase } from "../../supabaseClient";
 import { MEMBER_TABLE, getTeacherAvatarTheme, isCustomAvatarUrl, getAvatarPublicUrl } from "./shared";
@@ -145,6 +147,7 @@ export default function ClassroomRoster({ classroomId, teacher, canRemove = fals
             roster = rpcData.map((r) => ({
               id: r.student_id,
               name: r.student_name || "Student",
+              lastName: r.last_name || r.student_last_name || r.surname,
               email: "",
             }));
           }
@@ -200,7 +203,7 @@ export default function ClassroomRoster({ classroomId, teacher, canRemove = fals
           }
         }
 
-        roster.sort((a, b) => a.name.localeCompare(b.name));
+        roster.sort(compareStudentsByLastName);
         if (!cancelled) setStudents(roster);
       } catch {
         if (!cancelled) setError("Unable to load class members. Please try again.");
@@ -212,6 +215,15 @@ export default function ClassroomRoster({ classroomId, teacher, canRemove = fals
     load();
     return () => { cancelled = true; };
   }, [classroomId, attempt]);
+
+  useEffect(() => {
+    if (!classroomId || !supabase.channel) return undefined;
+    const channel = supabase.channel(`people-${classroomId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: MEMBER_TABLE,
+        filter: `classroom_id=eq.${classroomId}` }, () => setAttempt(value => value + 1))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [classroomId]);
 
   return (
     <div className="space-y-7">
@@ -278,8 +290,8 @@ export default function ClassroomRoster({ classroomId, teacher, canRemove = fals
             <p className="mt-1 text-xs text-[#5f6368]">Share the class code so students can join.</p>
           </div>
         ) : (
-          <ul className="mt-1 divide-y divide-[#f1f3f4]" aria-label="Student list">
-            {students.map((s, i) => (
+          <PaginatedList items={students} resetKey={classroomId} label="Student roster">{pageItems => <ul className="mt-1 divide-y divide-[#f1f3f4]" aria-label="Student list">
+            {pageItems.map((s) => (
               <li key={s.id}>
                 <PersonRow
                   id={s.id}
@@ -289,12 +301,12 @@ export default function ClassroomRoster({ classroomId, teacher, canRemove = fals
                     onClick={() => removeStudent(s)} className="rounded-lg px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">
                     {removing === s.id ? "Removing..." : "Remove Student"}
                   </button>}
-                  badge={`${i + 1}`}
+                  badge={`${students.indexOf(s) + 1}`}
                   badgeColor="bg-[#f1f3f4] text-[#5f6368]"
                 />
               </li>
             ))}
-          </ul>
+          </ul>}</PaginatedList>
         )}
       </div>
     </div>

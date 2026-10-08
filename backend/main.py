@@ -50,6 +50,7 @@ from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 from ultralytics import YOLO
 
 import plagiarism_db
+from classmate_matching import load_classmates, inspect_classmate_pair
 from ocr_regions import prepare_line_boxes, choose_transcript, deskew_and_clean_image
 from submission_access import (
     visible_submissions, require_submission, require_assignment, require_scan,
@@ -70,7 +71,7 @@ MODEL_DIR = BASE_DIR / "models"
 
 DEFAULT_YOLO_MODEL_PATH = MODEL_DIR / "yolo" / "best.pt"
 LEGACY_YOLO_MODEL_PATH = BASE_DIR / "best.pt"
-DEFAULT_TROCR_MODEL_PATH = MODEL_DIR / "final_model"
+DEFAULT_TROCR_MODEL_PATH = MODEL_DIR / "final_model_trocr" / "BEST_MODEL-TROCR" / "BEST_MODEL"
 
 # Configuration matching high-accuracy New folder (19) reference
 YOLO_CONF = float(os.getenv("YOLO_CONF", "0.25"))
@@ -126,25 +127,10 @@ def resolve_trocr_model_source():
     _load_env_file()
     configured_path = os.getenv("TROCR_MODEL_PATH")
 
-    if configured_path and Path(configured_path).exists():
-        return configured_path
-
-    configured_model = os.getenv("TROCR_MODEL_NAME")
-
-    if configured_model:
-        return configured_model
-
-    candidates = [
-        DEFAULT_TROCR_MODEL_PATH,
-        MODEL_DIR / "my_trocr_model",
-        Path("C:/Users/ronal/OneDrive/Desktop/New folder (19)/final_model"),
-        Path.home() / "OneDrive" / "Desktop" / "New folder (19)" / "final_model",
-        BASE_DIR.parent / "final_model",
-        Path.home() / "OneDrive" / "Desktop" / "New folder (21)" / "WriteCheck" / "final_model",
-    ]
+    candidates = [Path(configured_path).expanduser() if configured_path else DEFAULT_TROCR_MODEL_PATH]
 
     for candidate in candidates:
-        if candidate.exists():
+        if candidate.is_dir():
             return str(candidate)
 
     searched = "\n".join(f"- {candidate}" for candidate in candidates)
@@ -971,36 +957,43 @@ async def save_submission_scan_endpoint(submission_id: str, request: Request):
 
 @app.post("/api/plagiarism/peer-check")
 async def check_peer_plagiarism(request: Request):
-    """
-    Checks the submitted text against other student submissions in the SAME assignment
-    to detect cross-student copying (peer-to-peer plagiarism).
-    """
+    """Teacher-only live comparison using saved work and the existing calculator."""
     body = await request.json()
-    text = body.get("text", "")
-    submission_id = body.get("submission_id")
-    assignment_id = body.get("assignment_id")
-    peer_submissions = body.get("peer_submissions")
-
-    require_assignment(request, assignment_id, teacher_only=True)
-    if submission_id:
-        current = require_submission(request, submission_id, teacher_only=True)
-        if str(current['assignment_id']) != str(assignment_id):
-            raise HTTPException(400, "Assignment does not match this submission.")
-    allowed = {str(row['id']) for row in visible_submissions(request) if str(row['assignment_id']) == str(assignment_id)}
-    if peer_submissions is not None:
-        if not isinstance(peer_submissions, list) or any(not isinstance(p, dict) or str(p.get('id') or p.get('submission_id') or p.get('submissionId') or '') not in allowed for p in peer_submissions):
-            raise HTTPException(403, "Peer submissions must belong to this assignment.")
-    else:
-        peer_submissions = [{'id': sid, 'text': row.get('transcribed_text') or ''}
-            for sid, row in read_results(request).items() if str(sid) in allowed]
-
-    peer_report = plagiarism_db.compute_peer_similarity(
-        text=text,
-        current_submission_id=submission_id,
-        assignment_id=assignment_id,
-        peer_submissions=peer_submissions,
+    current = require_submission(request, body.get('submission_id'), teacher_only=True)
+    require_assignment(request, current['assignment_id'], teacher_only=True)
+    if (str(body.get('assignment_id')) != str(current['assignment_id'])
+            or str(body.get('classroom_id')) != str(current['classroom_id'])):
+        raise HTTPException(400, "Classroom or assignment does not match this submission.")
+    matched = None
+    if body.get('matched_submission_id'):
+        matched = require_submission(request, body['matched_submission_id'], teacher_only=True)
+        if (str(matched['id']) == str(current['id'])
+                or str(matched['student_id']) == str(current['student_id'])
+                or str(matched['classroom_id']) != str(current['classroom_id'])
+                or str(matched['assignment_id']) != str(current['assignment_id'])):
+            raise HTTPException(403, 'Peer inspection requires different students in the same classroom and assignment.')
+    saved_results = read_results(request)
+    saved = saved_results.get(str(current['id']))
+    if not saved:
+        raise HTTPException(404, "Submission results unavailable.")
+    from user_preferences import teacher_preferences
+    if not teacher_preferences(current)['peerCrossCheck']:
+        return {'enabled': False, 'all_matches': []}
+    if matched:
+        if str(matched['id']) not in saved_results:
+            raise HTTPException(404, 'Matched submission is unavailable.')
+        for identity in (current, matched):
+            if any(str(saved_results[str(identity['id'])].get(key)) != str(identity[key])
+                   for key in ('id', 'student_id', 'classroom_id', 'assignment_id')):
+                raise HTTPException(409, 'Submission context changed. Refresh before inspecting this pair.')
+        return inspect_classmate_pair(current, matched, saved_results, os.environ['SUPABASE_SERVICE_ROLE_KEY'])
+    peers = load_classmates(current, os.environ['SUPABASE_SERVICE_ROLE_KEY'])
+    return plagiarism_db.compute_peer_similarity(
+        text=saved.get('transcribed_text') or '',
+        current_submission_id=current['id'], assignment_id=current['assignment_id'],
+        classroom_id=current['classroom_id'], current_student_id=current['student_id'],
+        peer_submissions=peers,
     )
-    return peer_report
 
 
 

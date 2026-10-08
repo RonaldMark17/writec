@@ -1,0 +1,20 @@
+[
+    "final_model\\config.json",
+    "final_model\\generation_config.json",
+    "final_model\\merges.txt",
+    "final_model\\preprocessor_config.json",
+    "final_model\\special_tokens_map.json",
+    "final_model\\tokenizer.json",
+    "final_model\\tokenizer_config.json",
+    "final_model\\vocab.json",
+    "backend\\models\\final_model_trocr\\final_model\\config.json",
+    "backend\\models\\final_model_trocr\\final_model\\generation_config.json",
+    "backend\\models\\final_model_trocr\\final_model\\merges.txt",
+    "backend\\models\\final_model_trocr\\final_model\\model.safetensors",
+    "backend\\models\\final_model_trocr\\final_model\\preprocessor_config.json",
+    "backend\\models\\final_model_trocr\\final_model\\special_tokens_map.json",
+    "backend\\models\\final_model_trocr\\final_model\\tokenizer.json",
+    "backend\\models\\final_model_trocr\\final_model\\tokenizer_config.json",
+    "backend\\models\\final_model_trocr\\final_model\\training_args.bin",
+    "backend\\models\\final_model_trocr\\final_model\\vocab.json"
+]

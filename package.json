@@ -21,6 +21,7 @@
     "start:backend": "python backend/main.py",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:revisions": "node scripts/test-revisions.cjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
@@ -42,6 +43,7 @@
     ]
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "autoprefixer": "^10.5.2",
     "concurrently": "^10.0.5",
     "postcss": "^8.5.15",

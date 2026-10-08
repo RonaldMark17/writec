@@ -1,9 +1,42 @@
 /** @jest-environment node */
-import { gradeExportRows, buildGradeWorkbook } from "./gradeExport";
+import { gradeExportRows, buildGradeWorkbook, loadGradeExport } from "./gradeExport";
 import ExcelJS from "exceljs";
 
 const assignment = { id: "a", classroomId: "c", title: "Essay", classroomName: "English", dueDate: "2026-09-01T10:00:00Z" };
 const members = [{ classroomId: "c", studentId: "s", studentName: "Alex" }, { classroomId: "c", studentId: "missing", studentName: "Sam" }];
+
+function exportClient() {
+  const records = [{ id: "a1", classroom_id: "A", title: "Assignment 1" },
+    { id: "a2", classroom_id: "A", title: "Assignment 2" }, { id: "b", classroom_id: "B", title: "Other" }];
+  return {
+    from: jest.fn(() => ({ select: () => ({ eq: async (key, value) => ({ data: records.filter(row => row[key] === value) }) }) })),
+    // Include a foreign row to verify the client ID guard in addition to RPC scoping.
+    rpc: jest.fn(async () => ({ data: records.map(row => ({ assignmentId: row.id, assignment: row.title,
+      subject: "CSST 106", student: "Juan Dela Cruz", score: "90" })) })),
+  };
+}
+
+test.each(["a1", "a2"])("assignment %s supplies classroom and exports only its own rows", async assignmentId => {
+  const client = exportClient();
+  const result = await loadGradeExport(client, { assignmentId });
+  expect(result.classroomId).toBe("A");
+  expect(client.rpc).toHaveBeenCalledWith("export_classroom_grades", { requested_classroom_id: "A" });
+  expect(result.rows).toHaveLength(1);
+  expect(result.rows[0]).toMatchObject({ assignmentId, score: 90 });
+});
+
+test("classroom export retains all its assignments and excludes another classroom", async () => {
+  const result = await loadGradeExport(exportClient(), { classroomId: "A" });
+  expect(result.rows.map(row => row.assignmentId)).toEqual(["a1", "a2"]);
+});
+
+test("missing context warns; mismatched and unavailable assignments never export", async () => {
+  const client = exportClient();
+  await expect(loadGradeExport(client)).rejects.toThrow("Open a classroom or select one classroom before exporting grades.");
+  await expect(loadGradeExport(client, { assignmentId: "a1", classroomId: "B" })).rejects.toThrow("does not belong");
+  await expect(loadGradeExport(client, { assignmentId: "deleted" })).rejects.toThrow("unavailable");
+  expect(client.rpc).not.toHaveBeenCalled();
+});
 
 test("isolates classes, selects latest attempt, preserves zero and missing grades", () => {
   const submissions = [

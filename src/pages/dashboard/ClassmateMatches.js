@@ -1,0 +1,46 @@
+import { useEffect, useState } from "react";
+import { checkPeerSimilarityViaBackend } from "./plagiarismScan";
+import { PaginatedList } from "./Pagination";
+import { PeerComparison, SimilarityDialog } from "./PeerSimilarityReview";
+
+export default function ClassmateMatches({ submission, onInspect }) {
+  const [inspecting, setInspecting] = useState(null);
+  const id = submission?.id;
+  const assignmentId = submission?.assignmentId;
+  const classroomId = submission?.classroomId;
+  const savedText = submission?.transcribedText;
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setResult(null); setError("");
+    checkPeerSimilarityViaBackend({ submissionId: id, assignmentId, classroomId }).then((body) => {
+      if (!cancelled) setResult(body);
+    }).catch((failure) => { if (!cancelled) setError(failure.message); });
+    return () => { cancelled = true; };
+  }, [id, assignmentId, classroomId, savedText, attempt]);
+  return <section aria-label="Classmate similarity" className="mt-5 space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+    <h4 className="font-semibold">Classmate similarity</h4>
+    <p className="text-sm">Same classroom and assignment. Similarity is information for review, not a finding of plagiarism.</p>
+    {error ? <p role="alert">{error} <button type="button" onClick={() => setAttempt(value => value + 1)} className="underline">Retry matches</button></p>
+      : !result ? <p role="status">Checking classmate matches...</p>
+      : result.enabled === false ? <p>Classroom comparison is disabled in your profile.</p>
+      : <>
+        <p className="text-sm">Compared with {result.total_peers_compared} classmate submissions.</p>
+        {result.all_matches?.length ? <PaginatedList items={result.all_matches} resetKey={id} label="Classmate matches">{rows =>
+          <ul className="space-y-2">{rows.map(match => <li key={match.submission_id} className="rounded-lg bg-white p-3">
+            <p className="font-medium">Similar answer detected</p>
+            <p>Matched Student: {match.student_name || "Classmate"}</p>
+            <p>Similarity: {match.score_percent}%</p>
+            <button type="button" aria-label={`Inspect match with ${match.student_name || "Classmate"}`}
+              onClick={() => onInspect ? onInspect(match.submission_id) : setInspecting(match.submission_id)}
+              className="mt-2 rounded-lg bg-[#137333] px-3 py-2 text-sm text-white">Inspect</button>
+          </li>)}</ul>}
+        </PaginatedList> : <p>No classmate matches at or above the 15% reporting threshold.</p>}
+      </>}
+    {inspecting && <SimilarityDialog title="Peer Similarity Review" onClose={() => setInspecting(null)}>
+      <PeerComparison key={`${id}:${inspecting}`} submission={submission} matchedSubmissionId={inspecting} />
+    </SimilarityDialog>}
+  </section>;
+}

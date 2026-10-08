@@ -93,6 +93,29 @@ class IntakeTests(unittest.TestCase):
             submit_reviewed_work(self.body, self.request)
         self.assertIn('Graded work', failure.exception.detail)
 
+    def test_requested_revision_uses_verified_student_and_request_id(self):
+        self.body.revision_request_id = uuid.uuid4()
+        self.db.side_effect = [[{'id': 'existing'}], {'id': 'existing', 'already_submitted': False}]
+        self.assertEqual(submit_reviewed_work(self.body, self.request)['id'], 'existing')
+        path, token, values = self.db.call_args.args
+        self.assertEqual(path, '/rest/v1/rpc/submit_requested_revision')
+        self.assertEqual(values['student_key'], STUDENT)
+        self.assertEqual(values['request_key'], str(self.body.revision_request_id))
+
+    def test_revision_rejection_does_not_report_old_work_as_saved(self):
+        self.body.revision_request_id = uuid.uuid4()
+        self.db.side_effect = [[{'id': 'existing'}], HTTPException(409, 'Request already completed')]
+        with self.assertRaises(HTTPException):
+            submit_reviewed_work(self.body, self.request)
+
+    def test_revision_cannot_also_retry_processing(self):
+        self.body.revision_request_id = uuid.uuid4()
+        self.body.retry_job_id = uuid.uuid4()
+        self.db.return_value = [{'id': 'existing'}]
+        with self.assertRaises(HTTPException) as failure:
+            submit_reviewed_work(self.body, self.request)
+        self.assertEqual(failure.exception.status_code, 400)
+
 
 if __name__ == '__main__':
     unittest.main()

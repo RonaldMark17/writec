@@ -15,6 +15,7 @@ router = APIRouter(prefix='/api/submissions', tags=['Submissions'])
 
 class ReviewedSubmission(BaseModel):
     retry_job_id: uuid.UUID | None = None
+    revision_request_id: uuid.UUID | None = None
     assignment_id: uuid.UUID
     title: str = Field(min_length=1, max_length=500)
     file_url: str = Field(min_length=1, max_length=2048)
@@ -54,6 +55,16 @@ def submit_reviewed_work(body: ReviewedSubmission, request: Request):
     query = ('/rest/v1/submissionTable?student_id=eq.' + quote(student_id)
              + '&assignment_id=eq.' + quote(assignment_id) + '&select=id&limit=1')
     existing = supabase_request(query, token)
+    if body.revision_request_id:
+        if body.retry_job_id:
+            raise HTTPException(400, 'Choose either a revision or a failed-processing retry.')
+        if not existing:
+            raise HTTPException(409, 'The original submission could not be found. Refresh and try again.')
+        return supabase_request('/rest/v1/rpc/submit_requested_revision', token, {
+            'submission_key': str(existing[0]['id']), 'student_key': student_id,
+            'request_key': str(body.revision_request_id), 'new_title': title,
+            'new_file': file_url, 'new_text': text,
+        })
     if body.retry_job_id:
         if not existing:
             raise HTTPException(409, 'The failed submission could not be found. Refresh and try again.')

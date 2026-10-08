@@ -389,76 +389,15 @@ export async function checkPlagiarismViaBackend({
   return response.json();
 }
 
-/**
- * Checks student text against all other submissions in the class database
- * for cross-student (peer-to-peer) similarity.
- */
-export async function checkPeerSimilarityViaBackend({
-  text = "",
-  submissionId = null,
-  assignmentId = null,
-  peerSubmissions = null,
-} = {}) {
-  if (!text || text.trim().length < 15) {
-    return {
-      peer_similarity_score: 0.0,
-      has_peer_match: false,
-      highest_match_submission_id: null,
-      matching_snippets: [],
-      all_matches: [],
-      total_peers_compared: 0,
-    };
-  }
-
-  // If explicit classmate list was provided and is empty, there are no classmates to compare
-  if (Array.isArray(peerSubmissions) && peerSubmissions.length === 0) {
-    return {
-      peer_similarity_score: 0.0,
-      has_peer_match: false,
-      highest_match_submission_id: null,
-      matching_snippets: [],
-      all_matches: [],
-      total_peers_compared: 0,
-    };
-  }
-
-  try {
-    const response = await apiFetch(`${getBackend()}/api/plagiarism/peer-check`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        text,
-        submission_id: submissionId,
-        assignment_id: assignmentId,
-        peer_submissions: peerSubmissions,
-      }),
-    });
-
-    if (!response.ok) {
-      return {
-        peer_similarity_score: 0.0,
-        has_peer_match: false,
-        highest_match_submission_id: null,
-        matching_snippets: [],
-        all_matches: [],
-        total_peers_compared: 0,
-      };
-    }
-
-    return await response.json();
-  } catch (err) {
-    console.warn("Peer similarity check error:", err);
-    return {
-      peer_similarity_score: 0.0,
-      has_peer_match: false,
-      highest_match_submission_id: null,
-      matching_snippets: [],
-      all_matches: [],
-      total_peers_compared: 0,
-    };
-  }
+/** Compare saved work against authoritative classmates in the same assignment. */
+export async function checkPeerSimilarityViaBackend({ submissionId, assignmentId, classroomId, matchedSubmissionId } = {}) {
+  const response = await apiFetch(`${getBackend()}/api/plagiarism/peer-check`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ submission_id: submissionId, assignment_id: assignmentId, classroom_id: classroomId, matched_submission_id: matchedSubmissionId }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not load classmate matches.");
+  return result;
 }
 
 /**

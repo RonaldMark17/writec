@@ -1,13 +1,19 @@
 # Checking OCR quality
 
 The backend uses `backend/models/yolo/best.pt` and the TrOCR checkpoint selected
-by `TROCR_MODEL_PATH` in `backend/.env`. Model weights are unchanged by these fixes.
+by `TROCR_MODEL_PATH` in `backend/.env`. The selected checkpoint is now
+`backend/models/final_model_trocr/BEST_MODEL-TROCR/BEST_MODEL`; YOLO is unchanged.
 
 Run the real backend recognition and streaming consistency check:
 
 ```powershell
-python scripts/check_ocr.py test_internet_sample.jpg --expected-lines 3
+python scripts/check_ocr.py test_internet_sample.jpg
 ```
+
+The October 8, 2026 check produced four crops for this three-line sample, including
+an extra crop on the first line. Regular and streamed recognition agreed, but the
+transcription contained errors. This is an operational smoke test, not an accuracy
+acceptance test. Its output is saved in `backend/ocr_model_verification.json`.
 
 To measure recognition accuracy, provide a manually verified UTF-8 transcription:
 

@@ -73,6 +73,11 @@ def require_file(request, reference, kind=None):
     for row in visible_submissions(request):
         if row.get('file_url') and file_reference(row['file_url']) == wanted:
             return wanted
+    # Historical files remain scoped to the current submission's enrolled student/teacher.
+    rows = supabase_request('/rest/v1/rpc/submission_history_files', request.state.access_token, {})
+    for row in rows if isinstance(rows, list) else []:
+        if row.get('file_url') and file_reference(row['file_url']) == wanted:
+            return wanted
     raise HTTPException(404, 'File not found or not accessible.')
 
 

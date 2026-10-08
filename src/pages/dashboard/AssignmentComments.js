@@ -1,3 +1,4 @@
+import { PaginatedList } from "./Pagination";
 import { useEffect, useState } from "react";
 import { supabase } from "../../supabaseClient";
 import { formatDateTime } from "./shared";
@@ -73,11 +74,11 @@ export default function AssignmentComments({ assignmentId, classroomId, profile 
         {loading ? <p role="status" className="text-sm text-gray-500">Loading comments...</p> :
           !error && (teacher && kind === "private" && !recipient ? <p className="text-sm text-gray-500">Select a student to view or reply privately.</p> :
           rows.length === 0 ? <p className="text-sm text-gray-500">No comments yet.</p> :
-          <ul className="divide-y divide-gray-100">{rows.map((comment) => <li key={comment.id} className="py-3">
+          <PaginatedList items={rows} resetKey={[assignmentId, classroomId, recipient, kind]} label="Comments">{pageItems => <ul className="divide-y divide-gray-100">{pageItems.map((comment) => <li key={comment.id} className="py-3">
             <p className="text-sm font-medium">{comment.sender_name || comment.student_name}</p>
             <time className="text-xs text-gray-500" dateTime={comment.created_at}>{formatDateTime(comment.created_at)}</time>
             <p className="mt-2 whitespace-pre-wrap break-words text-sm">{comment.comment_text}</p>
-          </li>)}</ul>)}
+          </li>)}</ul>}</PaginatedList>)}
         {canPost && <form onSubmit={(event) => submit(event, kind)} className="space-y-3">
           <label className="block text-sm">{kind === "class" ? "Class Comment" : "Private Comment"}
             <textarea value={drafts[kind]} onChange={(event) => setDrafts((current) => ({ ...current, [kind]: event.target.value }))}

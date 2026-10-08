@@ -1,3 +1,34 @@
+export async function loadGradeExport(client, { classroomId, assignmentId } = {}) {
+  if (!classroomId && !assignmentId) {
+    throw new Error("Open a classroom or select one classroom before exporting grades.");
+  }
+  let assignment;
+  if (assignmentId) {
+    const { data, error } = await client.from("assignmentTable").select("id, classroom_id, title").eq("id", assignmentId);
+    if (error) throw error;
+    assignment = (data || []).find(row => String(row.id) === String(assignmentId));
+    if (!assignment?.classroom_id) throw new Error("The selected assignment is unavailable. Refresh and try again.");
+    if (classroomId && String(classroomId) !== String(assignment.classroom_id)) {
+      throw new Error("The selected assignment does not belong to this classroom.");
+    }
+    classroomId = assignment.classroom_id;
+  }
+  // Check row IDs too; the existing RPC enforces teacher access and classroom scope.
+  const { data: assignments, error: assignmentError } = await client.from("assignmentTable")
+    .select("id, classroom_id").eq("classroom_id", classroomId);
+  if (assignmentError) throw assignmentError;
+  const allowed = new Set((assignments || []).filter(row => String(row.classroom_id) === String(classroomId))
+    .map(row => String(row.id)));
+  if (assignmentId && !allowed.has(String(assignmentId))) throw new Error("The assignment classroom changed. Refresh and try again.");
+  const { data, error } = await client.rpc("export_classroom_grades", { requested_classroom_id: String(classroomId) });
+  if (error) throw error;
+  const rows = (data || []).filter(row => allowed.has(String(row.assignmentId))
+    && (!assignmentId || String(row.assignmentId) === String(assignmentId)))
+    .map(row => ({ ...row, score: row.score == null || String(row.score).trim() === "" ? null
+      : Number.isFinite(Number(row.score)) ? Number(row.score) : row.score }));
+  return { rows, classroomId, assignmentTitle: assignment?.title };
+}
+
 export function gradeExportRows(assignments, submissions, members) {
   const rows = [];
   for (const assignment of assignments) {

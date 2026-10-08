@@ -1,0 +1,125 @@
+{
+  "text": "1. II else X.O.\nHELLO CLS Amacyneo.\n\nHello I Optum\n\nHello I Analysis.",
+  "lines": [
+    "1. II else X.O.",
+    "HELLO CLS Amacyneo.",
+    "Hello I Optum",
+    "Hello I Analysis."
+  ],
+  "confidences": [
+    0.543,
+    0.61,
+    0.873,
+    0.815
+  ],
+  "line_details": [
+    {
+      "text": "1. II else X.O.",
+      "bbox": [
+        58,
+        623,
+        1677,
+        749
+      ],
+      "confidence": 0.543,
+      "confidence_label": "review",
+      "needs_review": true
+    },
+    {
+      "text": "HELLO CLS Amacyneo.",
+      "bbox": [
+        61,
+        737,
+        1701,
+        873
+      ],
+      "confidence": 0.61,
+      "confidence_label": "review",
+      "needs_review": true
+    },
+    {
+      "text": "Hello I Optum",
+      "bbox": [
+        100,
+        1356,
+        1028,
+        1507
+      ],
+      "confidence": 0.873,
+      "confidence_label": "high",
+      "needs_review": false
+    },
+    {
+      "text": "Hello I Analysis.",
+      "bbox": [
+        104,
+        1740,
+        1362,
+        1898
+      ],
+      "confidence": 0.815,
+      "confidence_label": "review",
+      "needs_review": true
+    }
+  ],
+  "boxes": [
+    {
+      "x1": 58,
+      "y1": 623,
+      "x2": 1677,
+      "y2": 749
+    },
+    {
+      "x1": 61,
+      "y1": 737,
+      "x2": 1701,
+      "y2": 873
+    },
+    {
+      "x1": 100,
+      "y1": 1356,
+      "x2": 1028,
+      "y2": 1507
+    },
+    {
+      "x1": 104,
+      "y1": 1740,
+      "x2": 1362,
+      "y2": 1898
+    }
+  ],
+  "raw_boxes": [
+    {
+      "x1": 0.0,
+      "y1": 1762.0,
+      "x2": 2340.0,
+      "y2": 1876.0,
+      "confidence": 0.6865550875663757
+    },
+    {
+      "x1": 0.0,
+      "y1": 1377.0,
+      "x2": 2340.0,
+      "y2": 1486.0,
+      "confidence": 0.6218193769454956
+    },
+    {
+      "x1": 11.0,
+      "y1": 644.0,
+      "x2": 2340.0,
+      "y2": 749.0,
+      "confidence": 0.5266377329826355
+    },
+    {
+      "x1": 0.0,
+      "y1": 737.0,
+      "x2": 2340.0,
+      "y2": 851.0,
+      "confidence": 0.3643175959587097
+    }
+  ],
+  "detected_line_count": 4,
+  "duplicate_line_count": 0,
+  "processed_line_count": 4,
+  "truncated": false
+}

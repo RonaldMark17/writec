@@ -439,6 +439,7 @@ export const teacherPages = [
     id: "assignments",
     label: "Classwork",
   },
+  { id: "calendar", label: "Calendar" },
   {
     id: "submissions",
     label: "Grades",
@@ -458,6 +459,7 @@ export const studentPages = [
     id: "assignments",
     label: "To-do",
   },
+  { id: "calendar", label: "Calendar" },
   {
     id: "submissions",
     label: "Submissions",

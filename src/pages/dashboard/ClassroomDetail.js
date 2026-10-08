@@ -1,3 +1,4 @@
+import { PaginatedList } from "./Pagination";
 import { useState } from "react";
 import ClassroomRoster from "./ClassroomRoster";
 import { formatDateTime, ArchiveIcon, UnarchiveIcon, CopyIcon, DownloadIcon, LeaveIcon } from "./shared";
@@ -172,7 +173,7 @@ export default function ClassroomDetail({
               No homework posted in this classroom yet.
             </p>
           ) : (
-            homework.map((assignment) => (
+            <PaginatedList items={homework} resetKey={classroom.id} label="Homework">{pageItems => pageItems.map((assignment) => (
               <button type="button" key={assignment.id} onClick={() => onOpenAssignment(assignment)}
                 className="block w-full rounded-xl border border-gray-200 bg-white p-5 text-left hover:border-[#137333] hover:shadow-sm transition">
                 <h4 className="font-medium break-words">{assignment.title}</h4>
@@ -181,7 +182,7 @@ export default function ClassroomDetail({
                 {assignment.instructions && <p className="mt-2 text-sm text-gray-600 line-clamp-2">{assignment.instructions}</p>}
                 <span className="mt-3 block text-sm font-medium text-[#137333]">Open homework &rarr;</span>
               </button>
-            ))
+            ))}</PaginatedList>
           )}
         </section>
       )}

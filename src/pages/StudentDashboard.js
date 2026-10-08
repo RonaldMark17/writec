@@ -1,3 +1,7 @@
+import { PaginatedList } from "./dashboard/Pagination";
+import AssignmentCalendar from "./dashboard/AssignmentCalendar";
+import RevisionHistory from "./dashboard/RevisionHistory";
+import { filterTodoAssignments } from "./dashboard/todoFilters";
 import AssignmentComments from "./dashboard/AssignmentComments";
 import { useClassroomArchiveSync } from "./dashboard/useClassroomArchiveSync";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -168,9 +172,13 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       row.assignmentId === assignment.id && row.classroomId === assignment.classroomId)
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
     return { ...assignment, isArchived: Boolean(classrooms.find((c) => c.id === assignment.classroomId)?.isArchived),
-      submitted: Boolean(submission), submission: submission || null };
+      submitted: Boolean(submission) && !submission?.revisionRequest, revisionRequest: submission?.revisionRequest, submission: submission || null };
   }), [loadedAssignments, submissions, classrooms, profile?.id]);
   const [studentDataReady, setStudentDataReady] = useState(false);
+
+  const [todoSearch, setTodoSearch] = useState("");
+  const [todoStatus, setTodoStatus] = useState("all");
+  const [todoDeadline, setTodoDeadline] = useState("all");
 
   const [submissionSearch, setSubmissionSearch] = useState("");
   const [submissionClassroomId, setSubmissionClassroomId] = useState("all");
@@ -258,12 +266,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     null;
 
   const assignmentGroups = filterAndSortTodoAssignments(
-    assignments,
+    filterTodoAssignments(assignments, todoSearch, todoStatus, todoDeadline),
     selectedClassroomId
   );
 
   const retryTarget = submissions.find((row) => row.id === submissionDraft.retrySubmissionId);
-  const canResubmit = (row) => row?.processingState === "failed" && row?.processingJobId
+  const canResubmit = (row) => !row?.revisionRequest && row?.processingState === "failed" && row?.processingJobId
     && row.status !== "graded" && !row.returnedAt && !String(row.grade ?? "").trim();
   const todoAssignments = selectedAssignment
     ? [{ ...selectedAssignment, dueInfo: getAssignmentDueInfo(selectedAssignment.dueDate, selectedAssignment.submitted) }] : assignmentGroups.todoList;
@@ -569,6 +577,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           dueDate: assignment?.dueDate || null,
           essayTitle: submission.essay_title || "Essay submission",
           fileUrl: submission.file_url,
+          revisionRequest: submission.revision_request,
+          revisionHistory: submission.revision_history || [],
           returnedAt: submission.returned_at,
           status: submission.status || "submitted",
           grade: submission.returned_at ? (submission.grade ?? "") : "",
@@ -942,7 +952,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
-    if (getAssignmentDueInfo(selectedAssignment.dueDate, false).isOverdue && selectedAssignment.acceptLateSubmissions === false) {
+    if (!selectedAssignment.revisionRequest && getAssignmentDueInfo(selectedAssignment.dueDate, false).isOverdue && selectedAssignment.acceptLateSubmissions === false) {
       setErrorMessage("Submissions are closed. Your teacher has disabled late submissions for this assignment.");
       return;
     }
@@ -1056,6 +1066,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ assignment_id: String(selectedAssignment.id), title: essayTitle,
             file_url: uploadedFileUrl, text: reviewedText.trim(),
+            ...(selectedAssignment.revisionRequest ? { revision_request_id: selectedAssignment.revisionRequest.id } : {}),
             ...(submissionDraft.retryJobId ? { retry_job_id: submissionDraft.retryJobId } : {}) }),
         });
         const result = await response.json();
@@ -1065,7 +1076,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
       // A lost response can follow a committed insert. Confirm using safe metadata.
       let confirmed = Boolean(savedSubmission?.id);
-      if (!confirmed && !submissionDraft.retrySubmissionId) {
+      if (!confirmed && !submissionDraft.retrySubmissionId && !selectedAssignment.revisionRequest) {
         const { data: confirmedRows, error: confirmationError } = await supabase.rpc("accessible_submissions");
         confirmed = !confirmationError && (confirmedRows || []).some((row) =>
           String(row.assignment_id) === String(selectedAssignment.id) && String(row.student_id) === String(profile.id)
@@ -1082,7 +1093,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         return;
       }
 
-      const savedMessage = submissionDraft.retrySubmissionId
+      const savedMessage = selectedAssignment.revisionRequest ? "Revision submitted. Your previous work remains in revision history." : submissionDraft.retrySubmissionId
         ? "Work resubmitted. Processing has been queued again."
         : savedSubmission?.already_submitted
         ? "This assignment was already saved. Your existing submission is available below."
@@ -1113,6 +1124,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         onPageChange={(page) => {
           setSuccessMessage("");
           setErrorMessage("");
+          if (page === "assignments" || page === "calendar") {
+            if (openedClassroomId && classrooms.some((classroom) => classroom.id === openedClassroomId)) {
+              setSelectedClassroomId(openedClassroomId);
+            }
+            resetSubmissionDraft();
+          }
           setActivePage(page);
         }}
       />
@@ -1254,6 +1271,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
             />
           );
         })()}
+
+        {activePage === "calendar" && (isLoading ? <p role="status">Loading assignments...</p> : !studentDataReady ? <p role="alert">Unable to load assignments. <button onClick={loadStudentData}>Retry</button></p> :
+          <AssignmentCalendar assignments={assignments} classrooms={classrooms} classroomId={selectedClassroomId}
+            onClassroomChange={id => { setSelectedClassroomId(id); setOpenedClassroomId(id || null); }}
+            onOpenAssignment={assignment => { handleViewClassroomAssignments(assignment.classroomId); handleOpenSubmissionDraft(assignment); }} />)}
 
         {/* Classes Page */}
         {activePage === "classrooms" && (!openedClassroomId || !classrooms.some((c) => c.id === openedClassroomId)) && (
@@ -1515,6 +1537,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     value={selectedClassroomId}
                     onChange={(event) => {
                       setSelectedClassroomId(event.target.value);
+                      setOpenedClassroomId(event.target.value || null);
                       resetSubmissionDraft();
                     }}
                   className="mt-1.5 h-10 w-full rounded-md border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
@@ -1525,13 +1548,31 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         key={classroom.id}
                         value={classroom.id}
                       >
-                        {classroom.name}
+                        {classroom.name}{classroom.section ? ` — Section ${classroom.section}` : ""}
                       </option>
                     ))}
                   </select>
                 </label>
               )}
             </div>
+
+            {!selectedAssignment && <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4">
+              <label className="flex-1 text-sm">Search assignments
+                <input type="search" value={todoSearch} onChange={e => setTodoSearch(e.target.value)} placeholder="Title, subject, or section" className="mt-1 block w-full rounded border p-2" />
+              </label>
+              <label className="text-sm">Assignment status
+                <select value={todoStatus} onChange={e => setTodoStatus(e.target.value)} className="mt-1 block rounded border p-2">
+                  <option value="all">All statuses</option><option value="pending">To do</option><option value="submitted">Turned In</option><option value="revision">Revision requested</option>
+                </select>
+              </label>
+              <label className="text-sm">Deadline
+                <select value={todoDeadline} onChange={e => setTodoDeadline(e.target.value)} className="mt-1 block rounded border p-2">
+                  <option value="all">All deadlines</option><option value="overdue">Overdue</option><option value="soon">Due soon</option><option value="undated">No due date</option>
+                </select>
+              </label>
+              <button type="button" className="rounded border px-3 py-2 text-sm" onClick={() => { setTodoSearch(""); setTodoStatus("all"); setTodoDeadline("all"); }}>Clear search and filters</button>
+              <p role="status" className="w-full text-xs text-gray-600">{assignmentGroups.allCount} matching assignment{assignmentGroups.allCount === 1 ? "" : "s"}</p>
+            </div>}
 
             {!selectedAssignment && <section className="mt-6">
               <div className="mb-3 flex items-center gap-2">
@@ -1547,7 +1588,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {dueSoonAssignments.map((assignment) => (
+                  <PaginatedList items={dueSoonAssignments} resetKey={[selectedClassroomId, todoSearch, todoStatus, todoDeadline]} label="Due soon assignments">{pageItems => pageItems.map((assignment) => (
                     <button
                       key={assignment.id}
                       type="button"
@@ -1571,19 +1612,19 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         Due {formatDateTime(assignment.dueDate)}
                       </span>
                     </button>
-                  ))}
+                  ))}</PaginatedList>
                 </div>
               )}
             </section>}
 
             {!selectedAssignment && assignmentGroups.completedList.length > 0 && <section className="mt-6 space-y-3" aria-label="Turned In assignments">
               <h3 className="text-lg font-medium">Turned In</h3>
-              {assignmentGroups.completedList.map((assignment) => <button key={assignment.id} type="button"
+              <PaginatedList items={assignmentGroups.completedList} resetKey={[selectedClassroomId, todoSearch, todoStatus, todoDeadline]} label="Turned In assignments">{pageItems => pageItems.map((assignment) => <button key={assignment.id} type="button"
                 onClick={() => handleOpenSubmissionDraft(assignment)}
                 className="block w-full rounded-xl border border-[#dadce0] bg-white p-4 text-left hover:border-[#137333]">
                 <span className="font-medium">{assignment.title}</span>
                 <span className="ml-3 text-sm text-[#137333]">Turned In</span>
-              </button>)}
+              </button>)}</PaginatedList>
             </section>}
 
             <section className="mt-8">
@@ -1600,14 +1641,14 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
                       <ClipboardIcon className="h-7 w-7" />
                     </div>
-                    <h3 className="mt-4 text-lg font-medium text-[#202124]">No work due</h3>
+                    <h3 className="mt-4 text-lg font-medium text-[#202124]">{todoSearch || todoStatus !== "all" || todoDeadline !== "all" ? "No matching assignments" : "No work due"}</h3>
                     <p className="mt-1 text-sm text-[#5f6368]">
-                      You're all caught up! When teachers assign new work, it will appear here.
+                      {todoSearch || todoStatus !== "all" || todoDeadline !== "all" ? "Try another search or clear your filters." : "You're all caught up! When teachers assign new work, it will appear here."}
                     </p>
                   </div>
                 )}
 
-                {todoAssignments.filter((assignment) => !selectedAssignment || assignment.id === selectedAssignment.id).map((assignment) => {
+                <PaginatedList items={todoAssignments.filter((assignment) => !selectedAssignment || assignment.id === selectedAssignment.id)} resetKey={[selectedClassroomId, selectedAssignment?.id, todoSearch, todoStatus, todoDeadline]} label="Assignments">{pageItems => pageItems.map((assignment) => {
                   const isDraftOpen =
                     submissionDraft.assignmentId === assignment.id;
 
@@ -1654,7 +1695,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${assignment.dueInfo.badgeColor}`}
                         >
                           {assignment.dueInfo.isOverdue && <AlertCircleIcon className="h-3.5 w-3.5" />}
-                          {assignment.dueInfo.label}
+                          {assignment.revisionRequest ? "Revision requested" : assignment.dueInfo.label}
                         </span>
                       </button>
 
@@ -1685,7 +1726,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                             <ArchiveIcon className="h-3.5 w-3.5" />
                             <span>Class is archived (Submissions closed)</span>
                           </span>
-                        ) : assignment.dueInfo.isOverdue && assignment.acceptLateSubmissions === false ? (
+                        ) : !assignment.revisionRequest && assignment.dueInfo.isOverdue && assignment.acceptLateSubmissions === false ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-xs font-semibold text-red-700">
                             <AlertCircleIcon className="h-3.5 w-3.5" />
                             <span>Submissions closed (Late submissions disabled)</span>
@@ -1709,6 +1750,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         )}
                       </div>}
 
+                    {assignment.revisionRequest && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                      <h4 className="font-semibold">Revision requested</h4><p className="whitespace-pre-wrap">{assignment.revisionRequest.message}</p>
+                      <p className="mt-2 text-sm">Submit updated work below. Your earlier submission will be preserved. This request allows submission after the original deadline.</p>
+                    </div>}
+                    {isDraftOpen && <RevisionHistory history={assignment.submission?.revisionHistory} />}
                     {isDraftOpen && assignment.submitted && !submissionDraft.retrySubmissionId && (
                       <section aria-label="Submitted work" className="mt-5 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
                         <h4 className="font-semibold text-[#137333]">Turned In</h4>
@@ -1721,7 +1767,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         <button type="button" onClick={() => setViewingSubmission(assignment.submission)} className="text-sm font-medium text-[#137333] underline">View submission details</button>
                       </section>
                     )}
-                    {isDraftOpen && <AssignmentComments key={`${assignment.classroomId}:${assignment.id}`} assignmentId={assignment.id} classroomId={assignment.classroomId} profile={profile} />}
 
                     {isDraftOpen && (!assignment.submitted || submissionDraft.retrySubmissionId) && (
                       <form
@@ -1897,9 +1942,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         </button>
                       </form>
                     )}
+                    {isDraftOpen && <AssignmentComments key={`${assignment.classroomId}:${assignment.id}`} assignmentId={assignment.id} classroomId={assignment.classroomId} profile={profile} />}
                   </article>
                 );
-              })}
+              })}</PaginatedList>
             </div>
             </section>
           </div>
@@ -2074,7 +2120,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
                     {/* Table Rows */}
                     <div className="divide-y divide-[#dadce0]">
-                      {filteredSubmissions.map((submission) => (
+                      <PaginatedList items={filteredSubmissions} resetKey={[submissionClassroomId, submissionStatusFilter, submissionSearch, submissionSort]} label="Submissions">{pageItems => pageItems.map((submission) => (
                         <div
                           key={submission.id}
                           className="grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1.2fr)_minmax(140px,0.9fr)_minmax(130px,0.9fr)_minmax(110px,auto)] items-center gap-4 px-5 py-4 text-sm transition hover:bg-[#f8f9fa]/80"
@@ -2145,7 +2191,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                 submission.status === "graded" ? "bg-[#e6f4ea] text-[#137333]" :
                                 "bg-[#e8f0fe] text-[#1967d2] border border-[#c2e7ff]"
                               }`}>
-                                {submission.returnedAt ? "Returned" : submission.processingState && submission.processingState !== "ready" ? `Turned In - ${processingLabel(submission.processingState)}` : submission.status === "graded" ? "Graded" : "Turned In"}
+                                {submission.revisionRequest ? "Revision requested" : submission.returnedAt ? "Returned" : submission.processingState && submission.processingState !== "ready" ? `Turned In - ${processingLabel(submission.processingState)}` : submission.status === "graded" ? "Graded" : "Turned In"}
                               </span>
                             </div>
                             <div>
@@ -2167,6 +2213,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
                           {/* Action Button */}
                           <div className="text-right">
+                          {submission.revisionRequest && <button type="button" className="mr-2 rounded-full border border-amber-500 px-3 py-2 text-sm font-semibold text-amber-900"
+                            onClick={() => {
+                              const assignment = assignments.find(a => a.id === submission.assignmentId);
+                              if (assignment) { handleViewClassroomAssignments(assignment.classroomId); handleOpenSubmissionDraft(assignment); }
+                            }}>Revise assignment</button>}
                           {canResubmit(submission) && (
                             <button type="button" className="rounded-full border border-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-700"
                               onClick={() => {
@@ -2205,7 +2256,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                             </button>
                           </div>
                         </div>
-                      ))}
+                      ))}</PaginatedList>
                     </div>
                   </div>
                 </div>
@@ -2314,7 +2365,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       <p className={`mt-1 text-lg font-extrabold capitalize ${
                         viewingSubmission.status === "graded" ? "text-emerald-700" :
                         viewingSubmission.status === "submitted" ? "text-blue-600" : "text-gray-500"
-                      }`}>{viewingSubmission.returnedAt ? "Returned" : viewingSubmission.processingState && viewingSubmission.processingState !== "ready" ? `Turned In - ${processingLabel(viewingSubmission.processingState)}` : viewingSubmission.status === "graded" ? "Graded" : "Turned In"}</p>
+                      }`}>{viewingSubmission.revisionRequest ? "Revision requested" : viewingSubmission.returnedAt ? "Returned" : viewingSubmission.processingState && viewingSubmission.processingState !== "ready" ? `Turned In - ${processingLabel(viewingSubmission.processingState)}` : viewingSubmission.status === "graded" ? "Graded" : "Turned In"}</p>
                     </div>
                     <button
                       type="button"

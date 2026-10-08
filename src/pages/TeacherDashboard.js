@@ -1,8 +1,13 @@
+import { PeerComparison, SimilarityDialog } from "./dashboard/PeerSimilarityReview";
+import { PaginatedList } from "./dashboard/Pagination";
+import ClassmateMatches from "./dashboard/ClassmateMatches";
+import AssignmentCalendar from "./dashboard/AssignmentCalendar";
+import RevisionHistory from "./dashboard/RevisionHistory";
 import AssignmentComments from "./dashboard/AssignmentComments";
 import { useClassroomArchiveSync } from "./dashboard/useClassroomArchiveSync";
 import SubmissionStation from "./dashboard/SubmissionStation";
 import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
-import { downloadGrades } from "./dashboard/gradeExport";
+import { downloadGrades, loadGradeExport } from "./dashboard/gradeExport";
 import { processingLabel, useSubmissionProgress, loadTeacherSubmissionStatus } from "./dashboard/submissionProgress";
 import { apiFetch, getBackendUrl } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
@@ -163,12 +168,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
   const [classroomMembers, setClassroomMembers] = useState([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(null);
+  const [peerInspection, setPeerInspection] = useState(null);
   const [assignmentFilterClassroomId, setAssignmentFilterClassroomId] = useState("all");
   const [submissionRosterFilter, setSubmissionRosterFilter] = useState("all");
   const [submissionRosterSearch, setSubmissionRosterSearch] = useState("");
   const [selectedSubmissionsClassroomId, setSelectedSubmissionsClassroomId] = useState("all");
-  const [selectedSubmissionsAssignmentId, setSelectedSubmissionsAssignmentId] = useState("all");
-  const [gradeSubject, setGradeSubject] = useState("all");
   const [exportingGrades, setExportingGrades] = useState(false);
   const [submissionHubSearch, setSubmissionHubSearch] = useState("");
   const [submissionHubClassroomId, setSubmissionHubClassroomId] = useState("all");
@@ -378,7 +382,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       const isGraded = Boolean(sub?.grade);
 
       let status = "missing";
-      if (isGraded) {
+      if (sub?.revisionRequest) {
+        status = "revision";
+      } else if (isGraded) {
         status = "graded";
       } else if (isSubmitted) {
         if (
@@ -410,7 +416,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       if (!enrolledStudentIds.has(sub.studentId)) {
         const isGraded = Boolean(sub.grade);
         let status = "missing";
-        if (isGraded) {
+        if (sub.revisionRequest) {
+          status = "revision";
+        } else if (isGraded) {
           status = "graded";
         } else {
           if (
@@ -484,34 +492,43 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     return assignments.filter((a) => a.classroomId === assignmentFilterClassroomId);
   }, [assignments, assignmentFilterClassroomId]);
 
-  const gradeSubjects = [...new Set(classrooms.map((c) => c.subject && c.subject !== "No subject" ? c.subject : c.name))].sort();
-  const gradeClasswork = assignments.filter((assignment) => {
-    const classroom = classrooms.find((c) => c.id === assignment.classroomId);
-    const subject = classroom?.subject && classroom.subject !== "No subject" ? classroom.subject : classroom?.name;
-    return (gradeSubject === "all" || subject === gradeSubject) &&
-      (selectedSubmissionsClassroomId === "all" || String(assignment.classroomId) === String(selectedSubmissionsClassroomId));
-  });
+  const gradeClasswork = assignments.filter(assignment => selectedSubmissionsClassroomId === "all"
+    || String(assignment.classroomId) === String(selectedSubmissionsClassroomId));
 
-  async function handleExportGrades(requestedClassroomId) {
+  function selectGradeAssignment(assignmentId) {
+    setErrorMessage("");
+    setSuccessMessage("");
+    const assignment = assignments.find(row => String(row.id) === String(assignmentId));
+    setSelectedAssignmentId(assignment?.id || null);
+    setAssignmentDetailTab("roster");
+    setSubmissionRosterFilter("all");
+    setSubmissionRosterSearch("");
+    if (assignment) {
+      setSelectedSubmissionsClassroomId(assignment.classroomId);
+      setOpenedClassroomId(assignment.classroomId);
+      setAssignmentFilterClassroomId(assignment.classroomId);
+    }
+  }
+
+  function selectGradeClassroom(classroomId) {
+    setSelectedSubmissionsClassroomId(classroomId);
+    setOpenedClassroomId(classroomId === "all" ? null : classroomId);
+    setAssignmentFilterClassroomId(classroomId);
+    selectGradeAssignment(null);
+  }
+
+  async function handleExportGrades(context = {}) {
     if (exportingGrades) return;
     setExportingGrades(true);
     setErrorMessage("");
     try {
-      const classroomId = typeof requestedClassroomId === "string" ? requestedClassroomId :
-        (selectedSubmissionsClassroomId !== "all" ? selectedSubmissionsClassroomId :
-          assignments.find((a) => a.id === selectedSubmissionsAssignmentId)?.classroomId);
-      if (!classroomId) { setErrorMessage("Open a classroom or select one classroom before exporting grades."); return; }
-      const { data, error } = await supabase.rpc("export_classroom_grades", { requested_classroom_id: String(classroomId) });
-      if (error) throw error;
-      const rows = (data || []).filter((row) => typeof requestedClassroomId === "string" ||
-        (selectedSubmissionsAssignmentId === "all" || row.assignmentId === selectedSubmissionsAssignmentId))
-        .map((row) => ({ ...row, score: row.score == null || String(row.score).trim() === "" ? null :
-          Number.isFinite(Number(row.score)) ? Number(row.score) : row.score }));
-      if (!rows.length) { setErrorMessage("No student grade records in this classroom."); return; }
-      await downloadGrades(rows, profile.full_name || "Teacher", classrooms.find((c) => c.id === classroomId)?.name || classroomId);
+      const { rows, classroomId, assignmentTitle } = await loadGradeExport(supabase, context);
+      if (!rows.length) { setErrorMessage("No student grade records in this selection."); return; }
+      const classroomName = classrooms.find(c => String(c.id) === String(classroomId))?.name || String(classroomId);
+      await downloadGrades(rows, profile.full_name || "Teacher", [classroomName, assignmentTitle].filter(Boolean).join(" / "));
       setSuccessMessage(`Exported ${rows.length} student assignment records to Excel.`);
-    } catch {
-      setErrorMessage("Could not export grades. Please try again.");
+    } catch (error) {
+      setErrorMessage(error.message || "Could not export grades. Please try again.");
     } finally { setExportingGrades(false); }
   }
 
@@ -555,10 +572,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       })
       .filter((assignment) => {
         if (activePage === "submissions") {
-          const subject = assignment.classroomSubject && assignment.classroomSubject !== "No subject" ? assignment.classroomSubject : assignment.classroomName;
-          return (gradeSubject === "all" || subject === gradeSubject) &&
-            (selectedSubmissionsClassroomId === "all" || String(assignment.classroomId) === String(selectedSubmissionsClassroomId)) &&
-            (selectedSubmissionsAssignmentId === "all" || String(assignment.id) === String(selectedSubmissionsAssignmentId));
+          return selectedSubmissionsClassroomId === "all" || String(assignment.classroomId) === String(selectedSubmissionsClassroomId);
         }
         const searchable = [
           assignment.title,
@@ -611,9 +625,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     classroomMembers,
     submissions,
     activePage,
-    gradeSubject,
     selectedSubmissionsClassroomId,
-    selectedSubmissionsAssignmentId,
     submissionHubClassroomId,
     submissionHubFilter,
     submissionHubSearch,
@@ -1070,6 +1082,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           assignmentId: submission.assignment_id,
           classroomId: submission.classroom_id,
           studentId: submission.student_id,
+          revisionRequest: submission.revision_request,
+          revisionHistory: submission.revision_history || [],
           returnedAt: submission.returned_at,
           studentName: studentsById.get(submission.student_id) || "Student",
           assignmentTitle: assignment?.title || "Assignment",
@@ -2260,6 +2274,22 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   };
 
+  const handleRequestRevision = async () => {
+    if (isSavingGrade || !reviewingSubmission) return;
+    const message = feedbackInput.trim();
+    if (!message) { setErrorMessage("Enter revision instructions in Teacher Feedback first."); return; }
+    setIsSavingGrade(true);
+    setErrorMessage("");
+    try {
+      const { error } = await supabase.rpc("request_submission_revision", { submission_key: String(reviewingSubmission.id), instructions: message });
+      if (error) throw error;
+      setReviewingSubmission(null);
+      await loadTeacherData();
+      setSuccessMessage("Revision requested. The student can submit updated work; the earlier submission is preserved.");
+    } catch (error) { setErrorMessage(error.message || "Could not request a revision."); }
+    finally { setIsSavingGrade(false); }
+  };
+
   const handleReturnWork = () => {
     if (!String(gradeInput ?? "").trim()) {
       setErrorMessage("Enter a grade before returning work.");
@@ -2335,13 +2365,13 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       })
       .filter(Boolean);
 
-  const renderAssignmentDetailsAndSubmissions = (onBack) => {
+  const renderAssignmentDetailsAndSubmissions = (onBack, embedded = false) => {
     if (!selectedAssignment) return null;
 
     return (
       <div className="space-y-6">
         {/* Navigation Breadcrumb & Actions */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dadce0] pb-4">
+        {!embedded && <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dadce0] pb-4">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -2360,6 +2390,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             </span>
           </div>
 
+          <button type="button" disabled={exportingGrades}
+            onClick={() => handleExportGrades({ assignmentId: selectedAssignment.id })}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            {exportingGrades ? "Exporting..." : "Export Grades"}
+          </button>
+
           <button
             type="button"
             onClick={() => handleOpenEditAssignment(selectedAssignment)}
@@ -2368,7 +2404,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             <EditIcon className="h-3.5 w-3.5 text-[#5f6368]" />
             <span>Edit assignment</span>
           </button>
-        </div>
+        </div>}
 
         {/* Assignment Header Info */}
         <div className="rounded-xl border border-[#dadce0] bg-white p-6 shadow-2xs">
@@ -2381,7 +2417,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 <span className="inline-flex items-center rounded-md bg-[#f1f3f4] px-2.5 py-0.5 text-xs font-medium text-[#3c4043]">
                   Section {selectedAssignment.classroomSection || "All"}
                 </span>
-                {selectedAssignment.classroomSubject && (
+                {selectedAssignment.classroomSubject && selectedAssignment.classroomSubject !== "No subject" && selectedAssignment.classroomSubject !== selectedAssignment.classroomName && (
                   <span className="inline-flex items-center rounded-md bg-[#f1f3f4] px-2.5 py-0.5 text-xs font-medium text-[#5f6368]">
                     {selectedAssignment.classroomSubject}
                   </span>
@@ -2585,7 +2621,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {filteredAssignmentRoster.map((item) => (
+                <PaginatedList items={filteredAssignmentRoster} resetKey={[selectedAssignmentId, submissionRosterFilter, submissionRosterSearch]} label="Assignment submissions">{pageItems => pageItems.map((item) => (
                   <div
                     key={item.studentId}
                     className="grid grid-cols-[1.3fr_1fr_1.2fr_1.1fr_0.9fr] items-center gap-4 px-5 py-4 text-sm transition hover:bg-gray-50/50"
@@ -2607,6 +2643,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
 
                     <div>
+                      {item.status === "revision" && <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">Revision requested</span>}
                       {item.status === "graded" && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-800">
                           <CheckIcon className="h-3.5 w-3.5" />
@@ -2682,7 +2719,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                     <div className="text-right">
                       {item.submission ? (
-                        <button
+                        <><button
                           type="button"
                           onClick={() => handleOpenReview(item.submission)}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-extrabold text-white transition hover:bg-emerald-800 shadow-2xs"
@@ -2690,6 +2727,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           <FileSearchIcon className="h-3.5 w-3.5" />
                           <span>{item.grade ? "Review" : "Review & Grade"}</span>
                         </button>
+                        <button type="button" onClick={() => setPeerInspection({ submission: item.submission, matchedId: null })}
+                          className="mt-2 rounded-lg border border-[#dadce0] px-3 py-1.5 text-xs font-medium text-[#137333]">Peer similarity</button></>
                       ) : (
                         <span className="text-xs font-bold text-gray-300">
                           No submission
@@ -2697,7 +2736,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       )}
                     </div>
                   </div>
-                ))}
+                ))}</PaginatedList>
               </div>
             )}
           </div>
@@ -2719,11 +2758,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         onPageChange={(page) => {
           setSuccessMessage("");
           setErrorMessage("");
-          if ((page === "assignments" || page === "submissions") && openedClassroomId) {
+          if (page === "submissions" && selectedAssignment) {
+            selectGradeAssignment(selectedAssignment.id);
+          } else if ((page === "assignments" || page === "submissions" || page === "calendar") && openedClassroomId) {
             setAssignmentFilterClassroomId(openedClassroomId);
             setSelectedSubmissionsClassroomId(openedClassroomId);
-            setSelectedSubmissionsAssignmentId("all");
-            setGradeSubject("all");
             setSelectedAssignmentId(null);
           }
           setActivePage(page);
@@ -2738,6 +2777,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           />
         </div>
 
+        {activePage === "calendar" && (isLoading ? <p role="status">Loading assignments...</p> :
+          <AssignmentCalendar assignments={assignments.map(a => ({ ...a, isArchived: classrooms.find(c => c.id === a.classroomId)?.isArchived }))}
+            classrooms={classrooms} classroomId={assignmentFilterClassroomId === "all" ? "" : assignmentFilterClassroomId}
+            onClassroomChange={id => { setAssignmentFilterClassroomId(id || "all"); setOpenedClassroomId(id || null); }}
+            onOpenAssignment={assignment => { setAssignmentFilterClassroomId(assignment.classroomId); setOpenedClassroomId(assignment.classroomId); setSelectedAssignmentId(assignment.id); setActivePage("assignments"); }} />)}
         <section className="space-y-6">
 
         {/* Create Classroom Modal Dialog */}
@@ -2935,7 +2979,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             }}
             onCopyClassroom={handleOpenCopyModal}
             onExportCSV={handleExportClassroomCSV}
-            onExportGrades={handleExportGrades}
+            onExportGrades={(classroomId) => handleExportGrades({ classroomId })}
             onMemberRemoved={() => { loadTeacherData(); }}
           />
         )}
@@ -3175,9 +3219,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             onClick={() => {
                               setOpenedClassroomId(classroom.id);
                               setSelectedSubmissionsClassroomId(classroom.id);
-                              setGradeSubject("all");
-                              setSelectedSubmissionsAssignmentId("all");
-                              setSelectedAssignmentId(null);
+                                                                  setSelectedAssignmentId(null);
                               setActivePage("submissions");
                             }}
                             className="inline-flex items-center gap-1 text-[#5f6368] hover:text-[#202124]"
@@ -3363,7 +3405,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {filteredAssignments.map((assignment) => (
+                  <PaginatedList items={filteredAssignments} resetKey={assignmentFilterClassroomId} label="Assignments">{pageItems => pageItems.map((assignment) => (
                     <article
                       key={assignment.id}
                       onClick={() => setSelectedAssignmentId(assignment.id)}
@@ -3444,7 +3486,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         </div>
                       </div>
                     </article>
-                  ))}
+                  ))}</PaginatedList>
                 </div>
               )}
             </div>
@@ -3845,7 +3887,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                   </span>
                                 </div>
                                 <p className="text-xs font-semibold text-emerald-800">
-                                  YOLO26x Line Detector (1024px Grayscale) + TrOCR Transformer (final_model)
+                                  YOLO26x Line Detector (1024px Grayscale) + TrOCR Transformer (BEST_MODEL-TROCR)
                                 </p>
                               </div>
                             </div>
@@ -4522,7 +4564,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             </span>
                           </div>
                           <div className="mt-3 space-y-2">
-                            {manualCheckResult.matchedSources.map((source, sIdx) => (
+                            <PaginatedList items={manualCheckResult.matchedSources} resetKey={manualCheckResult.scanId} label="Matched sources">{pageItems => pageItems.map((source, sIdx) => (
                               <div
                                 key={source.id || sIdx}
                                 className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm"
@@ -4553,7 +4595,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                   </span>
                                 </div>
                               </div>
-                            ))}
+                            ))}</PaginatedList>
                           </div>
                         </div>
                       )}
@@ -4681,7 +4723,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         No students found matching this criteria.
                       </div>
                     ) : (
-                      filteredScanRoster.map((item) => {
+                      <PaginatedList items={filteredScanRoster} resetKey={[selectedScanAssignment?.id, scanRosterFilter, scanRosterSearch]} label="Scan submissions">{pageItems => pageItems.map((item) => {
                         const initials = item.studentName
                           .split(" ")
                           .map((n) => n[0])
@@ -4779,7 +4821,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             </div>
                           </div>
                         );
-                      })
+                      })}</PaginatedList>
                     )}
                   </div>
                 </div>
@@ -4789,171 +4831,55 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
           {activePage === "submissions" && (
             <div className="space-y-6">
-              {/* Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#dadce0] pb-4 sm:pb-5">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-[#202124]">
-                    Grades & Submissions
-                  </h2>
-                  <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-[#5f6368]">
-                    Review student work, check originality scores, and grade submissions organized by section.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-1 sm:items-end">
-                  <button type="button" disabled={isLoading || exportingGrades || !gradeClasswork.length}
-                    onClick={handleExportGrades}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#137333] px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" /></svg>
-                    {exportingGrades ? "Exporting…" : "Export grades (.xlsx)"}
-                  </button>
-                  <span className="text-xs text-[#5f6368]">Select one classroom or assignment to export its grades.</span>
-                </div>
+              <div>
+                <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-[#202124]">Grades & Submissions</h2>
+                <p className="mt-1 text-sm text-[#5f6368]">Review student work and grades.</p>
               </div>
 
-              {/* Google Classroom Filter Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#dadce0] bg-white p-3.5 sm:p-4 shadow-2xs">
-                <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap flex-1 min-w-0">
-                  {/* Subject filter */}
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <label htmlFor="filter-subject" className="text-xs font-medium text-[#5f6368] shrink-0">
-                      Subject:
-                    </label>
-                    <select
-                      id="filter-subject"
-                      value={gradeSubject}
-                      onChange={(event) => {
-                        setGradeSubject(event.target.value);
-                        setSelectedSubmissionsClassroomId("all");
-                        setOpenedClassroomId(null);
-                        setSelectedSubmissionsAssignmentId("all");
-                        setSelectedAssignmentId(null);
-                      }}
-                      className="h-9 rounded-lg border border-[#dadce0] bg-[#fafafa] hover:bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] max-w-[150px] sm:max-w-[180px] truncate"
-                    >
-                      <option value="all">All subjects</option>
-                      {gradeSubjects.map((subject) => (
-                        <option key={subject} value={subject}>{subject}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Classroom filter */}
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <label htmlFor="filter-classroom" className="text-xs font-medium text-[#5f6368] shrink-0">
-                      Class:
-                    </label>
-                    <select
-                      id="filter-classroom"
-                      value={selectedSubmissionsClassroomId}
-                      onChange={(event) => {
-                        setSelectedSubmissionsClassroomId(event.target.value);
-                        setOpenedClassroomId(event.target.value === "all" ? null : event.target.value);
-                        setSelectedSubmissionsAssignmentId("all");
-                        setSelectedAssignmentId(null);
-                      }}
-                      className="h-9 rounded-lg border border-[#dadce0] bg-[#fafafa] hover:bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] max-w-[180px] sm:max-w-[220px] truncate"
-                    >
-                      <option value="all">All classrooms</option>
-                      {classrooms
-                        .filter((c) => gradeSubject === "all" || (c.subject && c.subject !== "No subject" ? c.subject : c.name) === gradeSubject)
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>{c.name} • Section {c.section}</option>
-                        ))}
-                    </select>
-                  </div>
-
-                  {/* Classwork filter */}
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <label htmlFor="filter-classwork" className="text-xs font-medium text-[#5f6368] shrink-0">
-                      Assignment:
-                    </label>
-                    <select
-                      id="filter-classwork"
-                      value={selectedSubmissionsAssignmentId}
-                      onChange={(event) => {
-                        setSelectedSubmissionsAssignmentId(event.target.value);
-                        setSelectedAssignmentId(null);
-                      }}
-                      className="h-9 rounded-lg border border-[#dadce0] bg-[#fafafa] hover:bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] max-w-[200px] sm:max-w-[240px] truncate"
-                    >
-                      <option value="all">All assignments</option>
-                      {gradeClasswork.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.title} • {a.classroomName} ({a.classroomSection})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {(gradeSubject !== "all" || selectedSubmissionsClassroomId !== "all" || selectedSubmissionsAssignmentId !== "all") && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGradeSubject("all");
-                      setSelectedSubmissionsClassroomId("all");
-                        setOpenedClassroomId(null);
-                      setSelectedSubmissionsAssignmentId("all");
-                      setSelectedAssignmentId(null);
-                    }}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-[#137333] hover:bg-[#e6f4ea] px-3 py-1.5 rounded-full transition shrink-0"
-                  >
-                    <span>✕</span>
-                    <span>Reset filters</span>
+              <div aria-label="Grade filters and actions" className="flex flex-wrap items-end gap-4 rounded-2xl border border-[#dadce0] bg-white p-4 shadow-2xs">
+                <label htmlFor="filter-classroom" className="min-w-0 text-xs font-medium text-[#5f6368]">
+                  Classroom:
+                  <select id="filter-classroom" value={selectedSubmissionsClassroomId}
+                    onChange={event => selectGradeClassroom(event.target.value)}
+                    className="mt-1 block h-10 max-w-full rounded-lg border border-[#dadce0] bg-[#fafafa] px-3 text-sm text-[#202124] outline-none focus:border-[#137333]">
+                    <option value="all">All classrooms</option>
+                    {classrooms.map(classroom => <option key={classroom.id} value={classroom.id}>
+                      {classroom.name}{classroom.section ? ` / Section ${classroom.section}` : ""}
+                    </option>)}
+                  </select>
+                </label>
+                <label htmlFor="filter-classwork" className="min-w-0 text-xs font-medium text-[#5f6368]">
+                  Assignment:
+                  <select id="filter-classwork" value={selectedAssignment?.id || "all"}
+                    onChange={event => selectGradeAssignment(event.target.value)}
+                    className="mt-1 block h-10 max-w-full rounded-lg border border-[#dadce0] bg-[#fafafa] px-3 text-sm text-[#202124] outline-none focus:border-[#137333]">
+                    <option value="all">All assignments</option>
+                    {gradeClasswork.map(assignment => <option key={assignment.id} value={assignment.id}>
+                      {assignment.title}{selectedSubmissionsClassroomId === "all" ? ` / ${assignment.classroomName}` : ""}
+                    </option>)}
+                  </select>
+                </label>
+                {selectedSubmissionsClassroomId !== "all" && <button type="button" onClick={() => selectGradeClassroom("all")}
+                  className="h-10 rounded-full px-3 text-xs font-medium text-[#137333] hover:bg-[#e6f4ea]">Reset filters</button>}
+                <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                  {selectedAssignment && <>
+                    <button type="button" onClick={() => { setSelectedAssignmentId(null); setActivePage("assignments"); }}
+                      className="rounded-lg border border-[#dadce0] px-3 py-2 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa]">Back to Classwork</button>
+                    <button type="button" onClick={() => handleOpenEditAssignment(selectedAssignment)}
+                      className="rounded-lg border border-[#dadce0] px-3 py-2 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa]">Edit assignment</button>
+                  </>}
+                  <button type="button" disabled={isLoading || exportingGrades}
+                    onClick={() => handleExportGrades(selectedAssignment
+                      ? { assignmentId: selectedAssignment.id, classroomId: selectedAssignment.classroomId }
+                      : { classroomId: selectedSubmissionsClassroomId !== "all" ? selectedSubmissionsClassroomId : openedClassroomId || undefined })}
+                    className="rounded-lg bg-[#137333] px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+                    {exportingGrades ? "Exporting..." : "Export grades (.xlsx)"}
                   </button>
-                )}
+                </div>
               </div>
 
               {selectedAssignment ? (
-                <div className="space-y-4">
-                  <div className="flex flex-col gap-3 rounded-2xl border border-[#dadce0] bg-white p-3.5 sm:p-4 sm:flex-row sm:items-center sm:justify-between shadow-2xs">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedAssignmentId(null)}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-3.5 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333] hover:text-[#137333]"
-                      >
-                        <span aria-hidden="true">←</span>
-                        <span>All assignments</span>
-                      </button>
-
-                      <div className="flex items-center gap-2">
-                        <span className="hidden sm:inline text-xs font-medium text-[#5f6368]">
-                          Section:
-                        </span>
-                        <span className="inline-flex items-center rounded-full bg-[#e6f4ea] px-3 py-0.5 text-xs font-semibold text-[#137333]">
-                          {selectedAssignment.classroomName} • Section {selectedAssignment.classroomSection || "Standard"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <label className="flex items-center gap-2 text-xs font-medium text-[#5f6368]">
-                        <span className="hidden md:inline">Switch:</span>
-                        <select
-                          value={selectedAssignment.id}
-                          onChange={(e) => setSelectedAssignmentId(e.target.value)}
-                          className="h-9 max-w-[200px] sm:max-w-[260px] rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] truncate"
-                        >
-                          {gradeClasswork
-                            .filter(
-                              (a) =>
-                                selectedSubmissionsAssignmentId === "all" ||
-                                String(a.id) === String(selectedSubmissionsAssignmentId) ||
-                                a.id === selectedAssignment.id
-                            )
-                            .map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.title} • {a.classroomName} ({a.classroomSection || "Standard"})
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-
-                  {renderAssignmentDetailsAndSubmissions(() => setSelectedAssignmentId(null))}
-                </div>
+                renderAssignmentDetailsAndSubmissions(undefined, true)
               ) : (
                 <div className="space-y-6">
                   {assignments.length === 0 ? (
@@ -4977,11 +4903,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   ) : submissionHubGroups.size === 0 ? (
                     <div className="rounded-2xl border border-dashed border-[#dadce0] bg-white p-10 text-center max-w-md mx-auto my-6">
                       <p className="text-sm font-medium text-[#202124]">No assignments match these filters.</p>
-                      <p className="mt-1 text-xs text-[#5f6368]">Try selecting another subject, classroom, or classwork option.</p>
+                      <p className="mt-1 text-xs text-[#5f6368]">Try selecting another classroom or assignment.</p>
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      {Array.from(submissionHubGroups.values()).map((group) => (
+                      <PaginatedList items={Array.from(submissionHubGroups.values())} resetKey={[selectedSubmissionsClassroomId, selectedAssignmentId, submissionHubSearch, submissionHubFilter]} label="Grade classrooms">{pageItems => pageItems.map((group) => (
                         <section key={group.id} className="rounded-2xl border border-[#dadce0] bg-white overflow-hidden shadow-2xs">
                           {/* Group Header Strip */}
                           <div className="flex items-center justify-between border-b border-[#dadce0] bg-[#f8f9fa] px-4 py-3 sm:px-5">
@@ -4997,7 +4923,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                   <span className="rounded-full bg-white border border-[#dadce0] px-2.5 py-0.5 text-[11px] font-medium text-[#3c4043]">
                                     Section {group.section || "Standard"}
                                   </span>
-                                  {group.subject && (
+                                  {group.subject && group.subject !== "No subject" && group.subject !== group.name && (
                                     <span className="text-xs text-[#5f6368] hidden sm:inline">
                                       • {group.subject}
                                     </span>
@@ -5013,11 +4939,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                           {/* Assignment Cards inside the Group */}
                           <div className="divide-y divide-[#f1f3f4] p-2 sm:p-3">
-                            {group.assignments.map((assignment) => (
+                            <PaginatedList items={group.assignments} resetKey={[selectedSubmissionsClassroomId, selectedAssignmentId, submissionHubSearch, submissionHubFilter, group.id]} label="Grade assignments">{pageItems => pageItems.map((assignment) => (
                               <article
                                 key={assignment.id}
                                 className="group flex flex-col gap-3 rounded-xl p-3 sm:p-4 transition hover:bg-[#f8f9fa] cursor-pointer sm:flex-row sm:items-center sm:justify-between"
-                                onClick={() => setSelectedAssignmentId(assignment.id)}
+                                onClick={() => selectGradeAssignment(assignment.id)}
                               >
                                 <div className="flex items-start gap-3 sm:gap-3.5 min-w-0">
                                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333] mt-0.5">
@@ -5057,7 +4983,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       setAssignmentDetailTab("roster");
-                                      setSelectedAssignmentId(assignment.id);
+                                      selectGradeAssignment(assignment.id);
                                     }}
                                     className="inline-flex items-center gap-1.5 rounded-full bg-[#137333] hover:bg-[#0f5b28] text-white px-3.5 py-1.5 text-xs font-medium transition shadow-2xs active:scale-[0.98]"
                                   >
@@ -5066,16 +4992,29 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                   </button>
                                 </div>
                               </article>
-                            ))}
+                            ))}</PaginatedList>
                           </div>
                         </section>
-                      ))}
+                      ))}</PaginatedList>
                     </div>
                   )}
                 </div>
               )}
             </div>
           )}
+
+          {peerInspection && <SimilarityDialog title={peerInspection.matchedId ? "Peer Similarity Review" : "Peer Similarity Matches"}
+            onClose={() => setPeerInspection(null)}>
+            <div hidden={Boolean(peerInspection.matchedId)}>
+              <ClassmateMatches submission={peerInspection.submission}
+                onInspect={matchedId => setPeerInspection(current => ({ ...current, matchedId }))} />
+            </div>
+            {peerInspection.matchedId && <>
+              <button type="button" className="mb-4 text-sm text-[#137333] underline"
+                onClick={() => setPeerInspection(current => ({ ...current, matchedId: null }))}>Back to matches</button>
+              <PeerComparison key={peerInspection.matchedId} submission={peerInspection.submission} matchedSubmissionId={peerInspection.matchedId} />
+            </>}
+          </SimilarityDialog>}
 
           {/* Edit Assignment Modal Dialog */}
           {editingAssignment && (
@@ -5451,58 +5390,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <HighlightedText text={reviewTranscribedText} scanResult={reviewScanResult} />
                       </div>
 
-                      {/* Classroom Peer-to-Peer Similarity Section */}
-                      {reviewScanResult.peerSimilarity && (
-                        <div className="mt-6 rounded-lg border border-indigo-200 bg-indigo-50/70 p-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div className="flex items-center gap-2.5">
-                              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-white text-sm font-black shadow-sm">
-                                👥
-                              </span>
-                              <div>
-                                <h4 className="text-sm font-black text-indigo-950">
-                                  Classroom Peer Similarity
-                                </h4>
-                                <p className="text-xs font-semibold text-indigo-700">
-                                  {reviewScanResult.peerSimilarity.total_peers_compared === 0
-                                    ? "No other classmate submissions for this assignment yet"
-                                    : reviewScanResult.peerSimilarity.total_peers_compared === 1
-                                      ? "Cross-checked against 1 classmate submission"
-                                      : `Cross-checked against ${reviewScanResult.peerSimilarity.total_peers_compared} classmate submissions`}
-                                </p>
-                              </div>
-                            </div>
-                            <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black ${
-                              reviewScanResult.peerSimilarity.total_peers_compared === 0
-                                ? "bg-gray-100 text-gray-700 border border-gray-200"
-                                : reviewScanResult.peerSimilarity.has_peer_match
-                                  ? "bg-red-100 text-red-800 border border-red-200"
-                                  : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                            }`}>
-                              {reviewScanResult.peerSimilarity.total_peers_compared === 0 ? (
-                                "Only Submission (No Peers)"
-                              ) : (
-                                <>
-                                  {reviewScanResult.peerSimilarity.peer_similarity_score}% Match
-                                  {reviewScanResult.peerSimilarity.has_peer_match ? " (High Peer Copy)" : " (Original Work)"}
-                                </>
-                              )}
-                            </span>
-                          </div>
-
-                          {reviewScanResult.peerSimilarity.matching_snippets?.length > 0 && (
-                            <div className="mt-3.5 space-y-1.5 border-t border-indigo-200/80 pt-3 text-xs">
-                              <p className="font-extrabold text-indigo-900">Matching consecutive phrases:</p>
-                              {reviewScanResult.peerSimilarity.matching_snippets.map((snip, sIdx) => (
-                                <blockquote key={sIdx} className="rounded border-l-2 border-indigo-500 bg-white px-3 py-1.5 text-gray-800 font-medium italic shadow-2xs">
-                                  "{snip}"
-                                </blockquote>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
                       {/* Matching Sources */}
                       {reviewScanResult.matchedSources && reviewScanResult.matchedSources.length > 0 && (
                         <div className="mt-6">
@@ -5515,7 +5402,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             </span>
                           </div>
                           <div className="mt-3 space-y-2">
-                            {reviewScanResult.matchedSources.map((source, sIdx) => (
+                            <PaginatedList items={reviewScanResult.matchedSources} resetKey={reviewingSubmission.id} label="Review sources">{pageItems => pageItems.map((source, sIdx) => (
                               <div
                                 key={source.id || sIdx}
                                 className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm"
@@ -5546,7 +5433,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                   </span>
                                 </div>
                               </div>
-                            ))}
+                            ))}</PaginatedList>
                           </div>
                         </div>
                       )}
@@ -5647,6 +5534,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
                   )}
                   {/* Grading Form */}
+                  <ClassmateMatches key={reviewingSubmission.id} submission={reviewingSubmission} />
+
                   <form onSubmit={handleSaveGrade} className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-5">
                     <h4 className="text-base font-black text-emerald-950">
                       Grade Submission
@@ -5702,9 +5591,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <p className="mt-3 text-sm font-medium text-emerald-800">
                       {reviewingSubmission.returnedAt ? "Returned to student" : "Grade hidden until you return work"}
                     </p>
+                    <RevisionHistory history={reviewingSubmission.revisionHistory} />
+                    {reviewingSubmission.revisionRequest && <p className="mt-3 text-sm text-amber-800">Revision requested: {reviewingSubmission.revisionRequest.message}</p>}
                     <div className="mt-5 flex flex-wrap justify-end gap-3">
+                      <button type="button" onClick={handleRequestRevision}
+                        disabled={isSavingGrade || isReviewScanning || Boolean(reviewingSubmission.revisionRequest) || ["submitted", "processing"].includes(reviewingSubmission.processingState)}
+                        className="rounded-lg border border-amber-400 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-900 disabled:opacity-50">Request revision</button>
                       <button type="button" onClick={handleReturnWork}
-                        disabled={isSavingGrade || isReviewScanning || ["submitted", "processing", "failed"].includes(reviewingSubmission.processingState) || !String(gradeInput ?? "").trim()}
+                        disabled={isSavingGrade || Boolean(reviewingSubmission.revisionRequest) || isReviewScanning || ["submitted", "processing", "failed"].includes(reviewingSubmission.processingState) || !String(gradeInput ?? "").trim()}
                         className="rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-blue-800 disabled:opacity-50">
                         Return work
                       </button>
@@ -5718,7 +5612,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       </button>
                       <button
                         type="submit"
-                        disabled={isSavingGrade}
+                        disabled={isSavingGrade || Boolean(reviewingSubmission.revisionRequest)}
                         className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-5 py-2.5 text-xs font-extrabold text-white transition hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm"
                       >
                         {isSavingGrade ? "Saving grade..." : "Save Grade"}

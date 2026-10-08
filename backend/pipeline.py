@@ -62,7 +62,7 @@ DEFAULT_YOLO_PATH = (
     / "weights"
     / "best.pt"
 )
-DEFAULT_TROCR_PATH = PROJECT_ROOT / "final_model"
+DEFAULT_TROCR_PATH = BASE_DIR / "models" / "final_model_trocr" / "BEST_MODEL-TROCR" / "BEST_MODEL"
 
 
 def find_model_paths(yolo_arg=None, trocr_arg=None):
@@ -94,15 +94,7 @@ def find_model_paths(yolo_arg=None, trocr_arg=None):
         trocr_candidates.append(Path(trocr_arg))
     if os.getenv("TROCR_MODEL_PATH"):
         trocr_candidates.append(Path(os.getenv("TROCR_MODEL_PATH")))
-    trocr_candidates.extend([
-        BASE_DIR / "models" / "final_model",
-        BASE_DIR / "models" / "my_trocr_model",
-        Path("C:/Users/ronal/OneDrive/Desktop/New folder (19)/final_model"),
-        Path.home() / "OneDrive" / "Desktop" / "New folder (19)" / "final_model",
-        DEFAULT_TROCR_PATH,
-        BASE_DIR / "final_model",
-        PROJECT_ROOT.parent / "New folder (21)" / "WriteCheck" / "final_model",
-    ])
+    trocr_candidates.append(DEFAULT_TROCR_PATH)
     trocr_path = next((p for p in trocr_candidates if p.exists()), None)
     if not trocr_path:
         raise FileNotFoundError(
