@@ -34,12 +34,12 @@ test.each(["student", "teacher"])("admin creates an approved %s without replacin
   show("/admin/users", <AdminDashboard profile={profile} />);
   fireEvent.click(screen.getByRole("button", { name: "Create account" }));
   fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New Name" } });
-  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@school.edu.ph" } });
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@edu.ph" } });
   fireEvent.change(screen.getByLabelText("Account role"), { target: { value: role } });
   fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "test-password" } });
   fireEvent.click(screen.getByRole("button", { name: "Create and approve" }));
   expect(await screen.findByText(/Account created and approved/)).toBeInTheDocument();
-  expect(adminRequest).toHaveBeenCalledWith("users", expect.objectContaining({ method: "POST", body: JSON.stringify({ full_name: "New Name", email: "new@school.edu.ph", password: "test-password", role }) }));
+  expect(adminRequest).toHaveBeenCalledWith("users", expect.objectContaining({ method: "POST", body: JSON.stringify({ full_name: "New Name", email: "new@edu.ph", password: "test-password", role }) }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
@@ -48,7 +48,7 @@ test("creation failures leave the form open and never claim success", async () =
   show("/admin/users", <AdminDashboard profile={profile} />);
   fireEvent.click(screen.getByRole("button", { name: "Create account" }));
   fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New Name" } });
-  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@school.edu.ph" } });
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@edu.ph" } });
   fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "test-password" } });
   fireEvent.click(screen.getByRole("button", { name: "Create and approve" }));
   await waitFor(() => expect(screen.getByRole("dialog")).toHaveTextContent("already registered"));

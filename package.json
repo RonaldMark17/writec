@@ -19,6 +19,7 @@
     "start": "concurrently --names \"FRONTEND,BACKEND\" --prefix-colors \"cyan,magenta\" \"react-scripts start\" \"python backend/main.py\"",
     "start:frontend": "react-scripts start",
     "start:backend": "python backend/main.py",
+    "start:contact": "python backend/contact_dev.py",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "test:revisions": "node scripts/test-revisions.cjs",

@@ -9,7 +9,21 @@ jest.mock("../supabaseClient", () => ({
 
 beforeEach(() => jest.resetAllMocks());
 
-function register(role = "student", email = "Alex@EDU.COM.PH") {
+test("invalid domain is reported while typing, before blur or submission", () => {
+  render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthModal initialMode="register" /></MemoryRouter>);
+  const email = screen.getByLabelText("Email address");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.change(email, { target: { value: "student@gmail.com" } });
+  expect(screen.getByRole("alert")).toHaveTextContent("Please use an email address ending in @edu.ph.");
+  fireEvent.change(email, { target: { value: "student@edu.ph" } });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.change(email, { target: { value: "" } });
+  fireEvent.blur(email);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(supabase.auth.signUp).not.toHaveBeenCalled();
+});
+
+function register(role = "student", email = "Alex@EDU.PH") {
   const onClose = jest.fn();
   render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <AuthModal initialMode="register" onClose={onClose} />
@@ -30,7 +44,7 @@ test.each(["student", "teacher"])("rejects concealed duplicate for %s without ch
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(supabase.from).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
-  expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@edu.com.ph" }));
+  expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@edu.ph" }));
 });
 
 test.each([
@@ -86,17 +100,72 @@ test("email delivery errors explain the verification failure", async () => {
 });
 
 
-test.each(["user@gmail.com", "user@other.edu.com.ph", "user@edu.com.ph.evil.com", "user@school.edu.ph.evil.com", "user@fakeedu.ph", "user@-school.edu.ph", "user@school..edu.ph"])("rejects non-approved domain %s before contacting Auth", (email) => {
+test.each(["user@edu.com.ph", "user@school.edu.ph", "user@yahoo.com", "user@edu.com", "user@gmail.com", "user@other.edu.com.ph", "user@edu.ph.evil.com", "user@school.edu.ph.evil.com", "user@fakeedu.ph", "user@-school.edu.ph", "user@school..edu.ph"])("rejects non-approved domain %s before contacting Auth", (email) => {
   render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthModal initialMode="register" /></MemoryRouter>);
   fireEvent.change(screen.getByLabelText("Email address"), { target: { value: email } });
+  fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Alex Smith" } });
+  fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "password123" } });
+  fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "password123" } });
   fireEvent.submit(screen.getByRole("button", { name: "Create Student Account" }).closest("form"));
-  expect(screen.getByRole("alert")).toHaveTextContent("@edu.com.ph");
+  expect(screen.getByRole("alert")).toHaveTextContent("@edu.ph");
   expect(supabase.auth.signUp).not.toHaveBeenCalled();
 });
 
-test.each(["student", "teacher"])("accepts .edu.ph registration for %s and still requires approval", async (role) => {
+test.each(["student", "teacher"])("accepts uppercase exact-domain registration for %s and still requires approval", async (role) => {
   supabase.auth.signUp.mockResolvedValue({ data: { user: { id: "new", identities: [{ id: "identity" }] }, session: {} }, error: null });
-  register(role, "Alex@DEPT.SCHOOL.EDU.PH");
+  register(role, "Alex@EDU.PH");
   expect(await screen.findByRole("status")).toHaveTextContent("awaiting administrator approval");
-  expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@dept.school.edu.ph" }));
+  expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@edu.ph" }));
+});
+
+test.each(["Full name", "Email address", "Password", "Confirm password"])("registration rejects a blank %s even when browser validation is bypassed", (field) => {
+  render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthModal initialMode="register" /></MemoryRouter>);
+  for (const [label, value] of [["Full name", "Alex Smith"], ["Email address", "alex@edu.ph"], ["Password", "password123"], ["Confirm password", "password123"]]) {
+    fireEvent.change(screen.getByLabelText(label, { exact: true }), { target: { value: label === field ? "   " : value } });
+  }
+  const submit = screen.getByRole("button", { name: "Create Student Account" });
+  expect(submit).toBeDisabled();
+  fireEvent.submit(submit.closest("form"));
+  expect(screen.getByRole("alert")).toHaveTextContent("Please fill in every field");
+  expect(supabase.auth.signUp).not.toHaveBeenCalled();
+});
+
+test("registration enables only after all fields are filled and still rejects mismatched passwords", () => {
+  render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthModal initialMode="register" /></MemoryRouter>);
+  const submit = screen.getByRole("button", { name: "Create Student Account" });
+  expect(submit).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Alex" } });
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "alex@edu.ph" } });
+  fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "password123" } });
+  expect(submit).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "different123" } });
+  expect(submit).toBeEnabled();
+  fireEvent.click(submit);
+  expect(screen.getByRole("alert")).toHaveTextContent("Passwords do not match");
+  expect(supabase.auth.signUp).not.toHaveBeenCalled();
+});
+
+ test.each(["student", "teacher"])("%s sees early domain feedback that clears immediately", role => {
+  render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthModal initialMode="register" /></MemoryRouter>);
+  if (role === "teacher") fireEvent.click(screen.getByRole("button", {name:/Teacher Create classes/i}));
+  const email = screen.getByLabelText("Email address");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.change(email, {target:{value:"alex"}});
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.blur(email);
+  expect(screen.getByRole("alert")).toHaveTextContent("@edu.ph");
+  fireEvent.change(email, {target:{value:"alex@gmail.com"}});
+  expect(email).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByRole("button", {name:/Create (Student|Teacher) Account/})).toBeDisabled();
+  fireEvent.change(email, {target:{value:"alex@EDU.PH"}});
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(email).toHaveAttribute("aria-invalid", "false");
+  expect(supabase.auth.signUp).not.toHaveBeenCalled();
+ });
+
+test.each(["student", "teacher"])("accepts @edu.ph for %s", async role => {
+  supabase.auth.signUp.mockResolvedValue({ data: { user: { id: "new", identities: [{ id: "identity" }] }, session: null }, error: null });
+  register(role, "Alex@EDU.PH");
+  expect(await screen.findByRole("status")).toHaveTextContent("Verification email sent");
+  expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@edu.ph" }));
 });

@@ -8,6 +8,7 @@ from urllib.parse import quote
 from admin_api import supabase_request
 from submission_access import file_reference, local_file, storage_download
 from document_text import extract_document
+from essay_pages import read_bundle
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,14 @@ class SubmissionWorker:
             submission = rows[0]
             checkpoint = dict(job.get('checkpoint') or {})
             text = checkpoint.get('text') or job.get('input_text') or submission.get('transcribed_text')
+            if str(submission.get('file_url', '')).endswith('.essay.zip'):
+                kind, key = file_reference(submission['file_url'])
+                if kind != 'local':
+                    raise ValueError('Essay bundle is not in server-managed storage.')
+                manifest, _ = read_bundle(local_file(self.upload_root, key).read_bytes(), enforce_limits=False)
+                # Intake verifies the ordered text; later teacher-authorized
+                # corrections still use the existing recheck input_text path.
+                text = text or manifest['text']
             if not text:
                 kind, key = file_reference(submission['file_url'])
                 if kind == 'local':

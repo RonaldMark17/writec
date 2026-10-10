@@ -15,6 +15,7 @@ test("streams before submission and retains student corrections without rerunnin
   const file = picture();
   const { result } = renderHook(() => useSubmissionTranscription(file, "picture"));
   expect(result.current.status).toBe("processing");
+  await waitFor(() => expect(extractTextFromImage).toHaveBeenCalledTimes(1));
   act(() => extractTextFromImage.mock.calls[0][1].onProgress({ text: "First line", detectedLineCount: 2, processedLineCount: 1 }));
   expect(result.current.text).toBe("First line");
   expect(result.current.status).toBe("processing");
@@ -30,8 +31,10 @@ test("replacing a file aborts the old request and ignores its late response", as
   const completions = [];
   extractTextFromImage.mockImplementation(() => new Promise((resolve) => completions.push(resolve)));
   const { result, rerender } = renderHook(({ file }) => useSubmissionTranscription(file, "picture"), { initialProps: { file: picture("first.jpg") } });
+  await waitFor(() => expect(extractTextFromImage).toHaveBeenCalledTimes(1));
   const firstOptions = extractTextFromImage.mock.calls[0][1];
   rerender({ file: picture("second.jpg") });
+  await waitFor(() => expect(extractTextFromImage).toHaveBeenCalledTimes(2));
   expect(firstOptions.signal.aborted).toBe(true);
   await act(async () => completions[0]({ text: "Stale transcript" }));
   expect(result.current.text).toBe("");

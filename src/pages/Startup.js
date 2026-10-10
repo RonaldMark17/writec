@@ -243,23 +243,7 @@ const lightTheme = {
   "--card-shadow": "0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15)",
 };
 
-const darkTheme = {
-  "--page-bg": "#202124",
-  "--page-text": "#e8eaed",
-  "--muted": "#9aa0a6",
-  "--accent": "#81c995",
-  "--accent-hover": "#a8dab5",
-  "--accent-soft": "rgba(129, 201, 149, 0.15)",
-  "--accent-border": "rgba(129, 201, 149, 0.3)",
-  "--panel": "#292a2d",
-  "--panel-soft": "#303134",
-  "--border": "#3c4043",
-  "--border-soft": "#35363a",
-  "--line": "#3c4043",
-  "--nav-bg": "rgba(32, 33, 36, 0.96)",
-  "--shadow": "0 4px 14px rgba(0, 0, 0, 0.35)",
-  "--card-shadow": "0 2px 6px rgba(0, 0, 0, 0.4)",
-};
+
 
 
 
@@ -468,7 +452,7 @@ export default function Startup({ initialAuthModal = null }) {
   return (
     <div
       className="min-h-screen bg-[var(--page-bg)] text-[var(--page-text)] antialiased transition-colors duration-200"
-      style={isDark ? darkTheme : lightTheme}
+      style={isDark ? undefined : lightTheme}
     >
       {/* Google Classroom styled Top Navigation */}
       <header className="fixed inset-x-0 top-0 z-30 border-b border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-md">

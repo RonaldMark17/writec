@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { downloadSubmissionFileBlob } from "./shared";
+import EssayBundlePreview from "./EssayBundlePreview";
 
-export default function SubmissionFilePreview({ file, fileUrl, transcript = "" }) {
+export default function SubmissionFilePreview(props) {
+  if (props.fileUrl?.split("?")[0].endsWith(".essay.zip")) return <EssayBundlePreview fileUrl={props.fileUrl} transcript={props.transcript} />;
+  return <SingleFilePreview {...props} />;
+}
+
+function SingleFilePreview({ file, fileUrl, transcript = "" }) {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {

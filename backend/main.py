@@ -3,7 +3,6 @@ import io
 import json
 import os
 import re
-import shutil
 import sys
 import time
 import uuid
@@ -60,11 +59,8 @@ from admin_api import authenticated_account, supabase_request
 from submission_persistence import read_results, save_results
 from copyleaks_service import copyleaks_service
 
-from essay_formatter import (
-    clean_punctuation_and_casing,
-    correct_domain_terms,
-    format_essay_document,
-)
+from ocr_regions import join_recognized_lines
+from essay_pages import router as essay_pages_router, validate_image, upload_limits
 
 UPLOAD_DIR = BASE_DIR / "uploads"
 MODEL_DIR = BASE_DIR / "models"
@@ -398,8 +394,12 @@ def prepare_ocr_input(file, started_at):
     request_dir.mkdir(parents=True, exist_ok=True)
     filepath = request_dir / safe_filename
 
-    with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    data = file.file.read(upload_limits()['max_image_bytes'] + 1)
+    try:
+        validate_image(data)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    filepath.write_bytes(data)
 
     try:
         raw_image = ImageOps.exif_transpose(Image.open(filepath)).convert("RGB")
@@ -478,6 +478,7 @@ from service_status import router as service_status_router
 from notifications import NotificationWorker
 from contact_api import router as contact_router
 app.include_router(contact_router)
+app.include_router(essay_pages_router)
 app.include_router(service_status_router)
 app.include_router(admin_router)
 app.include_router(submission_intake_router)
@@ -632,8 +633,19 @@ def upload_submission_file(request: Request, file: UploadFile = File(...), assig
     sub_dir.mkdir(parents=True, exist_ok=True)
     safe_name = f"{uuid.uuid4().hex}-{re.sub(r'[^a-zA-Z0-9_.-]', '_', Path(file.filename or 'submission.jpg').name)}"
     target_path = sub_dir / safe_name
-    with open(target_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    if safe_name.lower().endswith('.essay.zip'):
+        raise HTTPException(400, 'Upload the individual essay images through the ordered page uploader.')
+    is_image = Path(safe_name).suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff'}
+    limit = upload_limits()['max_image_bytes'] if is_image else min(25 * 1024**2, upload_limits()['max_submission_bytes'])
+    data = file.file.read(limit + 1)
+    if not data or len(data) > limit:
+        raise HTTPException(413, f"Choose a nonempty file up to {limit / 1024**2:g} MB.")
+    if is_image:
+        try:
+            validate_image(data)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+    target_path.write_bytes(data)
     file_url = f"{str(request.base_url).rstrip('/')}/uploads/submissions/{owner_id}/{assignment_id}/{safe_name}"
     return {
         "success": True,
@@ -955,6 +967,12 @@ async def save_submission_scan_endpoint(submission_id: str, request: Request):
     return {"success": True, "scan_record": saved}
 
 
+@app.get("/api/submissions/{submission_id}/similarity")
+def get_student_similarity(request: Request, submission_id: str):
+    from student_similarity import student_similarity
+    return student_similarity(request, submission_id)
+
+
 @app.post("/api/plagiarism/peer-check")
 async def check_peer_plagiarism(request: Request):
     """Teacher-only live comparison using saved work and the existing calculator."""
@@ -1212,7 +1230,7 @@ def upload_image(file: UploadFile = File(...)):
 
     lines_with_meta = [
         {
-            "text": clean_punctuation_and_casing(correct_domain_terms(text)),
+            "text": text.strip(),
             "bbox": [item["box"]["x1"], item["box"]["y1"], item["box"]["x2"], item["box"]["y2"]],
             "confidence": conf,
             "confidence_label": "review" if review else "high",
@@ -1221,7 +1239,7 @@ def upload_image(file: UploadFile = File(...)):
         for text, conf, item, review in zip(generated_texts, generated_confs, line_crops, needs_review)
     ]
 
-    full_text = format_essay_document(lines_with_meta)
+    full_text = join_recognized_lines(lines_with_meta)
     cleaned_texts = [item["text"] for item in lines_with_meta]
 
     print(
@@ -1243,9 +1261,7 @@ def upload_image(file: UploadFile = File(...)):
     }
 
 
-@app.post("/api/upload-stream")
-@app.post("/upload-stream")
-def upload_image_stream(file: UploadFile = File(...)):
+def transcribe_page_events(file):
     started_at = time.perf_counter()
     ocr_input = prepare_ocr_input(file, started_at)
     raw_boxes = ocr_input["raw_boxes"]
@@ -1291,13 +1307,13 @@ def upload_image_stream(file: UploadFile = File(...)):
 
             current_meta = [
                 {
-                    "text": clean_punctuation_and_casing(correct_domain_terms(t)),
+                    "text": t.strip(),
                     "bbox": [b["x1"], b["y1"], b["x2"], b["y2"]],
                 }
                 for t, b in zip(generated_texts, generated_boxes)
             ]
-            current_full_text = format_essay_document(current_meta)
-            cleaned_batch = [clean_punctuation_and_casing(correct_domain_terms(t)) for t in batch["lines"]]
+            current_full_text = join_recognized_lines(current_meta)
+            cleaned_batch = [t.strip() for t in batch["lines"]]
 
             yield encode_stream_event({
                 "type": "lines",
@@ -1313,7 +1329,7 @@ def upload_image_stream(file: UploadFile = File(...)):
 
         final_meta = [
             {
-                "text": clean_punctuation_and_casing(correct_domain_terms(t)),
+                "text": t.strip(),
                 "bbox": [b["x1"], b["y1"], b["x2"], b["y2"]],
                 "confidence": conf,
                 "confidence_label": "review" if review else "high",
@@ -1321,7 +1337,7 @@ def upload_image_stream(file: UploadFile = File(...)):
             }
             for t, b, conf, review in zip(generated_texts, generated_boxes, generated_confs, generated_review)
         ]
-        full_text = format_essay_document(final_meta)
+        full_text = join_recognized_lines(final_meta)
         cleaned_texts = [item["text"] for item in final_meta]
 
         print(
@@ -1343,8 +1359,17 @@ def upload_image_stream(file: UploadFile = File(...)):
             "truncated": truncated,
         })
 
+    return event_stream()
+
+
+app.state.transcribe_page_events = transcribe_page_events
+
+
+@app.post("/api/upload-stream")
+@app.post("/upload-stream")
+def upload_image_stream(file: UploadFile = File(...)):
     return StreamingResponse(
-        event_stream(),
+        transcribe_page_events(file),
         media_type="application/x-ndjson",
         headers={
             "Cache-Control": "no-cache",

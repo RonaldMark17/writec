@@ -1,4 +1,5 @@
 import { apiFetch, getBackendUrl } from "../../apiFetch";
+import { combinePageText, getUploadLimits, validateEssayPages } from "./essayPages";
 
 function resolveBackendUrl() {
   if (typeof getBackendUrl === "function") {
@@ -277,5 +278,70 @@ export async function getOcrEngineInfo() {
   } catch {
     return null;
   }
+}
+
+export async function extractTextFromImages(files, options = {}) {
+  validateEssayPages(files, await getUploadLimits());
+  if (files.length > 1) return extractPageStream(files, options);
+  const pages = [];
+  for (let index = 0; index < files.length; index++) {
+    if (options.signal?.aborted) throw new Error("Transcription cancelled.");
+    const file = files[index];
+    const pageNumber = index + 1;
+    try {
+      options.onProgress?.({ pageNumber, pageCount: files.length, phase: "Detecting text lines", pages: [...pages], text: "" });
+      const result = await extractTextFromImage(file, { ...options,
+          onProgress: progress => options.onProgress?.({ ...progress, pageNumber, pageCount: files.length, phase: "Transcribing", pages: [...pages] }),
+        });
+        if (result.truncated || !result.text?.trim()) throw new Error(result.truncated ? "Some lines were not transcribed. Retry with complete OCR settings." : "No text was recognized. Try a clearer image.");
+      pages.push({ ...result, page_number: pageNumber, name: file.name, status: "ready" });
+    } catch (error) {
+      throw new Error(`Page ${pageNumber} could not be processed. ${error.message} Please retry this page.`);
+    }
+  }
+  options.onProgress?.({ pageNumber: files.length, pageCount: files.length, phase: "Combining essay", pages, text: "" });
+  return { text: combinePageText(pages), pages, lines: pages.flatMap(page => page.lines || []),
+    boxes: [], rawBoxes: [], truncated: false,
+    detectedLineCount: pages.reduce((sum, page) => sum + (page.detectedLineCount || 0), 0),
+    processedLineCount: pages.reduce((sum, page) => sum + (page.processedLineCount || 0), 0) };
+}
+
+async function extractPageStream(files, options) {
+  const form = new FormData();
+  files.forEach(file => form.append("files", file));
+  const response = await apiFetch(`${resolveBackendUrl()}/api/upload-pages-stream`, {
+    method: "POST", body: form, signal: options.signal,
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(typeof error.detail === "string" ? error.detail : "The essay pages could not be uploaded.");
+  }
+  if (!response.body) throw new Error("The transcription stream is unavailable. Please retry.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "", result;
+  const event = data => {
+    if (data.type === "error") throw new Error(data.detail);
+    if (data.type === "done") {
+      if (data.pages?.length !== files.length) throw new Error("Not all essay pages finished transcription.");
+      result = { ...buildOcrResult(data), pages: [...data.pages].sort((a, b) => a.page_number - b.page_number), text: combinePageText(data.pages) };
+    } else {
+      options.onProgress?.({ ...buildOcrResult(data), pageNumber: data.page_number, pageCount: data.page_count, phase: data.phase });
+    }
+  };
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      lines.filter(line => line.trim()).forEach(line => event(JSON.parse(line)));
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) event(JSON.parse(buffer));
+    if (!result) throw new Error("Transcription stopped before every page finished. Please retry.");
+    return result;
+  } finally { reader.releaseLock?.(); }
 }
 

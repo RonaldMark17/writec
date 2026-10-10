@@ -91,8 +91,8 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
   async function createAccount(event) {
     event.preventDefault();
     if (createInFlight.current) return;
-    if (!/^[^\s@]+@(edu\.com\.ph|([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+edu\.ph)$/i.test(newAccount.email.trim())) {
-      setError("Use an institutional email ending in @edu.com.ph or .edu.ph."); return;
+    if (!/^[^\s@]+@edu\.ph$/i.test(newAccount.email.trim())) {
+      setError("Please use an email address ending in @edu.ph."); return;
     }
     createInFlight.current = true;
     setSaving(true); setError(""); setNotice("");
@@ -155,7 +155,7 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
         <p className="text-sm text-gray-600">Create an approved student or teacher account. Its email will be marked confirmed; verify the address belongs to the intended person. No email is sent automatically.</p>
         <form onSubmit={createAccount} className="space-y-4">
           <label className="flex flex-col gap-1">Full name<input required maxLength={150} className={control} value={newAccount.full_name} onChange={(e) => setNewAccount({ ...newAccount, full_name: e.target.value })} /></label>
-          <label className="flex flex-col gap-1">Email address<input required type="email" maxLength={254} placeholder="name@school.edu.ph" className={control} value={newAccount.email} onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })} /></label>
+          <label className="flex flex-col gap-1">Email address<input required type="email" maxLength={254} placeholder="name@edu.ph" className={control} value={newAccount.email} onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })} /></label>
           <label className="flex flex-col gap-1">Account role<select className={control} value={newAccount.role} onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}><option value="student">Student</option><option value="teacher">Teacher</option></select></label>
           <label className="flex flex-col gap-1">Password<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} className={control} value={newAccount.password} onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })} /></label>
           {error && <p role="alert" className="text-red-700">{error}</p>}

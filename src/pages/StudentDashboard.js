@@ -1,3 +1,4 @@
+import StudentSimilarity from "./dashboard/StudentSimilarity";
 import { PaginatedList } from "./dashboard/Pagination";
 import AssignmentCalendar from "./dashboard/AssignmentCalendar";
 import RevisionHistory from "./dashboard/RevisionHistory";
@@ -8,6 +9,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
 import useSubmissionTranscription from "./dashboard/useSubmissionTranscription";
 import SubmissionTranscription from "./dashboard/SubmissionTranscription";
+import EssayPagePicker from "./dashboard/EssayPagePicker";
+import { isEssayImage, validateEssayPages, useUploadLimits } from "./dashboard/essayPages";
 import { processingLabel, useSubmissionProgress } from "./dashboard/submissionProgress";
 import { apiFetch, getBackendUrl } from "../apiFetch";
 import ClassroomDetail from "./dashboard/ClassroomDetail";
@@ -114,7 +117,9 @@ function getSubmissionBlockMessage(draft, file) {
 }
 
 export default function StudentDashboard({ profile, onProfileUpdated }) {
+  const uploadLimits = useUploadLimits();
   const [openedClassroomId, setOpenedClassroomId] = useState(null);
+  const [assignmentOrigin, setAssignmentOrigin] = useState(null);
 
   const [activePage, setActivePage] =
     useState("classrooms");
@@ -185,6 +190,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   const [submissionStatusFilter, setSubmissionStatusFilter] = useState("all");
   const [submissionSort, setSubmissionSort] = useState("newest");
 
+  const [joinError, setJoinError] = useState("");
   const [joinCode, setJoinCode] =
     useState("");
 
@@ -194,9 +200,13 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   const [submissionDraft, setSubmissionDraft] =
     useState(emptySubmissionDraft);
 
-  const [submissionFile, setSubmissionFile] =
+  const [submissionFile, setSubmissionFileState] =
     useState(null);
-  const transcription = useSubmissionTranscription(submissionFile, submissionDraft.mode);
+  const [submissionPages, setSubmissionPages] = useState([]);
+  const setSubmissionFile = useCallback(file => { setSubmissionFileState(file); setSubmissionPages([]); }, []);
+  const changeSubmissionPages = files => { setSubmissionPages(files); setSubmissionFileState(files[0] || null); };
+  const previewPages = useMemo(() => submissionPages.length ? submissionPages : submissionFile && isEssayImage(submissionFile) ? [submissionFile] : [], [submissionPages, submissionFile]);
+  const transcription = useSubmissionTranscription(submissionPages.length > 1 ? submissionPages : submissionFile, submissionDraft.mode);
   const reviewedText = submissionDraft.mode === "text" ? submissionDraft.text : transcription.text;
   const canSubmitText = submissionDraft.mode === "text"
     ? Boolean(submissionDraft.text.trim())
@@ -283,7 +293,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     setSubmissionDraft(emptySubmissionDraft);
     setSubmissionFile(null);
     setFilePreview("");
-  }, []);
+  }, [setSubmissionFile]);
 
   const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, false, { assignments: loadedAssignments });
 
@@ -584,7 +594,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           grade: submission.returned_at ? (submission.grade ?? "") : "",
           feedback: submission.returned_at ? (submission.feedback ?? "") : "",
           transcribedText: submission.transcribed_text ?? "",
-          scanResult: null, // Plagiarism detection results are never exposed to the student
+          scanResult: null, // Raw teacher reports stay private; StudentSimilarity fetches a safe projection.
           processingState: submission.processing_state || (submission.scan_result ? "ready" : "submitted"),
           processingError: null,
           hasUploaded: true,
@@ -736,95 +746,85 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const handleJoinClassroom = async (event) => {
     event.preventDefault();
-    setErrorMessage("");
+    setJoinError("");
     setSuccessMessage("");
 
     const cleanCode =
       joinCode.trim().toUpperCase();
 
-    if (!cleanCode) {
+    if (!cleanCode || isJoiningClassroom) {
       return;
     }
 
     const alreadyJoined =
-      classrooms.some((classroom) => classroom.code === cleanCode);
+      classrooms.some((classroom) => classroom.code?.toUpperCase() === cleanCode);
 
     if (alreadyJoined) {
-      setSuccessMessage("You are already in that classroom.");
-      setJoinCode("");
+      setJoinError("You are already a member of this classroom.");
       return;
     }
 
     setIsJoiningClassroom(true);
 
-    const { data: classroom, error: classroomError } =
-      await supabase
-        .from(CLASSROOM_TABLE)
-        .select("id, classroom_name, classroom_code")
-        .eq("classroom_code", cleanCode)
-        .maybeSingle();
+    try {
+      const { data: classroom, error: classroomError } =
+        await supabase
+          .from(CLASSROOM_TABLE)
+          .select("id, classroom_name, classroom_code")
+          .eq("classroom_code", cleanCode)
+          .maybeSingle();
 
-    if (classroomError) {
-      setErrorMessage(classroomError.message);
-      setIsJoiningClassroom(false);
-      return;
-    }
+      if (classroomError) {
+        throw classroomError;
+      }
 
-    if (!classroom) {
-      setErrorMessage("No classroom found with that code.");
-      setIsJoiningClassroom(false);
-      return;
-    }
+      if (!classroom) {
+        setJoinError("Classroom not found. Please check the class code and try again.");
+        return;
+      }
 
-    const { data: existingMembership, error: existingMembershipError } =
-      await supabase
-        .from(MEMBER_TABLE)
-        .select("id")
-        .eq("classroom_id", classroom.id)
-        .eq("student_id", profile.id)
-        .maybeSingle();
+      const { data: existingMembership, error: existingMembershipError } =
+        await supabase
+          .from(MEMBER_TABLE)
+          .select("id")
+          .eq("classroom_id", classroom.id)
+          .eq("student_id", profile.id)
+          .maybeSingle();
 
-    if (existingMembershipError) {
-      setErrorMessage(existingMembershipError.message);
-      setIsJoiningClassroom(false);
-      return;
-    }
+      if (existingMembershipError) {
+        throw existingMembershipError;
+      }
 
-    if (existingMembership) {
-      setSuccessMessage("You are already in that classroom.");
+      if (existingMembership) {
+        setJoinError("You are already a member of this classroom.");
+        return;
+      }
+
+      const { error: membershipError } =
+        await supabase
+          .from(MEMBER_TABLE)
+          .insert({
+            classroom_id: classroom.id,
+            student_id: profile.id,
+          });
+
+      if (membershipError?.code === "23505") {
+        setJoinError("You are already a member of this classroom.");
+        return;
+      }
+
+      if (membershipError) {
+        throw membershipError;
+      }
+
+      setJoinError("");
       setJoinCode("");
-      setIsJoiningClassroom(false);
+      setIsJoinModalOpen(false);
+      setSuccessMessage(`Joined ${classroom.classroom_name}.`);
       await loadStudentData();
-      return;
-    }
-
-    const { error: membershipError } =
-      await supabase
-        .from(MEMBER_TABLE)
-        .insert({
-          classroom_id: classroom.id,
-          student_id: profile.id,
-        });
-
-    if (membershipError?.code === "23505") {
-      setSuccessMessage("You are already in that classroom.");
-      setJoinCode("");
-      setIsJoiningClassroom(false);
-      await loadStudentData();
-      return;
-    }
-
-    if (membershipError) {
-      setErrorMessage(membershipError.message);
-      setIsJoiningClassroom(false);
-      return;
-    }
-
-    setJoinCode("");
-    setIsJoinModalOpen(false);
-    setSuccessMessage(`Joined ${classroom.classroom_name}.`);
-    setIsJoiningClassroom(false);
-    await loadStudentData();
+    } catch (error) {
+      setJoinError(error?.message || "Unable to join the classroom. Check your connection and try again.");
+    } finally { setIsJoiningClassroom(false); }
   };
 
   const handleConfirmLeaveClassroom = async () => {
@@ -910,6 +910,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   };
 
   const handleOpenSubmissionDraft = (assignment) => {
+    setAssignmentOrigin({ page: activePage, classroomId: openedClassroomId,
+      selectedClassroomId });
     setErrorMessage("");
     setSuccessMessage("");
     setSubmissionFile(null);
@@ -918,6 +920,25 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       assignmentId: assignment.id,
       essayTitle: assignment.title,
     });
+  };
+
+  const handleBackFromAssignment = () => {
+    resetSubmissionDraft();
+    const origin = assignmentOrigin;
+    setAssignmentOrigin(null);
+    if (origin?.page === "classrooms" &&
+        classrooms.some(classroom => classroom.id === origin.classroomId)) {
+      setOpenedClassroomId(origin.classroomId);
+      setSelectedClassroomId(origin.classroomId);
+      setActivePage("classrooms");
+    } else if (["assignments", "calendar", "submissions"].includes(origin?.page)) {
+      setSelectedClassroomId(origin.selectedClassroomId);
+      setActivePage(origin.page);
+    } else {
+      setSelectedClassroomId("");
+      setOpenedClassroomId(null);
+      setActivePage("assignments");
+    }
   };
 
   const handleSubmissionModeChange = (mode) => {
@@ -998,7 +1019,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       return;
     }
 
-    if (uploadFile.size === 0 || uploadFile.size > 25 * 1024 * 1024) {
+    if (isEssayImage(uploadFile)) {
+      try { validateEssayPages(submissionPages.length ? submissionPages : [uploadFile], uploadLimits); }
+      catch (error) { setErrorMessage(error.message); return; }
+    }
+    if (uploadFile.size === 0 || (!isEssayImage(uploadFile) && uploadFile.size > 25 * 1024 * 1024)) {
       setErrorMessage("Choose a nonempty file up to 25 MB.");
       return;
     }
@@ -1017,6 +1042,16 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     let uploadedFileUrl = filePath;
 
     try {
+      if (submissionPages.length > 1) {
+        const form = new FormData();
+        form.append("assignment_id", selectedAssignment.id);
+        form.append("pages", JSON.stringify(transcription.pages.map(page => ({ page_number: page.page_number, text: page.text, status: page.status }))));
+        submissionPages.forEach(file => form.append("files", file));
+        const response = await apiFetch(`${resolveBackendUrl()}/api/submissions/upload-pages`, { method: "POST", body: form });
+        const result = await response.json();
+        if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "The essay pages could not be uploaded. Retry before submitting.");
+        uploadedFileUrl = result.file_url;
+      } else {
       const { error: uploadError } =
         await supabase
           .storage
@@ -1060,6 +1095,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         }
       }
 
+      }
+
       let savedSubmission, submissionError;
       try {
         const response = await apiFetch(`${resolveBackendUrl()}/api/submissions/submit`, {
@@ -1097,7 +1134,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         ? "Work resubmitted. Processing has been queued again."
         : savedSubmission?.already_submitted
         ? "This assignment was already saved. Your existing submission is available below."
-        : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for plagiarism. Confirmation status will update below.";
+        : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for similarity. Confirmation status will update below.";
       setSuccessMessage(savedMessage);
       resetSubmissionDraft();
       setActivePage("submissions");
@@ -1144,19 +1181,22 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
         {/* Join Class Modal Dialog */}
         {isJoinModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div role="dialog" aria-modal="true" aria-labelledby="join-class-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
             <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
               <div className="flex items-start justify-between pb-4 border-b border-[#dadce0]">
                 <div>
-                  <h3 className="text-xl font-medium text-[#202124]">Join class</h3>
+                  <h3 id="join-class-title" className="text-xl font-medium text-[#202124]">Join class</h3>
                   <p className="mt-0.5 text-xs text-[#5f6368]">
                     Ask your teacher for the class code, then enter it here.
                   </p>
                 </div>
                 <button
                   type="button"
+                  aria-label="Close Join class"
+                  disabled={isJoiningClassroom}
                   onClick={() => {
                     setIsJoinModalOpen(false);
+                    setJoinError("");
                     setJoinCode("");
                   }}
                   className="rounded-full p-1 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#202124]"
@@ -1171,13 +1211,17 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   <input
                     type="text"
                     value={joinCode}
-                    onChange={(event) => setJoinCode(event.target.value)}
+                    onChange={(event) => { setJoinCode(event.target.value); setJoinError(""); }}
+                    disabled={isJoiningClassroom}
+                    aria-invalid={Boolean(joinError)}
+                    aria-describedby={joinError ? "join-class-error" : undefined}
                     placeholder="e.g. CLAS1234"
                     className="mt-1.5 h-11 w-full rounded-md border border-[#dadce0] px-3 text-sm font-mono uppercase text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                     required
                   />
                 </label>
 
+                {joinError && <p id="join-class-error" role="alert" className="validation-error rounded-md border p-3 text-sm">{joinError}</p>}
                 <p className="text-xs text-[#5f6368]">
                   To sign in with a class code: Use an authorized account, and enter a 5–8 character code with letters or numbers and no spaces.
                 </p>
@@ -1185,8 +1229,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#dadce0]">
                   <button
                     type="button"
+                  disabled={isJoiningClassroom}
                     onClick={() => {
                       setIsJoinModalOpen(false);
+                    setJoinError("");
                       setJoinCode("");
                     }}
                     className="rounded-full px-4 py-2 text-sm font-medium text-[#5f6368] hover:bg-[#f1f3f4]"
@@ -1294,6 +1340,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 type="button"
                 onClick={() => {
                   setJoinCode("");
+                  setJoinError("");
                   setIsJoinModalOpen(true);
                 }}
                 className="inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-[#0f5b28] active:scale-[0.98]"
@@ -1368,7 +1415,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   type="button"
                   onClick={() => {
                     setJoinCode("");
-                    setIsJoinModalOpen(true);
+                    setJoinError("");
+                  setIsJoinModalOpen(true);
                   }}
                   className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#0f5b28]"
                 >
@@ -1506,11 +1554,13 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
             {selectedAssignment && (
               <button
                 type="button"
-                onClick={resetSubmissionDraft}
+                onClick={handleBackFromAssignment}
                 disabled={isSubmittingEssay}
                 className="mb-5 rounded-lg px-3 py-2 text-sm font-medium text-[#137333] hover:bg-[#e6f4ea] focus:outline-none focus:ring-2 focus:ring-[#137333] disabled:opacity-50"
               >
-                ← Back to To do
+                ← Back to {assignmentOrigin?.page === "classrooms" ? "classroom" :
+                  assignmentOrigin?.page === "calendar" ? "Calendar" :
+                  assignmentOrigin?.page === "submissions" ? "Results" : "To do"}
               </button>
             )}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-[#dadce0] pb-5">
@@ -1760,10 +1810,11 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         <h4 className="font-semibold text-[#137333]">Turned In</h4>
                         <p>{assignment.submission.essayTitle}</p>
                         <p className="text-sm text-gray-600">Submitted {formatDateTime(assignment.submission.createdAt)}</p>
-                        {String(assignment.submission.grade ?? "").trim() !== "" && <p>Grade: {assignment.submission.grade}</p>}
-                        {assignment.submission.feedback && <p>Teacher feedback: {assignment.submission.feedback}</p>}
                         <SubmissionFilePreview fileUrl={assignment.submission.fileUrl} transcript={assignment.submission.transcribedText} />
                         {assignment.submission.transcribedText && <pre className="whitespace-pre-wrap font-sans text-sm">{assignment.submission.transcribedText}</pre>}
+                        <StudentSimilarity key={assignment.submission.id} submission={assignment.submission} />
+                        {String(assignment.submission.grade ?? "").trim() !== "" && <p>Grade: {assignment.submission.grade}</p>}
+                        {assignment.submission.feedback && <p>Teacher feedback: {assignment.submission.feedback}</p>}
                         <button type="button" onClick={() => setViewingSubmission(assignment.submission)} className="text-sm font-medium text-[#137333] underline">View submission details</button>
                       </section>
                     )}
@@ -1858,18 +1909,27 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                 )}
                                 <input
                                   type="file"
+                                  multiple
                                   disabled={isSubmittingEssay}
                                   accept={
                                     submissionDraft.mode === "picture"
                                       ? "image/png,image/jpeg,image/jpg,image/webp"
                                       : ".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.docx,.txt,.md,.csv,.json"
                                   }
-                                  onChange={(event) =>
-                                    setSubmissionFile(event.target.files?.[0] ?? null)
-                                  }
+                                  onChange={(event) => {
+                                    const files = Array.from(event.target.files || []);
+                                    try {
+                                      if (files.length > 1 || submissionDraft.mode === "picture") { validateEssayPages(files, uploadLimits); changeSubmissionPages(files); }
+                                      else setSubmissionFile(files[0] || null);
+                                      setErrorMessage("");
+                                    } catch (error) { setErrorMessage(error.message); }
+                                    event.target.value = "";
+                                  }}
                                   className="sr-only"
                                 />
                               </label>
+
+                              {previewPages.length > 0 && <EssayPagePicker files={previewPages} onChange={changeSubmissionPages} onError={setErrorMessage} disabled={isSubmittingEssay} />}
 
                               {submissionFile && submissionDraft.mode === "file" && <SubmissionFilePreview file={submissionFile} />}
                               {submissionFile && <SubmissionTranscription transcription={transcription} disabled={isSubmittingEssay} />}
@@ -2203,7 +2263,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                     : "bg-amber-50 text-amber-700 border border-amber-200"
                               }`}>
                                 {submission.processingState === "ready" || submission.hasPlagiarismChecked || submission.returnedAt || submission.status === "graded"
-                                  ? "Plagiarism Checked"
+                                  ? "Similarity Checked"
                                   : submission.processingState === "failed"
                                     ? "Needs attention"
                                     : "Transcribing & Checking..."}
@@ -2221,6 +2281,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           {canResubmit(submission) && (
                             <button type="button" className="rounded-full border border-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-700"
                               onClick={() => {
+                                setAssignmentOrigin({ page: activePage, classroomId: openedClassroomId, selectedClassroomId });
                                 setSubmissionFile(null);
                                 setErrorMessage("");
                                 setSuccessMessage("");
@@ -2454,23 +2515,16 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         {viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready" ? "✓" : "⏳"}
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-gray-900">Integrity Analysis</p>
+                        <p className="text-xs font-bold text-gray-900">Similarity Analysis</p>
                         <p className="text-[11px] text-gray-500 font-medium">
                           {viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready"
-                            ? "Scan delivered to teacher"
+                            ? "Similarity check completed"
                             : "Analyzing submission"}
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Confidentiality Notice */}
-                  <div className="mt-4 flex items-center gap-2.5 rounded-lg border border-blue-100 bg-blue-50/80 px-4 py-3 text-xs font-semibold text-blue-900">
-                    <svg className="h-4 w-4 shrink-0 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                    <span>
-                      Plagiarism detection results and similarity metrics are confidential and sent directly to your teacher's evaluation workspace.
-                    </span>
-                  </div>
                 </div>
 
                 {/* Transcribed Text Display (without plagiarism highlights) */}
@@ -2512,6 +2566,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     </div>
                   </div>
                 )}
+
+                <StudentSimilarity key={viewingSubmission.id} submission={viewingSubmission} />
 
                 {/* Close button */}
                 <div className="flex justify-end pt-2">

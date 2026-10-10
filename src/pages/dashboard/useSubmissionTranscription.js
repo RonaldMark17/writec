@@ -1,22 +1,34 @@
 import { useEffect, useState } from "react";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
-import { extractTextFromImage } from "./ocrService";
+import { extractTextFromImage, extractTextFromImages } from "./ocrService";
+import { combinePageText, getUploadLimits, isEssayImage, validateEssayPages } from "./essayPages";
 
 const empty = { file: null, status: "idle", text: "", error: "", progress: null };
 
 export default function useSubmissionTranscription(file, mode) {
   const [state, setState] = useState(empty);
   const [attempt, setAttempt] = useState(0);
+  const [requested, setRequested] = useState(null);
   useEffect(() => {
-    if (!file || mode === "text") { setState(empty); return undefined; }
+    if (!file || mode === "text") { setState(empty); setRequested(null); return undefined; }
+    if (Array.isArray(file) && requested !== file) { setState({ ...empty, file, status: "waiting" }); return undefined; }
     const controller = new AbortController();
     let cancelled = false;
     setState({ ...empty, file, status: "processing" });
     async function run() {
       try {
-        if (!file.size || file.size > 25 * 1024 * 1024) throw new Error("Choose a nonempty file up to 25 MB.");
+        if (Array.isArray(file)) {
+          const result = await extractTextFromImages(file, { signal: controller.signal,
+            onProgress: progress => { if (!cancelled) setState({ ...empty, file, status: "processing", progress, pages: progress.pages }); },
+          });
+          if (!cancelled) setState({ ...empty, ...result, file, status: "ready" });
+          return;
+        }
+        if (!file.size || (!isEssayImage(file) && file.size > 25 * 1024 * 1024)) throw new Error("Choose a nonempty file up to 25 MB.");
         let text;
         if (file.type?.startsWith("image/") || /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(file.name)) {
+          if (!isEssayImage(file)) throw new Error("Choose a supported image format.");
+          validateEssayPages([file], await getUploadLimits());
           const result = await extractTextFromImage(file, {
             signal: controller.signal,
             onProgress: (progress) => {
@@ -48,12 +60,18 @@ export default function useSubmissionTranscription(file, mode) {
     }
     run();
     return () => { cancelled = true; controller.abort(); };
-  }, [file, mode, attempt]);
+  }, [file, mode, attempt, requested]);
 
   // A new selection must never submit the previous file's transcript, including
   // the render before the effect has started the next request.
-  const current = state.file === file ? state : { ...empty, file, status: file ? "processing" : "idle" };
+  const current = state.file === file ? state : { ...empty, file, status: Array.isArray(file) ? "waiting" : file ? "processing" : "idle" };
   return { ...current,
+    start: () => setRequested(file),
+    setPageText: (index, text) => setState(previous => {
+      if (previous.file !== file || previous.status !== "ready") return previous;
+      const pages = previous.pages.map((page, i) => i === index ? { ...page, text } : page);
+      return { ...previous, pages, text: pages.some(page => !page.text.trim()) ? "" : combinePageText(pages) };
+    }),
     setText: (text) => setState((previous) => previous.file === file && previous.status === "ready" ? { ...previous, text } : previous),
     retry: () => setAttempt((value) => value + 1),
   };

@@ -1,3 +1,5 @@
+import EssayPagePicker from "./dashboard/EssayPagePicker";
+import { combinePageText, isEssayImage, validateEssayPages, useUploadLimits } from "./dashboard/essayPages";
 import { PeerComparison, SimilarityDialog } from "./dashboard/PeerSimilarityReview";
 import { PaginatedList } from "./dashboard/Pagination";
 import ClassmateMatches from "./dashboard/ClassmateMatches";
@@ -67,7 +69,7 @@ import {
   readTextFromFiles,
 } from "./dashboard/plagiarismScan";
 import {
-  extractTextFromImage,
+  extractTextFromImages,
   getOcrEngineInfo,
 } from "./dashboard/ocrService";
 
@@ -112,6 +114,7 @@ function getTeacherActivePage(profileId) {
 }
 
 export default function TeacherDashboard({ profile, onProfileUpdated }) {
+  const uploadLimits = useUploadLimits();
   const [openedClassroomId, setOpenedClassroomId] = useState(null);
 
   const [activePage, setActivePage] =
@@ -174,12 +177,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   const [submissionRosterSearch, setSubmissionRosterSearch] = useState("");
   const [selectedSubmissionsClassroomId, setSelectedSubmissionsClassroomId] = useState("all");
   const [exportingGrades, setExportingGrades] = useState(false);
-  const [submissionHubSearch, setSubmissionHubSearch] = useState("");
-  const [submissionHubClassroomId, setSubmissionHubClassroomId] = useState("all");
-  const [submissionHubFilter, setSubmissionHubFilter] = useState("all");
-  const [submissionHubSort, setSubmissionHubSort] = useState("newest");
-  const [scanRosterFilter, setScanRosterFilter] = useState("all");
-  const [scanRosterSearch, setScanRosterSearch] = useState("");
+  const [linkedScanAssignmentId, setLinkedScanAssignmentId] = useState("all");
   const [loadedSubmissionInfo, setLoadedSubmissionInfo] = useState(null);
   const [loadingSubmissionId, setLoadingSubmissionId] = useState(null);
 
@@ -533,10 +531,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   }
 
   const submissionHubGroups = useMemo(() => {
-    const term = submissionHubSearch.trim().toLowerCase();
-    const now = new Date();
-    const dueSoonLimit = new Date(now);
-    dueSoonLimit.setDate(dueSoonLimit.getDate() + 7);
 
     const enriched = assignments
       .map((assignment) => {
@@ -574,37 +568,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         if (activePage === "submissions") {
           return selectedSubmissionsClassroomId === "all" || String(assignment.classroomId) === String(selectedSubmissionsClassroomId);
         }
-        const searchable = [
-          assignment.title,
-          assignment.classroomName,
-          assignment.classroomSubject,
-          assignment.classroomSection,
-        ].join(" ").toLowerCase();
-        if (term && !searchable.includes(term)) return false;
-        if (submissionHubClassroomId !== "all" && assignment.classroomId !== submissionHubClassroomId) return false;
-
-        if (submissionHubFilter === "dueSoon") {
-          if (!assignment.dueDate) return false;
-          const due = new Date(assignment.dueDate);
-          return due >= now && due <= dueSoonLimit;
-        }
-        if (submissionHubFilter === "noDueDate") return !assignment.dueDate;
-        if (submissionHubFilter === "submitted") return assignment.submissionStats.submitted > 0;
-        if (submissionHubFilter === "notSubmitted") return assignment.submissionStats.submitted === 0;
         return true;
       })
       .sort((a, b) => {
-        if (submissionHubSort === "oldest") {
-          return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
-        }
-        if (submissionHubSort === "dueDate") {
-          const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
-          const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
-          return aDue - bDue;
-        }
-        if (submissionHubSort === "recentSubmissions") {
-          return b.submissionStats.latestSubmissionAt - a.submissionStats.latestSubmissionAt;
-        }
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       });
 
@@ -626,58 +592,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     submissions,
     activePage,
     selectedSubmissionsClassroomId,
-    submissionHubClassroomId,
-    submissionHubFilter,
-    submissionHubSearch,
-    submissionHubSort,
   ]);
 
-  const scanStationAssignments = useMemo(() => {
-    const term = submissionHubSearch.trim().toLowerCase();
-    return assignments
-      .filter((assignment) => {
-        if (submissionHubClassroomId !== "all" && String(assignment.classroomId) !== String(submissionHubClassroomId)) {
-          return false;
-        }
-        if (term) {
-          const haystack = [
-            assignment.title,
-            assignment.classroomName,
-            assignment.classroomSubject,
-            assignment.classroomSection,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
-          if (!haystack.includes(term)) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        if (submissionHubSort === "oldest") {
-          return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
-        }
-        if (submissionHubSort === "dueDate") {
-          const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
-          const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
-          return aDue - bDue;
-        }
-        if (submissionHubSort === "title") {
-          return (a.title || "").localeCompare(b.title || "");
-        }
-        if (submissionHubSort === "recentSubmissions") {
-          return (b.submissions || 0) - (a.submissions || 0);
-        }
-        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-      });
-  }, [assignments, submissionHubClassroomId, submissionHubSearch, submissionHubSort]);
-
   const selectedScanAssignment = useMemo(() => {
-    if (!submissionHubFilter || submissionHubFilter === "all" || ["dueSoon", "noDueDate", "submitted", "notSubmitted"].includes(submissionHubFilter)) {
+    if (!linkedScanAssignmentId || linkedScanAssignmentId === "all") {
       return null;
     }
-    return assignments.find((a) => String(a.id) === String(submissionHubFilter)) || null;
-  }, [assignments, submissionHubFilter]);
+    return assignments.find((a) => String(a.id) === String(linkedScanAssignmentId)) || null;
+  }, [assignments, linkedScanAssignmentId]);
 
   const selectedScanRoster = useMemo(() => {
     if (!selectedScanAssignment) return [];
@@ -762,29 +684,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
     return roster;
   }, [selectedScanAssignment, classroomMembers, submissions]);
-
-  const filteredScanRoster = useMemo(() => {
-    let list = selectedScanRoster;
-    if (scanRosterFilter === "submitted") {
-      list = list.filter((r) => r.isSubmitted && !r.isGraded);
-    } else if (scanRosterFilter === "graded") {
-      list = list.filter((r) => r.isGraded);
-    } else if (scanRosterFilter === "missing") {
-      list = list.filter((r) => !r.isSubmitted);
-    }
-
-    const term = scanRosterSearch.trim().toLowerCase();
-    if (term) {
-      list = list.filter(
-        (r) =>
-          r.studentName.toLowerCase().includes(term) ||
-          r.studentEmail.toLowerCase().includes(term) ||
-          (r.essayTitle && r.essayTitle.toLowerCase().includes(term))
-      );
-    }
-
-    return list;
-  }, [selectedScanRoster, scanRosterFilter, scanRosterSearch]);
 
   const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, true, { assignments, members: classroomMembers });
 
@@ -1775,7 +1674,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   };
 
   const handleTransferToText = () => {
-    const text = transcribedText || manualLiveOcrText;
+    if (isTranscribing || isScanningManualCheck || !transcriptionResult) return;
+    const text = transcribedText;
     if (!text) return;
     setManualCheckText(text);
     setUploadMode("text");
@@ -1803,62 +1703,38 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   };
 
-  const handleTranscribePicture = async (fileToTranscribe) => {
-    const imageFile =
-      fileToTranscribe ||
-      manualCheckFiles.find((file) => file.type?.startsWith("image/"));
-
-    if (!imageFile) {
-      setManualCheckError("Please select a valid image file to transcribe.");
-      return;
+  const handleTranscribePicture = async () => {
+    if (!manualCheckFiles.length || !manualCheckFiles.every(isEssayImage)) {
+      setManualCheckError("Choose supported images for the pages of one essay.");
+      return null;
     }
-
     setIsTranscribing(true);
     setManualCheckError("");
-    setManualLiveOcrResult({
-      fileName: imageFile.name,
-      text: "",
-      lines: [],
-      boxes: [],
-      rawBoxes: [],
-      detectedLineCount: 0,
-      processedLineCount: 0,
-      duplicateLineCount: 0,
-      truncated: false,
-    });
-
+    setTranscribedText("");
+    setTranscriptionResult(null);
+    setManualLiveOcrResult(null);
     try {
-      const result = await extractTextFromImage(imageFile, {
-        onProgress: (progress) => {
-          setManualLiveOcrResult({
-            fileName: imageFile.name,
-            text: progress.text || "",
-            lines: progress.lines ?? [],
-            boxes: progress.boxes ?? [],
-            rawBoxes: progress.rawBoxes ?? [],
-            detectedLineCount: progress.detectedLineCount ?? 0,
-            duplicateLineCount: progress.duplicateLineCount ?? 0,
-            processedLineCount: progress.processedLineCount ?? 0,
-            truncated: progress.truncated,
-          });
-        },
+      const result = await extractTextFromImages(manualCheckFiles, {
+        onProgress: progress => setManualLiveOcrResult(progress),
       });
-
-      const fullText = result.text || "";
-      setTranscribedText(fullText);
+      setTranscribedText(result.text);
       setTranscriptionResult(result);
       setManualLiveOcrResult(result);
+      return result;
     } catch (error) {
       setManualCheckError(error.message || "Failed to transcribe handwriting.");
+      return null;
     } finally {
       setIsTranscribing(false);
     }
   };
 
-  const handleManualCheckFiles = (event) => {
-    const nextFiles =
-      Array.from(event.target.files ?? []);
-
+  const changeManualPages = nextFiles => {
+    try {
+      if (nextFiles.some(file => isEssayImage(file) || file.type?.startsWith("image/"))) validateEssayPages(nextFiles, uploadLimits);
+      else if (uploadMode === "picture" && nextFiles.length) validateEssayPages(nextFiles, uploadLimits);
+    } catch (error) { setManualCheckError(error.message); return; }
+    // Changing the preview order invalidates the previously assembled essay.
     setManualCheckFiles(nextFiles);
     setManualCheckResult(null);
     setManualLiveOcrResult(null);
@@ -1866,6 +1742,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setTranscriptionResult(null);
     setShowLineBreakdown(false);
     setManualCheckError("");
+  };
+
+  const handleManualCheckFiles = (event) => {
+    const nextFiles =
+      Array.from(event.target.files ?? []);
+
+    changeManualPages(nextFiles);
+    event.target.value = "";
 
     if (nextFiles.length > 0 && uploadMode === "text") {
       setUploadMode("file");
@@ -1877,7 +1761,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setManualCheckError("");
     setManualCheckResult(null);
 
-    const hasImage = manualCheckFiles.some((f) => f.type?.startsWith("image/"));
+    const hasImage = uploadMode !== "text" && manualCheckFiles.some(isEssayImage);
 
     if (!manualCheckText.trim() && manualCheckFiles.length === 0 && !transcribedText.trim()) {
       setManualCheckError("Add a picture, file, or pasted text before scanning.");
@@ -1889,72 +1773,27 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     try {
       let fileText;
 
-      if (hasImage && transcribedText.trim()) {
-        const imageFile = manualCheckFiles.find((f) => f.type?.startsWith("image/"));
-        const nonImageFiles = manualCheckFiles.filter((f) => !f.type?.startsWith("image/"));
-        let nonImageText = { text: "", readableFiles: [], unreadableFiles: [], extractedText: "" };
-        if (nonImageFiles.length > 0) {
-          nonImageText = await readTextFromFiles(nonImageFiles);
-        }
-
-        const imageTranscriptBlock = `Image: ${imageFile?.name || "Uploaded Picture"}\n${transcribedText}`;
-
-        fileText = {
-          text: [nonImageText.text, imageTranscriptBlock].filter(Boolean).join("\n\n"),
-          extractedText: [nonImageText.extractedText, transcribedText].filter(Boolean).join("\n\n"),
-          extractedImages: [{
-            name: imageFile?.name || "Uploaded Picture",
-            text: transcribedText,
-            lines: transcriptionResult?.lines ?? manualLiveOcrResult?.lines ?? [],
-            boxes: transcriptionResult?.boxes ?? manualLiveOcrResult?.boxes ?? [],
-            detectedLineCount: transcriptionResult?.detectedLineCount ?? manualLiveOcrResult?.detectedLineCount ?? 0,
-            duplicateLineCount: transcriptionResult?.duplicateLineCount ?? manualLiveOcrResult?.duplicateLineCount ?? 0,
-            processedLineCount: transcriptionResult?.processedLineCount ?? manualLiveOcrResult?.processedLineCount ?? 0,
-            truncated: transcriptionResult?.truncated ?? false,
-          }],
-          readableFiles: [...nonImageText.readableFiles, ...(imageFile ? [imageFile] : [])],
-          unreadableFiles: nonImageText.unreadableFiles,
-        };
+      if (hasImage) {
+        if (!manualCheckFiles.every(isEssayImage)) throw new Error("Upload images only for a multi-page handwritten essay.");
+        const result = transcriptionResult?.pages?.length === manualCheckFiles.length
+          ? { ...transcriptionResult, text: manualCheckFiles.length > 1 ? combinePageText(transcriptionResult.pages) : transcribedText.trim() }
+          : await handleTranscribePicture();
+        if (!result) return; // Never scan partial text after a failed page.
+        if (!result.text.trim()) throw new Error("Review every page before checking similarity.");
+        fileText = { text: result.text, extractedText: result.text, extractedImages: result.pages,
+          readableFiles: manualCheckFiles, unreadableFiles: [] };
+      } else if (uploadMode === "text") {
+        fileText = { text: "", extractedText: manualCheckText, extractedImages: [], readableFiles: [], unreadableFiles: [] };
       } else {
-        fileText =
-          await readTextFromFiles(manualCheckFiles, {
-            onImageProgress: (progress) => {
-              setManualLiveOcrResult({
-                fileName: progress.file?.name || "Image",
-                text: progress.text || "",
-                lines: progress.lines ?? [],
-                boxes: progress.boxes ?? [],
-                rawBoxes: progress.rawBoxes ?? [],
-                detectedLineCount: progress.detectedLineCount ?? 0,
-                duplicateLineCount: progress.duplicateLineCount ?? 0,
-                processedLineCount: progress.processedLineCount ?? 0,
-                truncated: progress.truncated,
-              });
-            },
-          });
-
-        if (fileText.extractedImages?.[0]?.text) {
-          setTranscribedText(fileText.extractedImages[0].text);
-          setTranscriptionResult({
-            text: fileText.extractedImages[0].text,
-            lines: fileText.extractedImages[0].lines ?? [],
-            boxes: fileText.extractedImages[0].boxes ?? [],
-            detectedLineCount: fileText.extractedImages[0].detectedLineCount,
-            duplicateLineCount: fileText.extractedImages[0].duplicateLineCount,
-            processedLineCount: fileText.extractedImages[0].processedLineCount,
-            truncated: fileText.extractedImages[0].truncated,
-          });
-        }
+        fileText = await readTextFromFiles(manualCheckFiles);
       }
 
-      const combinedText =
-        [manualCheckText, fileText.text, transcribedText]
-          .map((value) => value.trim())
-          .filter(Boolean)
-          .join("\n\n");
+      // Each recognized word is included once. File labels and page headings
+      // are presentation only and never become similarity input.
+      const combinedText = hasImage ? fileText.text : [manualCheckText, fileText.text].map(value => value.trim()).filter(Boolean).join("\n\n");
 
       let scanResult = null;
-      const nonImageFile = manualCheckFiles.find((f) => !f.type?.startsWith("image/"));
+      const nonImageFile = uploadMode === "text" ? null : manualCheckFiles.find((f) => !isEssayImage(f));
       if (nonImageFile || combinedText.trim().length >= 15) {
         setPlagiarismScanProgressText("Submitting to Copyleaks Plagiarism API...");
 
@@ -2024,6 +1863,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   };
 
   const handleResetManualCheck = () => {
+    if (isTranscribing || isScanningManualCheck) return;
     setManualCheckTitle("");
     setManualCheckText("");
     setManualCheckFiles([]);
@@ -2040,31 +1880,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setIsManualImageExpanded(false);
     setLoadedSubmissionInfo(null);
     setLoadingSubmissionId(null);
-    setSubmissionHubSearch("");
-    setSubmissionHubClassroomId("all");
-    setSubmissionHubFilter("all");
-    setSubmissionHubSort("newest");
-    setScanRosterFilter("all");
-    setScanRosterSearch("");
-  };
-
-  const handleSelectScanAssignment = (assignmentId) => {
-    setSubmissionHubFilter(assignmentId);
-    if (!assignmentId || assignmentId === "all") return;
-    const matched = assignments.find((a) => String(a.id) === String(assignmentId));
-    if (matched) {
-      if (submissionHubClassroomId !== "all" && String(submissionHubClassroomId) !== String(matched.classroomId)) {
-        setSubmissionHubClassroomId(String(matched.classroomId));
-      }
-      setManualCheckTitle(`${matched.title} — ${matched.classroomName || "Class"}`);
-    }
-  };
-
-  const handleSelectScanClassroom = (classroomId) => {
-    setSubmissionHubClassroomId(classroomId);
-    if (classroomId !== "all" && selectedScanAssignment && String(selectedScanAssignment.classroomId) !== String(classroomId)) {
-      setSubmissionHubFilter("all");
-    }
+    setLinkedScanAssignmentId("all");
   };
 
   const loadedSubmission = loadedSubmissionInfo
@@ -2758,13 +2574,17 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         onPageChange={(page) => {
           setSuccessMessage("");
           setErrorMessage("");
-          if (page === "submissions" && selectedAssignment) {
+          if (page === "submissions" && openedClassroomId &&
+              String(selectedAssignment?.classroomId) !== String(openedClassroomId)) {
+            selectGradeClassroom(openedClassroomId);
+          } else if (page === "submissions" && selectedAssignment) {
             selectGradeAssignment(selectedAssignment.id);
           } else if ((page === "assignments" || page === "submissions" || page === "calendar") && openedClassroomId) {
             setAssignmentFilterClassroomId(openedClassroomId);
             setSelectedSubmissionsClassroomId(openedClassroomId);
             setSelectedAssignmentId(null);
           }
+          if (page === "upload") setLinkedScanAssignmentId(selectedAssignment?.id || "all");
           setActivePage(page);
         }}
       />
@@ -3114,7 +2934,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <div className="min-w-0 pr-14">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3>
-                              <button type="button" onClick={() => setOpenedClassroomId(classroom.id)}
+                              <button type="button" onClick={() => selectGradeClassroom(classroom.id)}
                                 className="text-left text-xl font-medium tracking-tight text-white hover:underline break-words"
                                 title={classroom.name}>
                                 {classroom.name}
@@ -3217,9 +3037,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           <button
                             type="button"
                             onClick={() => {
-                              setOpenedClassroomId(classroom.id);
-                              setSelectedSubmissionsClassroomId(classroom.id);
-                                                                  setSelectedAssignmentId(null);
+                              selectGradeClassroom(classroom.id);
                               setActivePage("submissions");
                             }}
                             className="inline-flex items-center gap-1 text-[#5f6368] hover:text-[#202124]"
@@ -3233,7 +3051,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between text-xs gap-2">
                           <button
                             type="button"
-                            onClick={() => setOpenedClassroomId(classroom.id)}
+                            onClick={() => selectGradeClassroom(classroom.id)}
                             className="font-medium text-[#137333] hover:underline shrink-0"
                           >
                             Open classroom
@@ -3510,88 +3328,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   </div>
                 </div>
 
-                {/* Interactive Filter & Scan Station Toolbar */}
-                <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
-                  <div className="flex-1 rounded-xl border border-[#dadce0] bg-white p-3 shadow-2xs">
-                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.4fr)_repeat(3,minmax(140px,1fr))]">
-                      {/* 1. Search */}
-                      <div className="relative block">
-                        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
-                        <input
-                          type="search"
-                          value={submissionHubSearch}
-                          onChange={(event) => setSubmissionHubSearch(event.target.value)}
-                          placeholder="Search assignment, subject, or class"
-                          className="h-10 w-full rounded-lg border border-[#dadce0] bg-white pl-9 pr-8 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] placeholder:text-[#80868b]"
-                        />
-                        {submissionHubSearch && (
-                          <button
-                            type="button"
-                            onClick={() => setSubmissionHubSearch("")}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5f6368] hover:text-[#202124] p-1 rounded-full hover:bg-gray-100"
-                            title="Clear search"
-                          >
-                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                          </button>
-                        )}
-                      </div>
-
-                      {/* 2. All Classes Dropdown */}
-                      <select
-                        value={submissionHubClassroomId}
-                        onChange={(event) => handleSelectScanClassroom(event.target.value)}
-                        aria-label="Filter by class and section"
-                        className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs sm:text-sm font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                      >
-                        <option value="all">All classes ({classrooms.length})</option>
-                        {classrooms.map((classroom) => (
-                          <option key={classroom.id} value={classroom.id}>
-                            {classroom.name} — {classroom.section || "Standard"}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* 3. All Assignments Dropdown */}
-                      <select
-                        value={submissionHubFilter}
-                        onChange={(event) => handleSelectScanAssignment(event.target.value)}
-                        aria-label="Filter assignments"
-                        className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs sm:text-sm font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                      >
-                        <option value="all">
-                          {scanStationAssignments.length === 0
-                            ? "No assignments"
-                            : `All assignments (${scanStationAssignments.length})`}
-                        </option>
-                        {scanStationAssignments.map((assignment) => (
-                          <option key={assignment.id} value={assignment.id}>
-                            {assignment.title} ({assignment.classroomName || "Class"})
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* 4. Sort Dropdown */}
-                      <select
-                        value={submissionHubSort}
-                        onChange={(event) => setSubmissionHubSort(event.target.value)}
-                        aria-label="Sort assignments"
-                        className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs sm:text-sm font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                      >
-                        <option value="newest">Newest</option>
-                        <option value="oldest">Oldest</option>
-                        <option value="dueDate">Due date</option>
-                        <option value="title">Assignment name (A–Z)</option>
-                        <option value="recentSubmissions">Most submissions</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* 5. Clear Station Button */}
+                <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={handleResetManualCheck}
                     className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-[#dadce0] bg-white px-4 text-xs sm:text-sm font-semibold text-[#3c4043] transition hover:bg-[#f8f9fa] hover:text-[#202124] hover:border-[#c4c7c5] shadow-2xs active:scale-[0.98]"
-                    title="Clear uploaded files, OCR text, and reset filters"
+                    title="Clear uploaded files and OCR text"
                   >
                     <svg className="h-4 w-4 text-[#5f6368]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -3636,7 +3378,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       )}
                       <button
                         type="button"
-                        onClick={() => setSubmissionHubFilter("all")}
+                        onClick={() => setLinkedScanAssignmentId("all")}
                         className="inline-flex items-center gap-1 text-xs font-semibold text-[#1967d2] hover:text-[#041e49] hover:bg-[#d3e3fd]/40 px-2.5 py-1.5 rounded-lg transition"
                       >
                         Unlink
@@ -3818,6 +3560,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <button
                           key={id}
                           type="button"
+                          disabled={isTranscribing || isScanningManualCheck}
                           onClick={() => {
                             setUploadMode(id);
                             setManualCheckResult(null);
@@ -3957,14 +3700,16 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                       type="file"
                                       accept={ACCEPTED_CHECK_FILE_TYPES}
                                       multiple
-                                      onChange={handleManualCheckFiles}
+                                      disabled={isTranscribing || isScanningManualCheck}
+                              onChange={handleManualCheckFiles}
                                       className="sr-only"
                                     />
                                   </label>
                                   <button
                                     type="button"
+                                    disabled={isTranscribing || isScanningManualCheck}
                                     onClick={() => {
-                                      setManualCheckFiles([]);
+                                      changeManualPages([]);
                                       setManualCheckText("");
                                     }}
                                     className="rounded-lg border border-[#dadce0] bg-white px-3 py-1.5 text-xs font-semibold text-[#c5221f] hover:bg-red-50 hover:border-red-200 transition shadow-2xs"
@@ -4051,12 +3796,31 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                   : ACCEPTED_CHECK_FILE_TYPES
                               }
                               multiple
+                              disabled={isTranscribing || isScanningManualCheck}
                               onChange={handleManualCheckFiles}
                               className="sr-only"
                             />
                           </label>
                         )}
 
+                        {manualCheckFiles.length > 0 && manualCheckFiles.every(isEssayImage) && <EssayPagePicker
+                          files={manualCheckFiles} onChange={changeManualPages} onError={setManualCheckError}
+                          disabled={isTranscribing || isScanningManualCheck} />}
+                        {manualLiveOcrResult?.pageCount && isTranscribing && <p role="status" className="mt-3 font-semibold">
+                          Page {manualLiveOcrResult.pageNumber} of {manualLiveOcrResult.pageCount} ? {manualLiveOcrResult.phase}
+                        </p>}
+                        {transcriptionResult?.pages?.length > 1 && <details open className="mt-4"><summary>Page transcriptions</summary>
+                          {transcriptionResult.pages.map((page, index) => <label key={page.page_number} className="mt-2 block">Page {page.page_number}
+                            <textarea aria-label={`Page ${page.page_number} transcription`} value={page.text} rows={5}
+                              disabled={isTranscribing || isScanningManualCheck} className="block w-full rounded border p-3"
+                              onChange={event => {
+                                const pages = transcriptionResult.pages.map((old, i) => i === index ? { ...old, text: event.target.value } : old);
+                                const text = pages.some(p => !p.text.trim()) ? "" : combinePageText(pages);
+                                setTranscriptionResult({ ...transcriptionResult, pages, text }); setTranscribedText(text); setManualCheckResult(null);
+                              }} />
+                          </label>)}
+                          <h4 className="mt-3 font-semibold">Complete Essay</h4><pre className="whitespace-pre-wrap">{transcribedText}</pre>
+                        </details>}
                         {uploadMode === "picture" && manualCheckFiles.length > 0 && (
                           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-3.5 shadow-sm">
                             <button
@@ -4106,8 +3870,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                             <button
                               type="button"
+                              disabled={isTranscribing || isScanningManualCheck}
                               onClick={() => {
-                                setManualCheckFiles([]);
+                                changeManualPages([]);
                                 setManualImagePreview("");
                                 setTranscribedText("");
                                 setTranscriptionResult(null);
@@ -4185,6 +3950,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                 {isTranscribing ? "Live streaming recognition:" : "Editable transcript (refine words before scanning if needed):"}
                               </label>
                               <textarea
+                                readOnly={manualCheckFiles.length > 1}
+                                disabled={isTranscribing || isScanningManualCheck}
                                 value={transcribedText || manualLiveOcrText}
                                 onChange={(e) => setTranscribedText(e.target.value)}
                                 rows={Math.min(10, Math.max(5, (transcribedText || manualLiveOcrText).split("\n").length + 1))}
@@ -4680,50 +4447,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
                   </div>
 
-                  {/* Filter tabs and student search */}
-                  <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                      {[
-                        { id: "all", label: "All", count: selectedScanRoster.length },
-                        { id: "submitted", label: "Turned In", count: selectedScanRoster.filter((r) => r.isSubmitted && !r.isGraded).length },
-                        { id: "graded", label: "Graded", count: selectedScanRoster.filter((r) => r.isGraded).length },
-                        { id: "missing", label: "Missing", count: selectedScanRoster.filter((r) => !r.isSubmitted).length },
-                      ].map((tab) => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setScanRosterFilter(tab.id)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                            scanRosterFilter === tab.id
-                              ? "bg-[#137333] text-white shadow-2xs"
-                              : "bg-[#f1f3f4] text-[#5f6368] hover:bg-[#e8eaed] hover:text-[#202124]"
-                          }`}
-                        >
-                          {tab.label} ({tab.count})
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="relative min-w-[200px] sm:max-w-xs">
-                      <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#5f6368]" />
-                      <input
-                        type="search"
-                        value={scanRosterSearch}
-                        onChange={(e) => setScanRosterSearch(e.target.value)}
-                        placeholder="Search student or essay..."
-                        className="h-8 w-full rounded-lg border border-[#dadce0] bg-white pl-8 pr-3 text-xs text-[#202124] outline-none transition focus:border-[#137333] focus:ring-1 focus:ring-[#e6f4ea]"
-                      />
-                    </div>
-                  </div>
-
                   {/* Roster table / list */}
                   <div className="mt-4 divide-y divide-[#f1f3f4] overflow-hidden rounded-xl border border-[#dadce0]">
-                    {filteredScanRoster.length === 0 ? (
+                    {selectedScanRoster.length === 0 ? (
                       <div className="p-8 text-center text-xs sm:text-sm text-[#5f6368]">
-                        No students found matching this criteria.
+                        No students in this assignment yet.
                       </div>
                     ) : (
-                      <PaginatedList items={filteredScanRoster} resetKey={[selectedScanAssignment?.id, scanRosterFilter, scanRosterSearch]} label="Scan submissions">{pageItems => pageItems.map((item) => {
+                      <PaginatedList items={selectedScanRoster} resetKey={[selectedScanAssignment?.id]} label="Scan submissions">{pageItems => pageItems.map((item) => {
                         const initials = item.studentName
                           .split(" ")
                           .map((n) => n[0])
@@ -4907,7 +4638,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      <PaginatedList items={Array.from(submissionHubGroups.values())} resetKey={[selectedSubmissionsClassroomId, selectedAssignmentId, submissionHubSearch, submissionHubFilter]} label="Grade classrooms">{pageItems => pageItems.map((group) => (
+                      <PaginatedList items={Array.from(submissionHubGroups.values())} resetKey={[selectedSubmissionsClassroomId, selectedAssignmentId]} label="Grade classrooms">{pageItems => pageItems.map((group) => (
                         <section key={group.id} className="rounded-2xl border border-[#dadce0] bg-white overflow-hidden shadow-2xs">
                           {/* Group Header Strip */}
                           <div className="flex items-center justify-between border-b border-[#dadce0] bg-[#f8f9fa] px-4 py-3 sm:px-5">
@@ -4939,7 +4670,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                           {/* Assignment Cards inside the Group */}
                           <div className="divide-y divide-[#f1f3f4] p-2 sm:p-3">
-                            <PaginatedList items={group.assignments} resetKey={[selectedSubmissionsClassroomId, selectedAssignmentId, submissionHubSearch, submissionHubFilter, group.id]} label="Grade assignments">{pageItems => pageItems.map((assignment) => (
+                            <PaginatedList items={group.assignments} resetKey={[selectedSubmissionsClassroomId, selectedAssignmentId, group.id]} label="Grade assignments">{pageItems => pageItems.map((assignment) => (
                               <article
                                 key={assignment.id}
                                 className="group flex flex-col gap-3 rounded-xl p-3 sm:p-4 transition hover:bg-[#f8f9fa] cursor-pointer sm:flex-row sm:items-center sm:justify-between"

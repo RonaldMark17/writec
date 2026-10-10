@@ -1,17 +1,18 @@
-import { checkPeerSimilarityViaBackend } from "./dashboard/plagiarismScan";
-jest.mock("./dashboard/plagiarismScan", () => ({ ...jest.requireActual("./dashboard/plagiarismScan"), checkPeerSimilarityViaBackend: jest.fn() }));
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { checkPeerSimilarityViaBackend, checkPlagiarismViaBackend, pollPlagiarismScanResult } from "./dashboard/plagiarismScan";
+import { extractTextFromImages } from "./dashboard/ocrService";
+jest.mock("./dashboard/plagiarismScan", () => ({ ...jest.requireActual("./dashboard/plagiarismScan"), checkPeerSimilarityViaBackend: jest.fn(), checkPlagiarismViaBackend: jest.fn(), pollPlagiarismScanResult: jest.fn() }));
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { loadTeacherSubmissionStatus } from "./dashboard/submissionProgress";
 import TeacherDashboard from "./TeacherDashboard";
 import { supabase } from "../supabaseClient";
 import { downloadGrades } from "./dashboard/gradeExport";
 jest.mock("./dashboard/gradeExport", () => ({ ...jest.requireActual("./dashboard/gradeExport"), downloadGrades: jest.fn(async () => {}) }));
 jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.fn(), channel: jest.fn(), removeChannel: jest.fn() } }));
-jest.mock("./dashboard/ocrService", () => ({ getOcrEngineInfo: async () => null }));
+jest.mock("./dashboard/ocrService", () => ({ getOcrEngineInfo: async () => null, extractTextFromImages: jest.fn() }));
 jest.mock("./dashboard/submissionProgress", () => ({ ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: () => "",
   loadTeacherSubmissionStatus: jest.fn(async () => ({ results: [], progress: {} })) }));
 jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shared"), Header: ({ onPageChange }) => <>
-  <button onClick={() => onPageChange("classrooms")}>Classes tab</button><button onClick={() => onPageChange("assignments")}>Classwork tab</button><button onClick={() => onPageChange("submissions")}>Grades tab</button></> }));
+  <button onClick={() => onPageChange("upload")}>Scan tab</button><button onClick={() => onPageChange("classrooms")}>Classes tab</button><button onClick={() => onPageChange("assignments")}>Classwork tab</button><button onClick={() => onPageChange("submissions")}>Grades tab</button></> }));
 let archived = false;
 let extraAssignments = [];
 let onArchiveUpdate;
@@ -218,4 +219,66 @@ test("closing peer inspection preserves assignment, classroom, roster filter and
   expect(screen.getByLabelText("Assignment:")).toHaveValue("essayA");
   expect(within(pagination).getByText("Page 2 of 2")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Submitted (12)" }).className).toBe(filterClass);
+});
+
+test("Grades follows newly opened classrooms and drops foreign assignment state", async () => {
+  render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Class A" }));
+  fireEvent.click(screen.getByText("Grades tab"));
+  fireEvent.change(screen.getByLabelText("Assignment:"), { target: { value: "essayA" } });
+  for (const id of ["B", "A", "B"]) {
+    fireEvent.click(screen.getByText("Classes tab"));
+    fireEvent.click(screen.getByRole("button", { name: /Back to classes/ }));
+    fireEvent.click(screen.getByRole("button", { name: `Class ${id}` }));
+    fireEvent.click(screen.getByText("Grades tab"));
+    expect(screen.getByLabelText("Classroom:")).toHaveValue(id);
+    expect(screen.getByLabelText("Assignment:")).toHaveValue("all");
+    expect(within(screen.getByLabelText("Assignment:")).getByRole("option", { name: `Essay ${id}` })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Assignment:")).queryByRole("option", { name: `Essay ${id === "A" ? "B" : "A"}` })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Assignment:"), { target: { value: `essay${id}` } });
+  }
+  await screen.findAllByText("No comments yet.");
+});
+
+test("Scan Station has no filters and retains upload and clear actions", async () => {
+  render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
+  await screen.findByRole("button", { name: "Class A" });
+  fireEvent.click(screen.getByText("Scan tab"));
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Upload station" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Clear station" }));
+  expect(screen.getByRole("heading", { name: "Upload station" })).toBeInTheDocument();
+});
+
+test.each([false, true])("teacher scans one ordered essay only when all pages finish (failure=%s)", async (fail) => {
+  checkPlagiarismViaBackend.mockClear();
+  extractTextFromImages.mockClear();
+  URL.createObjectURL = jest.fn(() => "blob:page"); URL.revokeObjectURL = jest.fn();
+  let complete, reject;
+  extractTextFromImages.mockImplementation(() => new Promise((resolve, failure) => { complete = resolve; reject = failure; }));
+  checkPlagiarismViaBackend.mockResolvedValue({ scan_id: "scan" });
+  pollPlagiarismScanResult.mockResolvedValue({ status: "completed", plagiarism_score: 0, result_data: { provider: "copyleaks" } });
+  const { container } = render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
+  await screen.findByRole("button", { name: "Class A" });
+  fireEvent.click(screen.getByText("Scan tab"));
+  fireEvent.click(screen.getByRole("button", { name: "Picture" }));
+  const files = ["z", "a", "m"].map(name => new File(["image"], `${name}.jpg`, { type: "image/jpeg" }));
+  fireEvent.change(container.querySelector('input[type="file"]'), { target: { files } });
+  fireEvent.click(screen.getByRole("button", { name: "Move page 3 up" }));
+  fireEvent.click(screen.getByRole("button", { name: "Scan for plagiarism" }));
+  await waitFor(() => expect(extractTextFromImages).toHaveBeenCalledTimes(1));
+  expect(extractTextFromImages.mock.calls[0][0]).toEqual([files[0], files[2], files[1]]);
+  expect(checkPlagiarismViaBackend).not.toHaveBeenCalled();
+  if (fail) {
+    await act(async () => reject(new Error("Page 2 could not be processed.")));
+    expect(screen.getByText("Page 2 could not be processed.")).toBeInTheDocument();
+    expect(checkPlagiarismViaBackend).not.toHaveBeenCalled();
+  } else {
+    const pages = ["The first page", "The continuation", "The conclusion"].map((text, i) => ({ page_number: i + 1, text, status: "ready" }));
+    const text = pages.map(page => page.text).join("\n");
+    await act(async () => complete({ text, pages }));
+    expect(checkPlagiarismViaBackend).toHaveBeenCalledTimes(1);
+    expect(checkPlagiarismViaBackend.mock.calls[0][0].text).toBe(text);
+  }
 });

@@ -117,8 +117,8 @@ def create_account(body: AccountCreate, request: Request, account=Depends(requir
     email = body.email.strip().lower()
     name = body.full_name.strip()
     password = body.password.get_secret_value()
-    if not name or not re.fullmatch(r"[^\s@]+@(edu\.com\.ph|([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+edu\.ph)", email):
-        raise HTTPException(422, "Enter a name and an institutional email ending in @edu.com.ph or .edu.ph.")
+    if not name or not re.fullmatch(r"[^\s@]+@edu\.ph", email):
+        raise HTTPException(422, "Enter a name and an email ending in @edu.ph.")
     if not 8 <= len(password) <= 128:
         raise HTTPException(422, "Password must contain 8 to 128 characters.")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")

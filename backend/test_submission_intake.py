@@ -1,5 +1,7 @@
 import unittest
 import uuid
+import io
+from PIL import Image
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -20,6 +22,9 @@ class IntakeTests(unittest.TestCase):
             app=SimpleNamespace(state=SimpleNamespace(upload_root='.')))
         self.access = patch('submission_intake.require_assignment', return_value={'id': STUDENT, 'role': 'student'}).start()
         self.db = patch('submission_intake.supabase_request').start()
+        image = io.BytesIO()
+        Image.new('RGB', (8, 8), 'white').save(image, format='PNG')
+        patch('submission_intake.storage_download', return_value=image.getvalue()).start()
         self.addCleanup(patch.stopall)
 
     def test_saves_text_and_original_together_without_accepting_a_client_score(self):

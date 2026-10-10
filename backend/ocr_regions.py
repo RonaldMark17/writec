@@ -2,6 +2,38 @@
 import cv2
 import numpy as np
 from PIL import Image
+from statistics import median
+
+
+def reading_order(boxes):
+    """Group near-aligned fragments into rows, then read each row left to right."""
+    rows = []
+    for box in sorted(boxes, key=lambda b: (b['centroid_y'], b['x1'])):
+        height = box['y2'] - box['y1']
+        if rows and abs(box['centroid_y'] - rows[-1][0]['centroid_y']) <= 0.35 * min(height, rows[-1][0]['y2'] - rows[-1][0]['y1']):
+            rows[-1].append(box)
+        else:
+            rows.append([box])
+    return [box for row in rows for box in sorted(row, key=lambda b: b['x1'])]
+
+
+def join_recognized_lines(lines):
+    """Preserve words/case/punctuation; infer only whitespace from line geometry."""
+    if not lines:
+        return ''
+    heights = [line['bbox'][3] - line['bbox'][1] for line in lines]
+    typical_height = median(heights)
+    gaps = [lines[i]['bbox'][1] - lines[i-1]['bbox'][3] for i in range(1, len(lines))
+            if lines[i]['bbox'][1] > lines[i-1]['bbox'][3]]
+    typical_gap = median(gaps) if gaps else typical_height * 0.5
+    output = lines[0]['text'].strip()
+    for previous, current in zip(lines, lines[1:]):
+        a, b = previous['bbox'], current['bbox']
+        same_row = abs((a[1]+a[3])/2 - (b[1]+b[3])/2) <= 0.35 * min(a[3]-a[1], b[3]-b[1])
+        gap = b[1] - a[3]
+        separator = ' ' if same_row else '\n\n' if gap > max(typical_gap * 1.6, typical_height) else '\n'
+        output += separator + current['text'].strip()
+    return output
 
 
 def choose_transcript(original, enhanced, original_score, enhanced_score):
@@ -31,7 +63,7 @@ def suppress_duplicate_boxes(boxes):
                 break
         if not duplicate:
             kept.append(dict(candidate))
-    return sorted(kept, key=lambda b: (b['centroid_y'], b['x1']))
+    return reading_order(kept)
 
 
 def join_split_lines(image, boxes):

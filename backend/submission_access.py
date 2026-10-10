@@ -89,7 +89,7 @@ def local_file(root, key):
     return result
 
 
-def storage_download(request, key):
+def storage_download(request, key, max_bytes=None):
     """Download using the caller token so Storage RLS is also enforced."""
     import os
     import urllib.request
@@ -100,7 +100,10 @@ def storage_download(request, key):
         headers=supabase_headers(request.state.access_token))
     try:
         with urllib.request.urlopen(req, timeout=20) as response:
-            return response.read()
+            data = response.read(max_bytes + 1) if max_bytes is not None else response.read()
+            if max_bytes is not None and len(data) > max_bytes:
+                raise HTTPException(413, f'Each image must be {max_bytes / 1024**2:g} MB or smaller.')
+            return data
     except urllib.error.HTTPError:
         raise HTTPException(404, 'File not found or not accessible.') from None
     except (urllib.error.URLError, TimeoutError):

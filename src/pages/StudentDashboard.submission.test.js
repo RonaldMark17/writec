@@ -4,11 +4,11 @@ import StudentDashboard from "./StudentDashboard";
 import { supabase } from "../supabaseClient";
 import { apiFetch } from "../apiFetch";
 import { useSubmissionProgress } from "./dashboard/submissionProgress";
-import { extractTextFromImage } from "./dashboard/ocrService";
+import { extractTextFromImage, extractTextFromImages } from "./dashboard/ocrService";
 
 jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.fn(), storage: { from: jest.fn() } } }));
 jest.mock("../apiFetch", () => ({ apiFetch: jest.fn() }));
-jest.mock("./dashboard/ocrService", () => ({ extractTextFromImage: jest.fn() }));
+jest.mock("./dashboard/ocrService", () => ({ extractTextFromImage: jest.fn(), extractTextFromImages: jest.fn() }));
 jest.mock("./dashboard/submissionProgress", () => ({
   ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: jest.fn(() => ""),
 }));
@@ -84,6 +84,7 @@ test("student reviews streamed text before saving the original image and correct
   const file = new File(["image"], "essay.jpg", { type: "image/jpeg" });
   fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [file] } });
   expect(screen.getByRole("button", { name: "Transcribing…" })).toBeDisabled();
+  await waitFor(() => expect(extractTextFromImage).toHaveBeenCalledTimes(1));
   act(() => extractTextFromImage.mock.calls[0][1].onProgress({ text: "First line", detectedLineCount: 2, processedLineCount: 1 }));
   expect(screen.getByLabelText("Essay transcription")).toHaveValue("First line");
   expect(upload).not.toHaveBeenCalled();
@@ -138,4 +139,50 @@ test("failed ungraded work can be replaced, but a rejected retry is not mistaken
   expect(screen.queryByLabelText("Paste text")).not.toBeInTheDocument();
   act(() => setRows(rows => rows.map(row => ({ ...row, status: "graded", grade: "" }))));
   expect(screen.queryByRole("button", { name: "Resubmit failed work" })).not.toBeInTheDocument();
+});
+
+test("student reorders three pages, reviews them, and submits one complete essay", async () => {
+  jest.clearAllMocks();
+  useSubmissionProgress.mockImplementation(() => "");
+  URL.createObjectURL = jest.fn(() => "blob:essay"); URL.revokeObjectURL = jest.fn();
+  supabase.rpc.mockResolvedValue({ data: [], error: null });
+  supabase.from.mockImplementation(table => {
+    const data = table === "classroomMembers" ? [{ classroom_id: "class", student_id: student }]
+      : table === "classroomTable" ? [{ id: "class", classroom_name: "English" }]
+      : table === "assignmentTable" ? [{ id: assignment, classroom_id: "class", title: "Multi-page essay" }] : [];
+    const query = { then: resolve => Promise.resolve({ data }).then(resolve) };
+    ["select", "eq", "in", "order"].forEach(method => { query[method] = () => query; });
+    return query;
+  });
+  const storageUpload = jest.fn();
+  supabase.storage.from.mockReturnValue({ upload: storageUpload });
+  const files = ["z", "a", "m"].map(name => new File(["image"], `${name}.jpg`, { type: "image/jpeg" }));
+  extractTextFromImages.mockImplementation(async ordered => {
+    const pages = ordered.map((file, i) => ({ page_number: i + 1, text: file.name, status: "ready" }));
+    return { pages, text: pages.map(page => page.text).join("\n") };
+  });
+  apiFetch.mockImplementation(async url => ({ ok: true, json: async () => url.endsWith("upload-pages")
+    ? { file_url: "http://localhost:8000/uploads/submissions/student/assignment/test.essay.zip" } : { id: "saved" } }));
+  const { container } = render(<StudentDashboard profile={{ id: student, role: "student", full_name: "Alex" }} />);
+  fireEvent.click(screen.getByText("Assignments tab"));
+  fireEvent.click(await screen.findByRole("button", { name: "Add or create" }));
+  fireEvent.click(screen.getByRole("button", { name: "Picture" }));
+  fireEvent.change(container.querySelector('input[type="file"]'), { target: { files } });
+  expect(extractTextFromImages).not.toHaveBeenCalled();
+  expect(screen.getAllByAltText(/Page \d preview/)).toHaveLength(3);
+  fireEvent.click(screen.getByRole("button", { name: "Move page 3 up" }));
+  expect(screen.getByRole("button", { name: "Submit assignment" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Transcribe pages" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Submit assignment" })).toBeEnabled());
+  expect(extractTextFromImages.mock.calls[0][0]).toEqual([files[0], files[2], files[1]]);
+  fireEvent.change(screen.getByLabelText("Page 2 transcription"), { target: { value: "Corrected continuation" } });
+  expect(screen.getByLabelText("Essay transcription")).toHaveValue("z.jpg\nCorrected continuation\na.jpg");
+  fireEvent.click(screen.getByRole("button", { name: "Submit assignment" }));
+  await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(2));
+  expect(apiFetch.mock.calls[0][1].body.getAll("files")).toEqual([files[0], files[2], files[1]]);
+  const metadata = JSON.parse(apiFetch.mock.calls[0][1].body.get("pages"));
+  expect(metadata.map(page => page.page_number)).toEqual([1, 2, 3]);
+  expect(JSON.parse(apiFetch.mock.calls[1][1].body).text).toBe("z.jpg\nCorrected continuation\na.jpg");
+  expect(storageUpload).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.queryByLabelText("Essay transcription")).not.toBeInTheDocument());
 });

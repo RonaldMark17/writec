@@ -109,7 +109,12 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
   const [fullName, setFullName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [emailBlurred, setEmailBlurred] = useState(false);
+  const validRegistrationEmail = /^[^\s@]+@edu\.ph$/i.test(email.trim());
+  const emailWarning = email.trim() && !validRegistrationEmail && (emailBlurred || /@.+/.test(email));
   const [role, setRole] = useState("student");
+  const registrationComplete = Boolean(fullName.trim() && email.trim() && password.trim() && confirmPassword.trim()
+    && ["student", "teacher"].includes(role));
 
   // Close on Escape key
   useEffect(() => {
@@ -156,8 +161,14 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
     setErrorMessage("");
     setSuccessMessage("");
 
-    if (!/^[^\s@]+@(edu\.com\.ph|([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+edu\.ph)$/i.test(email.trim())) {
-      setErrorMessage("Registration is only available for approved institutional email addresses ending in @edu.com.ph or .edu.ph.");
+    if (!registrationComplete) {
+      setErrorMessage("Please fill in every field: full name, email address, password, and confirm password, and select your role.");
+      return;
+    }
+
+    if (!validRegistrationEmail) {
+      setEmailBlurred(true);
+      setErrorMessage("");
       return;
     }
 
@@ -323,7 +334,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     id="modal-login-email"
                     type="email"
                     autoComplete="email"
-                    placeholder="name@school.edu.ph"
+                    placeholder="name@edu.ph"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -516,13 +527,17 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     id="modal-register-email"
                     type="email"
                     autoComplete="email"
-                    placeholder="name@school.edu.ph"
+                    placeholder="name@edu.ph"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); setErrorMessage(""); }}
+                    onBlur={() => setEmailBlurred(true)}
+                    aria-invalid={Boolean(emailWarning)}
+                    aria-describedby={emailWarning ? "registration-email-error" : undefined}
                     required
                     className="h-10 sm:h-11 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] pl-10 pr-3.5 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
                   />
                 </div>
+                {emailWarning && <p id="registration-email-error" role="alert" className="validation-error rounded-md p-2 text-xs">Please use an email address ending in @edu.ph.</p>}
               </div>
 
               {/* Password Fields Grid */}
@@ -609,7 +624,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
 
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !registrationComplete || !validRegistrationEmail}
                 className="mt-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#137333] px-6 text-sm font-semibold text-white shadow-md shadow-[#137333]/25 transition hover:bg-[#0f5b28] hover:shadow-lg hover:shadow-[#137333]/30 focus:outline-none focus:ring-4 focus:ring-[#e6f4ea] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {isLoading ? (
@@ -623,6 +638,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                   `Create ${role === "teacher" ? "Teacher" : "Student"} Account`
                 )}
               </button>
+              {!registrationComplete && <p className="text-xs text-[#5f6368]">All registration fields are required. Complete them to create your account.</p>}
 
               <div className="pt-2 text-center text-xs text-[#5f6368]">
                 Already have an account?{" "}

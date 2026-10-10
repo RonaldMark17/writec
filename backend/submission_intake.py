@@ -8,7 +8,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from admin_api import supabase_request
-from submission_access import require_assignment, file_reference, local_file
+from submission_access import require_assignment, file_reference, local_file, storage_download
+from essay_pages import read_bundle, validate_image, upload_limits
 
 router = APIRouter(prefix='/api/submissions', tags=['Submissions'])
 
@@ -48,6 +49,33 @@ def submit_reviewed_work(body: ReviewedSubmission, request: Request):
         file_url = f"{str(request.base_url).rstrip('/')}/uploads/{key}"
     else:
         file_url = key
+
+    # Originals are validated on the server even when the browser uploaded
+    # directly to Supabase. A bundle cannot enqueue a partial/changed transcript.
+    if key.endswith('.essay.zip'):
+        if kind != 'local':
+            raise HTTPException(400, 'Essay bundles must use server-managed storage.')
+        target = local_file(request.app.state.upload_root, key)
+        if target.stat().st_size > upload_limits()['max_submission_bytes'] + 2 * 1024**2:
+            raise HTTPException(413, 'Essay bundle exceeds configured upload limits.')
+        try:
+            manifest, _ = read_bundle(target.read_bytes())
+            if manifest['student_id'] != student_id or manifest['assignment_id'] != assignment_id:
+                raise ValueError('Essay pages do not belong to this student and assignment.')
+            if text != manifest['text']:
+                raise ValueError('Complete essay must match all reviewed pages in order. Upload the updated pages again.')
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+    elif key.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff')):
+        try:
+            if kind == 'local':
+                with local_file(request.app.state.upload_root, key).open('rb') as original:
+                    data = original.read(upload_limits()['max_image_bytes'] + 1)
+            else:
+                data = storage_download(request, key, max_bytes=upload_limits()['max_image_bytes'])
+            validate_image(data)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     # Stable identity makes simultaneous clicks and retries after a lost response
     # converge on the same database row without re-enqueueing or overwriting it.
