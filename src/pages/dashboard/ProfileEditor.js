@@ -4,7 +4,7 @@ import { supabase } from "../../supabaseClient";
 import { passwordRecoveryError } from "../../passwordRecoveryError";
 import { profilePreferences } from "../../profilePreferences";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
-import { isCustomAvatarUrl, getTeacherAvatarTheme, getAvatarPublicUrl } from "./shared";
+import { isCustomAvatarUrl, getTeacherAvatarTheme, CheckIcon } from "./shared";
 import { Link } from "react-router-dom";
 export function ProfileIcon({ className = "h-10 w-10" }) {
   return (
@@ -32,15 +32,6 @@ export function TrashIcon({ className = "h-4 w-4" }) {
     </svg>
   );
 }
-
-export const AVATAR_THEMES = [
-  { id: "emerald", label: "Emerald", bg: "from-[#137333] to-[#2e7d32]", ring: "ring-[#e6f4ea]", dot: "#137333" },
-  { id: "blue", label: "Ocean Blue", bg: "from-[#1a73e8] to-[#1557b0]", ring: "ring-[#e8f0fe]", dot: "#1a73e8" },
-  { id: "purple", label: "Royal Purple", bg: "from-[#7b1fa2] to-[#512da8]", ring: "ring-[#f3e8fd]", dot: "#7b1fa2" },
-  { id: "crimson", label: "Crimson Red", bg: "from-[#c5221f] to-[#b71c1c]", ring: "ring-[#fce8e6]", dot: "#c5221f" },
-  { id: "amber", label: "Warm Amber", bg: "from-[#e37400] to-[#b06000]", ring: "ring-[#fef7e0]", dot: "#e37400" },
-  { id: "slate", label: "Dark Slate", bg: "from-[#37474f] to-[#263238]", ring: "ring-[#eceff1]", dot: "#37474f" },
-];
 
 export function processProfileImage(file) {
   return new Promise((resolve, reject) => {
@@ -109,8 +100,6 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
   const [institution, setInstitution] = useState(savedPrefs.institution || (isTeacher ? "Department of Academic Integrity" : ""));
   const [department, setDepartment] = useState(savedPrefs.department || (isTeacher ? "Language Arts & Writing" : ""));
   const [bio, setBio] = useState(savedPrefs.bio || "");
-  const defaultTheme = getTeacherAvatarTheme(profile?.id || profile?.full_name || "teacher");
-  const [avatarColor, setAvatarColor] = useState(savedPrefs.avatarColor || profile?.avatarColor || defaultTheme.id);
   const rawSavedAvatar = savedPrefs.avatarUrl !== undefined ? savedPrefs.avatarUrl : (profile?.avatarUrl || "");
   const [avatarUrl, setAvatarUrl] = useState(() => (isCustomAvatarUrl(rawSavedAvatar) ? rawSavedAvatar : ""));
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
@@ -275,7 +264,6 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
         institution: institution.trim(),
         department: isTeacher ? department : courseTrack,
         bio,
-        avatarColor,
         avatarUrl,
         plagiarismSensitivity,
         studentReportView,
@@ -321,7 +309,6 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
         data: {
           writecheck_preferences: safePrefs,
           avatar_url: safeAvatarUrl,
-          avatar_color: avatarColor,
         },
       });
       if (preferencesError) throw new Error(`Name saved, but preferences were not saved: ${preferencesError.message}`);
@@ -344,7 +331,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
     }
   }
 
-  const selectedTheme = AVATAR_THEMES.find((t) => t.id === avatarColor) || AVATAR_THEMES[0];
+  const selectedTheme = getTeacherAvatarTheme();
 
   const initials = (name || profile?.full_name || "User")
     .split(" ")
@@ -609,31 +596,6 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                         </button>
                       )}
                     </div>
-                  </div>
-                </div>
-
-                {/* Avatar Color Swatches */}
-                <div>
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-2">
-                    {avatarUrl ? "Avatar accent ring color" : "Avatar theme color"}
-                  </span>
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    {AVATAR_THEMES.map((theme) => (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        onClick={() => setAvatarColor(theme.id)}
-                        className={`h-7 w-7 rounded-full bg-gradient-to-tr ${theme.bg} transition transform hover:scale-110 flex items-center justify-center shadow-xs ${avatarColor === theme.id ? `ring-2 ring-offset-2 ring-[${theme.dot}] scale-110` : ""
-                          }`}
-                        title={theme.label}
-                      >
-                        {avatarColor === theme.id && (
-                          <svg className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </button>
-                    ))}
                   </div>
                 </div>
 
@@ -1165,7 +1127,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                     <span>Saving…</span>
                   </>
                 ) : (
-                  "Save profile"
+                  <><CheckIcon className="h-4 w-4" /><span>Save profile</span></>
                 )}
               </button>
             </div>

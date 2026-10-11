@@ -49,3 +49,6 @@ img, video, canvas, svg {
   }
 }
 
+
+/* Shared size/alignment for decorative action icons beside existing labels. */
+.action-icon { display: inline-block; width: 1rem; height: 1rem; flex-shrink: 0; vertical-align: -0.125em; margin-right: 0.375rem; }

@@ -3,11 +3,11 @@ import { downloadSubmissionFileBlob } from "./shared";
 import EssayBundlePreview from "./EssayBundlePreview";
 
 export default function SubmissionFilePreview(props) {
-  if (props.fileUrl?.split("?")[0].endsWith(".essay.zip")) return <EssayBundlePreview fileUrl={props.fileUrl} transcript={props.transcript} />;
+  if (props.fileUrl?.split("?")[0].endsWith(".essay.zip")) return <EssayBundlePreview {...props} />;
   return <SingleFilePreview {...props} />;
 }
 
-function SingleFilePreview({ file, fileUrl, transcript = "" }) {
+function SingleFilePreview({ file, fileUrl, transcript = "", originalsOnly = false }) {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -46,9 +46,9 @@ function SingleFilePreview({ file, fileUrl, transcript = "" }) {
     </div>
     {preview.kind === "image" && <img src={preview.url} alt="Uploaded submission" className="max-h-96 w-full object-contain" />}
     {preview.kind === "pdf" && <iframe title="Uploaded PDF" src={preview.url} className="h-96 w-full rounded border" />}
-    {preview.kind === "text" && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-sm">{preview.text}</pre>}
-    {preview.kind === "document" && (transcript
+    {preview.kind === "text" && !originalsOnly && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-sm">{preview.text}</pre>}
+    {preview.kind === "document" && (!originalsOnly && transcript
       ? <pre className="max-h-96 overflow-auto whitespace-pre-wrap font-sans text-sm">{transcript}</pre>
-      : <p className="text-sm text-gray-600">Download this document to view it. Extracted text will appear when processing finishes.</p>)}
+      : <p className="text-sm text-gray-600">{originalsOnly ? "Download this document to view the original." : "Download this document to view it. Extracted text will appear when processing finishes."}</p>)}
   </section>;
 }

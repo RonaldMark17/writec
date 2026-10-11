@@ -1,11 +1,11 @@
 -- Apply after registration_edu_ph.sql and registration_required_fields.sql.
--- New registrations require exactly @edu.ph; existing accounts are unchanged.
+-- New registrations require an institutional domain such as @school.edu.ph; existing accounts are unchanged.
 BEGIN;
 CREATE OR REPLACE FUNCTION public.enforce_registration_domain()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 BEGIN
-  IF NEW.email IS NULL OR lower(NEW.email) !~ '^[^[:space:]@]+@edu[.]ph$' THEN
-    RAISE EXCEPTION 'Please use an email address ending in @edu.ph.' USING ERRCODE = '23514';
+  IF NEW.email IS NULL OR lower(NEW.email) !~ '^[^[:space:]@]+@([a-z0-9]([a-z0-9-]*[a-z0-9])?[.])+edu[.]ph$' THEN
+    RAISE EXCEPTION 'Please use an institutional email address such as name@school.edu.ph.' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
 END;
@@ -19,8 +19,8 @@ DECLARE registered_email TEXT;
 BEGIN
   IF TG_OP = 'INSERT' AND NEW.role IN ('student','teacher') THEN
     SELECT email INTO registered_email FROM auth.users WHERE id = NEW.id;
-    IF registered_email IS NULL OR lower(registered_email) !~ '^[^[:space:]@]+@edu[.]ph$' THEN
-      RAISE EXCEPTION 'Please use an email address ending in @edu.ph.' USING ERRCODE = '23514';
+    IF registered_email IS NULL OR lower(registered_email) !~ '^[^[:space:]@]+@([a-z0-9]([a-z0-9-]*[a-z0-9])?[.])+edu[.]ph$' THEN
+      RAISE EXCEPTION 'Please use an institutional email address such as name@school.edu.ph.' USING ERRCODE = '23514';
     END IF;
     NEW.email := registered_email;
     NEW.account_status := 'pending';

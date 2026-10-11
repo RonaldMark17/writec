@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "./dashboard/shared";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { extractTextFromImage } from "./dashboard/ocrService";
@@ -34,7 +35,7 @@ export default function Transcribe() {
 
   return <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
     <div className="mx-auto max-w-6xl space-y-6">
-      <Link to="/" className="text-emerald-700 underline">Back to WriteCheck</Link>
+      <Link to="/" className="text-emerald-700 underline"><ArrowLeftIcon className="action-icon" />Back to WriteCheck</Link>
       <header><h1 className="text-3xl font-bold">Handwriting transcription</h1>
         <p className="mt-2 text-slate-600">Upload a handwritten page. YOLO detects the lines and TrOCR reads them. Text appears as each batch finishes.</p>
       </header>

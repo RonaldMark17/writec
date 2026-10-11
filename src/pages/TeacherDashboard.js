@@ -1,3 +1,4 @@
+import SubmissionReview from "./dashboard/SubmissionReview";
 import EssayPagePicker from "./dashboard/EssayPagePicker";
 import { combinePageText, isEssayImage, validateEssayPages, useUploadLimits } from "./dashboard/essayPages";
 import { PeerComparison, SimilarityDialog } from "./dashboard/PeerSimilarityReview";
@@ -763,7 +764,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           id: profile.id,
           name: profile.full_name || profile.email || "Teacher",
           email: profile.email || "",
-          avatarColor: profile.avatarColor || "amber",
           avatarUrl: profile.avatarUrl || "",
         }));
       } catch {}
@@ -2024,21 +2024,23 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       && JSON.stringify(latest.scanResult) === JSON.stringify(reviewingSubmission.scanResult))) return;
     setReviewingSubmission((current) => ({ ...current, ...latest }));
     if (latest.processingState === "ready") {
-      setReviewTranscribedText(latest.transcribedText || "");
+      setReviewTranscribedText(current => current === (reviewingSubmission.transcribedText || "") || isReviewScanning ? (latest.transcribedText || "") : current);
       setReviewScanResult(latest.scanResult || null);
     } else {
       setReviewScanResult(null);
     }
-  }, [submissions, reviewingSubmission]);
+  }, [submissions, reviewingSubmission, isReviewScanning]);
 
+  const gradeSaveInFlight = useRef(false);
   const handleSaveGrade = async (event, returnWork = false) => {
     if (event) event.preventDefault();
-    if (!reviewingSubmission || isSavingGrade || isReviewScanning) return;
+    if (!reviewingSubmission || gradeSaveInFlight.current || isSavingGrade || isReviewScanning) return;
     if (reviewTranscribedText.trim() !== String(reviewingSubmission.transcribedText || "").trim()) {
       setErrorMessage("Recheck the corrected transcription before saving or returning the grade.");
       return;
     }
 
+    gradeSaveInFlight.current = true;
     setIsSavingGrade(true);
     setErrorMessage("");
     setSuccessMessage("");
@@ -2086,6 +2088,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       setSuccessMessage("");
       setErrorMessage(error.message || "Could not save. Your changes are still here; please retry.");
     } finally {
+      gradeSaveInFlight.current = false;
       setIsSavingGrade(false);
     }
   };
@@ -2125,20 +2128,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     manualCheckResult?.tone === "red"
       ? "text-red-700 ring-red-100"
       : manualCheckResult?.tone === "amber"
-        ? "text-amber-700 ring-amber-100"
-        : "text-emerald-700 ring-emerald-100";
-
-  const reviewResultBadgeClass =
-    reviewScanResult?.tone === "red"
-      ? "bg-red-50 text-red-700 border-red-200"
-      : reviewScanResult?.tone === "amber"
-        ? "bg-amber-50 text-amber-700 border-amber-200"
-        : "bg-emerald-50 text-emerald-800 border-emerald-200";
-
-  const reviewResultRingClass =
-    reviewScanResult?.tone === "red"
-      ? "text-red-700 ring-red-100"
-      : reviewScanResult?.tone === "amber"
         ? "text-amber-700 ring-amber-100"
         : "text-emerald-700 ring-emerald-100";
 
@@ -2558,7 +2547,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           </div>
         </div>
         )}
-        <AssignmentComments key={`${selectedAssignment.classroomId}:${selectedAssignment.id}`} assignmentId={selectedAssignment.id} classroomId={selectedAssignment.classroomId} profile={profile} />
+        {!reviewingSubmission && <AssignmentComments key={`${selectedAssignment.classroomId}:${selectedAssignment.id}`} assignmentId={selectedAssignment.id} classroomId={selectedAssignment.classroomId} profile={profile} />}
       </div>
     );
   };
@@ -2918,7 +2907,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 {visibleClassrooms.map((classroom) => {
                   const creatorName = profile?.full_name || classroom.teacherName || "Teacher";
                   const creatorInitials = getInitials(creatorName, "T");
-                  const creatorTheme = getTeacherAvatarTheme(classroom.teacherId || profile?.id || classroom.teacherName, profile?.avatarColor);
+                  const creatorTheme = getTeacherAvatarTheme(classroom.teacherId || profile?.id || classroom.teacherName);
                   const rawAvatar = (classroom.teacherId === profile?.id || !classroom.teacherId) ? (profile?.avatarUrl || "") : (classroom.teacherAvatarUrl || (classroom.teacherId ? getAvatarPublicUrl(classroom.teacherId) : ""));
                   const creatorAvatarUrl = isCustomAvatarUrl(rawAvatar) ? rawAvatar : "";
 
@@ -4595,7 +4584,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
                   {selectedAssignment && <>
                     <button type="button" onClick={() => { setSelectedAssignmentId(null); setActivePage("assignments"); }}
-                      className="rounded-lg border border-[#dadce0] px-3 py-2 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa]">Back to Classwork</button>
+                      className="rounded-lg border border-[#dadce0] px-3 py-2 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa]"><ArrowLeftIcon className="action-icon" />Back to Classwork</button>
                     <button type="button" onClick={() => handleOpenEditAssignment(selectedAssignment)}
                       className="rounded-lg border border-[#dadce0] px-3 py-2 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa]">Edit assignment</button>
                   </>}
@@ -4742,7 +4731,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             </div>
             {peerInspection.matchedId && <>
               <button type="button" className="mb-4 text-sm text-[#137333] underline"
-                onClick={() => setPeerInspection(current => ({ ...current, matchedId: null }))}>Back to matches</button>
+                onClick={() => setPeerInspection(current => ({ ...current, matchedId: null }))}><ArrowLeftIcon className="action-icon" />Back to matches</button>
               <PeerComparison key={peerInspection.matchedId} submission={peerInspection.submission} matchedSubmissionId={peerInspection.matchedId} />
             </>}
           </SimilarityDialog>}
@@ -4867,421 +4856,33 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             </div>
           )}
 
-          {reviewingSubmission && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
-              <div className="relative max-h-[92vh] w-full max-w-4xl lg:max-w-5xl overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
-                <div className="flex items-start justify-between border-b border-gray-100 pb-4">
-                  <div>
-                    <span className="inline-block rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
-                      Review Student Work
-                    </span>
-                    <h3 className="mt-1.5 text-2xl font-black text-gray-950">
-                      {reviewingSubmission.essayTitle}
-                    </h3>
-                    <p className="mt-1 text-sm font-semibold text-gray-500">
-                      Student: <strong className="text-gray-900">{reviewingSubmission.studentName}</strong> • Assignment: <strong className="text-gray-900">{reviewingSubmission.assignmentTitle}</strong>
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCloseReview}
-                    disabled={isSavingGrade || isReviewScanning}
-                    aria-label="Close submission review"
-                    className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-                  >
-                    Close ✕
-                  </button>
-                </div>
-
-                <div className="mt-5 space-y-5">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                          Submitted File
-                        </p>
-                        <p className="mt-1 text-sm font-extrabold text-gray-900">
-                          {reviewingSubmission.essayTitle}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Turned in on {formatDateTime(reviewingSubmission.createdAt)} • Status: <span className="font-bold text-emerald-700 uppercase">{processingLabel(reviewingSubmission.processingState)}</span>
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openSubmissionFile(reviewingSubmission.fileUrl, setErrorMessage)}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 text-xs font-extrabold text-gray-700 hover:bg-gray-50 shadow-sm transition"
-                        >
-                          <FileSearchIcon className="h-4 w-4 text-gray-500" />
-                          <span>Open submission file</span>
-                        </button>
-                        {reviewTranscribedText.trim() !== String(reviewingSubmission.transcribedText || "").trim() && (
-                          <button
-                            type="button"
-                            disabled={isReviewScanning || ["submitted", "processing"].includes(reviewingSubmission.processingState)}
-                            onClick={handleRunReviewScan}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 text-xs font-extrabold text-white hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm transition"
-                          >
-                            <FileSearchIcon className="h-4 w-4" />
-                            <span>{isReviewScanning ? "Rechecking..." : "Recheck corrected text"}</span>
-                          </button>
-                        )}
-                        {reviewingSubmission.processingState === "failed" && !reviewScanResult && (
-                          <button
-                            type="button"
-                            disabled={isReviewScanning}
-                            onClick={handleRunReviewScan}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-red-700 px-3.5 text-xs font-extrabold text-white hover:bg-red-800 disabled:bg-red-400 shadow-sm transition"
-                          >
-                            <FileSearchIcon className="h-4 w-4" />
-                            <span>{isReviewScanning ? "Retrying..." : "Retry processing"}</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Submitted image preview */}
-                    {isLoadingImagePreview && (
-                      <div className="mt-4 h-48 animate-pulse rounded-xl bg-gray-200" />
-                    )}
-                    {reviewImagePreviewUrl && !isLoadingImagePreview && (
-                      <div className="mt-4">
-                        <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">
-                          Submitted image
-                        </p>
-                        <div
-                          className="group relative cursor-zoom-in overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm"
-                          onClick={() => setIsImageExpanded(true)}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => e.key === "Enter" && setIsImageExpanded(true)}
-                          title="Click to expand"
-                          style={{ maxHeight: "320px" }}
-                        >
-                          <img
-                            src={reviewImagePreviewUrl}
-                            alt="Student submission"
-                            className="w-full object-contain transition duration-200 group-hover:brightness-90"
-                            style={{ maxHeight: "320px" }}
-                            onError={(e) => {
-                              e.target.closest(".group").style.display = "none";
-                            }}
-                          />
-                          <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/50 px-2 py-1 text-[11px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
-                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l-5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-                            Expand
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Lightbox overlay */}
-                  {isImageExpanded && reviewImagePreviewUrl && (
-                    <div
-                      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
-                      onClick={() => setIsImageExpanded(false)}
-                    >
-                      <div className="relative max-h-[95vh] max-w-[95vw]">
-                        <button
-                          type="button"
-                          onClick={() => setIsImageExpanded(false)}
-                          className="absolute -right-3 -top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white font-bold text-gray-800 shadow-lg hover:bg-gray-100 text-sm"
-                        >
-                          ✕
-                        </button>
-                        <img
-                          src={reviewImagePreviewUrl}
-                          alt="Student submission full view"
-                          className="max-h-[92vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <p className="mt-2 text-center text-xs font-semibold text-white/70">
-                          {reviewingSubmission.essayTitle} — {reviewingSubmission.studentName}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* DETECTION RESULT (matching Image 1) */}
-                  {isReviewScanning ? (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-6">
-                      <div className="flex items-center gap-3">
-                        <div className="h-7 w-7 animate-spin rounded-full border-3 border-emerald-700 border-t-transparent shrink-0" />
-                        <div>
-                          <p className="text-sm font-extrabold text-emerald-950">
-                            {reviewScanProgressText || "Scanning submission with Copyleaks..."}
-                          </p>
-                          <p className="text-xs font-semibold text-emerald-700 mt-1">
-                            Running YOLO26x + TrOCR handwriting transcription & Copyleaks Authenticity API matching.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : reviewScanResult ? (
-                    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-wider text-emerald-700">
-                            DETECTION RESULT
-                          </p>
-                          <h4 className="mt-1 text-2xl font-black text-gray-950">
-                            Plagiarism check
-                          </h4>
-                        </div>
-                        <span className={`inline-flex items-center rounded-lg border px-3 py-1 text-xs font-black ${reviewResultBadgeClass}`}>
-                          {reviewScanResult.label || "Low review"}
-                        </span>
-                      </div>
-
-                      {/* Score Box & 2x2 Stats Grid FIRST */}
-                      <div className="mt-6 grid gap-4 sm:grid-cols-[160px_1fr]">
-                        <div className={`grid aspect-square place-items-center rounded-lg bg-white text-center ring-8 ${reviewResultRingClass}`}>
-                          <div>
-                            <strong className="block text-5xl font-black">
-                              {reviewScanResult.score}%
-                            </strong>
-                            <span className="mt-1 block text-xs font-extrabold uppercase tracking-normal text-gray-500">
-                              Plagiarism score
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-lg bg-gray-50 p-4">
-                            <p className="text-2xl font-black text-gray-950">
-                              {reviewScanResult.wordCount ?? 0}
-                            </p>
-                            <p className="mt-1 text-sm font-bold text-gray-500">
-                              Total words
-                            </p>
-                          </div>
-
-                          <div className="rounded-lg bg-gray-50 p-4">
-                            <p className="text-2xl font-black text-gray-950">
-                              {reviewScanResult.identicalWords ?? 0}
-                            </p>
-                            <p className="mt-1 text-sm font-bold text-gray-500">
-                              Matched / identical words
-                            </p>
-                          </div>
-
-                          <div className="rounded-lg bg-gray-50 p-4">
-                            <p className="text-2xl font-black text-emerald-800">
-                              {reviewScanResult.scanStatus || "Completed"}
-                            </p>
-                            <p className="mt-1 text-sm font-bold text-gray-500">
-                              Scan status
-                            </p>
-                          </div>
-
-                          <div className="rounded-lg bg-gray-50 p-4">
-                            <p className="text-2xl font-black text-gray-950">
-                              {reviewScanResult.matchedSources?.length ?? 0}
-                            </p>
-                            <p className="mt-1 text-sm font-bold text-gray-500">
-                              Matching sources
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Transcribed student handwriting SECOND */}
-                      <div className="mt-6">
-                        <div className="flex items-center justify-between pb-3">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-black text-gray-900">
-                              Transcribed student handwriting
-                            </p>
-                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
-                              YOLO26x + TrOCR
-                            </span>
-                          </div>
-                          {reviewTranscribedText && (
-                            <button
-                              type="button"
-                              onClick={() => handleCopyReviewTranscript(reviewTranscribedText)}
-                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
-                            >
-                              {reviewCopySuccess ? (
-                                <>
-                                  <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
-                                  <span>Copied!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <CopyIcon className="h-3.5 w-3.5" />
-                                  <span>Copy text</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                        <HighlightedText text={reviewTranscribedText} scanResult={reviewScanResult} />
-                      </div>
-
-                      {/* Matching Sources */}
-                      {reviewScanResult.matchedSources && reviewScanResult.matchedSources.length > 0 && (
-                        <div className="mt-6">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-extrabold text-gray-800">
-                              Matching sources ({reviewScanResult.matchedSources.length})
-                            </p>
-                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
-                              Copyleaks Database
-                            </span>
-                          </div>
-                          <div className="mt-3 space-y-2">
-                            <PaginatedList items={reviewScanResult.matchedSources} resetKey={reviewingSubmission.id} label="Review sources">{pageItems => pageItems.map((source, sIdx) => (
-                              <div
-                                key={source.id || sIdx}
-                                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <p className="font-extrabold text-gray-900 truncate">
-                                      {source.title || "Matched source"}
-                                    </p>
-                                    <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                                      {source.source_type || "Copyleaks Database"}
-                                    </span>
-                                  </div>
-                                  {source.url && (
-                                    <a
-                                      href={source.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-xs font-semibold text-emerald-700 hover:underline truncate block mt-0.5"
-                                    >
-                                      {source.url}
-                                    </a>
-                                  )}
-                                </div>
-                                <div className="shrink-0">
-                                  <span className="rounded bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
-                                    {source.matched_words || source.identical_words || 0} matched words
-                                  </span>
-                                </div>
-                              </div>
-                            ))}</PaginatedList>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Copyleaks API Footer Notice */}
-                      <p className="mt-6 text-sm font-semibold leading-6 text-gray-600">
-                        {reviewScanResult.summary || "Scanned via Copyleaks Authenticity API. Comprehensive database and source matching completed."}
-                      </p>
-
-                      {/* Review Signals */}
-                      {reviewScanResult.flags && reviewScanResult.flags.length > 0 && (
-                        <div className="mt-6">
-                          <p className="text-sm font-extrabold text-gray-800">
-                            Review signals
-                          </p>
-                          <div className="mt-3 space-y-2">
-                            {reviewScanResult.flags.map((flag, fIdx) => (
-                              <p
-                                key={fIdx}
-                                className="rounded-lg border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-600"
-                              >
-                                {flag}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : ["submitted", "processing"].includes(reviewingSubmission.processingState) ? (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-6 text-center">
-                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-700 border-t-transparent" />
-                      </div>
-                      <h4 className="mt-3 text-base font-black text-amber-950">
-                        Automated Submission Processing in Progress
-                      </h4>
-                      <p className="mt-1 text-xs font-semibold text-amber-800 max-w-lg mx-auto">
-                        The uploaded handwritten work is automatically being processed through YOLO line detection, TrOCR transcription, and Plagiarism Detection. Results will display here automatically.
-                      </p>
-                    </div>
-                  ) : reviewingSubmission.processingState === "failed" ? (
-                    <div className="rounded-xl border border-red-200 bg-red-50/80 p-6 text-center">
-                      <p className="text-xs font-black uppercase tracking-wider text-red-700">
-                        PROCESSING STATUS
-                      </p>
-                      <h4 className="mt-1 text-base font-black text-red-950">
-                        Automated Processing Incomplete
-                      </h4>
-                      <p className="mt-1 text-xs font-semibold text-red-700 max-w-lg mx-auto">
-                        {reviewingSubmission.processingError || "Automated check encountered an issue during background processing."}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleRunReviewScan}
-                        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-red-800 shadow-sm"
-                      >
-                        <FileSearchIcon className="h-4 w-4" />
-                        <span>Retry Processing</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-6 text-center">
-                      <h4 className="text-sm font-black text-gray-900">
-                        Awaiting Automated Scan Result
-                      </h4>
-                      <p className="mt-1 text-xs font-semibold text-gray-500">
-                        Plagiarism checking runs automatically upon student submission. Synchronizing server status...
-                      </p>
-                    </div>
-                  )}
-
-                  <StatusMessage error={errorMessage || submissionSyncError} message={successMessage} />
-                  {reviewScanResult?.provider === "copyleaks" && <p className="mt-3 text-sm font-semibold text-emerald-800">Copyleaks API result · Scan {reviewScanResult.scanId}</p>}
-                  <p className="mt-3 text-sm font-bold">{processingLabel(reviewingSubmission.processingState)}</p>
-                  {reviewingSubmission.processingError && <p role="alert" className="mt-2 text-sm text-red-700">{reviewingSubmission.processingError}</p>}
-                  <label className="mt-4 block text-sm font-bold" htmlFor="review-transcription">Saved essay text — review or correct before rechecking</label>
-                  <textarea id="review-transcription" rows={8} value={reviewTranscribedText}
-                    disabled={["submitted", "processing"].includes(reviewingSubmission.processingState)}
-                    onChange={(event) => setReviewTranscribedText(event.target.value)}
-                    className="mt-2 w-full rounded-lg border border-gray-300 p-3 text-sm" />
-                  {reviewingSubmission.fileUrl && !/\.(jpe?g|png|webp|gif|bmp|tiff?)($|\?)/i.test(reviewingSubmission.fileUrl) && (
-                    <SubmissionFilePreview fileUrl={reviewingSubmission.fileUrl} transcript={reviewingSubmission.transcribedText} />
-                  )}
-                  {reviewTranscribedText.trim() !== String(reviewingSubmission.transcribedText || "").trim() && (
-                    <div className="mt-2 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2">
-                      <p className="text-xs font-semibold text-amber-800">
-                        Transcription has been edited. Recheck to update similarity metrics.
-                      </p>
-                      <button
-                        type="button"
-                        disabled={isReviewScanning}
-                        onClick={handleRunReviewScan}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm transition"
-                      >
-                        <FileSearchIcon className="h-3.5 w-3.5" />
-                        <span>{isReviewScanning ? "Rechecking..." : "Recheck with corrected text"}</span>
-                      </button>
-                    </div>
-                  )}
-                  {/* Grading Form */}
-                  <ClassmateMatches key={reviewingSubmission.id} submission={reviewingSubmission} />
-
-                  <form onSubmit={handleSaveGrade} className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-5">
+          {reviewingSubmission && <SubmissionReview key={reviewingSubmission.id}
+            submission={reviewingSubmission} profile={profile}
+            text={reviewTranscribedText} onTextChange={setReviewTranscribedText}
+            result={reviewScanResult} scanning={isReviewScanning} progress={reviewScanProgressText}
+            onRecheck={handleRunReviewScan} onClose={handleCloseReview} saving={isSavingGrade}
+            onCopy={handleCopyReviewTranscript} copied={reviewCopySuccess}
+            error={errorMessage || submissionSyncError} message={successMessage}
+            imageUrl={reviewImagePreviewUrl} imageLoading={isLoadingImagePreview}
+            imageExpanded={isImageExpanded} onExpandImage={setIsImageExpanded}
+            grading={
+                  <form onSubmit={handleSaveGrade} className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <h4 className="text-base font-black text-emerald-950">
-                      Grade Submission
+                      Grading
                     </h4>
                     <p className="mt-1 text-xs font-semibold text-emerald-800">
-                      Assign a score and leave feedback for {reviewingSubmission.studentName}. Results stay private until returned. Editing saved results makes them private again.
+                      Results stay private until returned. Editing saved results makes them private again.
                     </p>
 
                     <div className="mt-4">
-                      <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700">
+                      <label htmlFor="review-grade" className="block text-xs font-extrabold uppercase tracking-wider text-gray-700">
                         Grade / Score
                       </label>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <input
                           type="text"
+                          id="review-grade"
+                          disabled={isSavingGrade}
                           placeholder="e.g. 95 or A+"
                           value={gradeInput}
                           onChange={(e) => setGradeInput(e.target.value)}
@@ -5292,6 +4893,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             <button
                               key={score}
                               type="button"
+                              disabled={isSavingGrade}
                               onClick={() => setGradeInput(String(score))}
                               className={`h-9 rounded-lg border px-3 text-xs font-bold transition ${
                                 gradeInput === String(score)
@@ -5307,11 +4909,13 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
 
                     <div className="mt-4">
-                      <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700">
+                      <label htmlFor="review-feedback" className="block text-xs font-extrabold uppercase tracking-wider text-gray-700">
                         Teacher Feedback (optional)
                       </label>
                       <textarea
-                        rows={3}
+                        id="review-feedback"
+                        disabled={isSavingGrade}
+                        rows={5}
                         placeholder="Leave remarks or suggestions for the student..."
                         value={feedbackInput}
                         onChange={(e) => setFeedbackInput(e.target.value)}
@@ -5331,7 +4935,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       <button type="button" onClick={handleReturnWork}
                         disabled={isSavingGrade || Boolean(reviewingSubmission.revisionRequest) || isReviewScanning || ["submitted", "processing", "failed"].includes(reviewingSubmission.processingState) || !String(gradeInput ?? "").trim()}
                         className="rounded-lg bg-blue-700 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-blue-800 disabled:opacity-50">
-                        Return work
+                        <ArrowLeftIcon className="action-icon" />Return work
                       </button>
                       <button
                         type="button"
@@ -5346,14 +4950,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         disabled={isSavingGrade || Boolean(reviewingSubmission.revisionRequest)}
                         className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-5 py-2.5 text-xs font-extrabold text-white transition hover:bg-emerald-800 disabled:bg-emerald-400 shadow-sm"
                       >
-                        {isSavingGrade ? "Saving grade..." : "Save Grade"}
+                        {isSavingGrade ? "Saving grade..." : <><CheckIcon className="action-icon" />Save Grade</>}
                       </button>
                     </div>
                   </form>
-                </div>
-              </div>
-            </div>
-          )}
+            }
+          />}
           {/* Lightbox for Upload station manual check image */}
           {isManualImageExpanded && manualCheckImageUrl && (
             <div

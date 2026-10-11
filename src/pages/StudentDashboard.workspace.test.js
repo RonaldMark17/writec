@@ -156,7 +156,7 @@ test.each([0, 1])("assignment Back restores its exact classroom (%s)", async (in
   const title = index ? "Essay B" : "Essay A";
   fireEvent.click(screen.getByRole("button", { name: new RegExp(title + ".*Open homework") }));
   await screen.findAllByText("No comments yet.");
-  fireEvent.click(screen.getByRole("button", { name: /Back to classroom/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Back to English/ }));
   expect(screen.getByRole("region", { name: "Classroom homework" })).toBeInTheDocument();
   expect(screen.getByText(title)).toBeInTheDocument();
   expect(screen.queryByText(index ? "Essay A" : "Essay B")).not.toBeInTheDocument();
@@ -218,4 +218,33 @@ test.each(["missing", "network", "server", "member", "race", "success"])("join h
     expect(alert).toHaveTextContent(mode === "missing" ? "Classroom not found" : mode === "network" ? "Network unavailable" : mode === "server" ? "service unavailable" : "already a member");
     expect(within(dialog).getByLabelText("Class code")).toHaveValue("NEW123");
   }
+});
+
+test("classroom origin and actual assignment survive refresh after visiting another class", async () => {
+  setup({ multipleClasses: true });
+  let view = render(<StudentDashboard profile={profile} />);
+  fireEvent.click((await screen.findAllByRole("button", {name:"English"}))[1]);
+  fireEvent.click(screen.getByText("Classes tab"));
+  fireEvent.click(screen.getByRole("button", {name:/Back to classes/}));
+  fireEvent.click(screen.getAllByRole("button", {name:"English"})[0]);
+  fireEvent.click(screen.getByRole("button", {name:/Essay A.*Open homework/}));
+  expect(await screen.findByLabelText("Current classroom")).toHaveTextContent("English");
+  expect(screen.getByLabelText("Current classroom")).not.toHaveTextContent("Section B");
+  await waitFor(() => expect(JSON.parse(sessionStorage.getItem("writecheck-student-assignment-s"))).toMatchObject({assignmentId:"a", classroomId:"A"}));
+  view.unmount();
+  view = render(<StudentDashboard profile={profile}/>);
+  expect(await screen.findByLabelText("Current classroom")).not.toHaveTextContent("Section B");
+  expect(screen.getByRole("heading", {name:"Essay A", level:2})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:/Back to English/}));
+  expect(screen.getByRole("region", {name:"Classroom homework"})).toHaveTextContent("Essay A");
+  expect(screen.queryByText("Essay B")).not.toBeInTheDocument();
+});
+
+test("restored assignment membership wins over stale classroom context", async () => {
+  setup({multipleClasses:true});
+  sessionStorage.setItem("writecheck-student-assignment-s", JSON.stringify({assignmentId:"a", classroomId:"B", origin:{page:"classrooms", classroomId:"B"}}));
+  render(<StudentDashboard profile={profile}/>);
+  expect(await screen.findByLabelText("Current classroom")).not.toHaveTextContent("Section B");
+  fireEvent.click(screen.getByRole("button", {name:/Back to English/}));
+  expect(screen.getByRole("region", {name:"Classroom homework"})).toHaveTextContent("Essay A");
 });

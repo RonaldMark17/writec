@@ -18,7 +18,7 @@ class AdminApiTests(unittest.TestCase):
         self.assertNotIn('upstream secret', caught.exception.detail)
 
     def test_create_account_is_admin_only(self):
-        body = {'full_name': 'New Student', 'email': 'new@edu.ph', 'password': 'test-password', 'role': 'student'}
+        body = {'full_name': 'New Student', 'email': 'new@school.edu.ph', 'password': 'test-password', 'role': 'student'}
         self.assertEqual(self.client.post('/api/admin/users', json=body).status_code, 401)
         for role, status in [('student', 'active'), ('teacher', 'active'), ('admin', 'pending'), ('admin', 'inactive')]:
             with patch('admin_api.supabase_request', side_effect=self.upstream(role, status)) as upstream:
@@ -37,20 +37,20 @@ class AdminApiTests(unittest.TestCase):
                 return self.upstream()(path, token, payload)
             with patch.dict('os.environ', {'SUPABASE_SERVICE_ROLE_KEY': 'server-only'}), patch('admin_api.supabase_request', side_effect=upstream):
                 response = self.client.post('/api/admin/users', headers=self.headers, json={
-                    'full_name': ' New Name ', 'email': 'New@EDU.PH' if role == 'teacher' else 'New@EDU.PH', 'password': 'test-password', 'role': role})
+                    'full_name': ' New Name ', 'email': 'New@SCHOOL.EDU.PH' if role == 'teacher' else 'New@SCHOOL.EDU.PH', 'password': 'test-password', 'role': role})
             self.assertEqual(response.status_code, 201)
             self.assertEqual(response.json()['account_status'], 'active')
             self.assertNotIn('test-password', response.text)
             creation = next(call for call in calls if call[0] == '/auth/v1/admin/users')
             self.assertEqual(creation[1], 'server-only')
             self.assertEqual(creation[2]['user_metadata'], {'full_name': 'New Name', 'role': role})
-            self.assertEqual(creation[2]['email'], 'new@edu.ph' if role == 'teacher' else 'new@edu.ph')
+            self.assertEqual(creation[2]['email'], 'new@school.edu.ph' if role == 'teacher' else 'new@school.edu.ph')
             self.assertEqual(calls[-1][1], 'verified-test-token')
 
     def test_create_validation_and_missing_service_key(self):
-        body = {'full_name': 'Name', 'email': 'new@edu.ph', 'password': 'test-password', 'role': 'student'}
+        body = {'full_name': 'Name', 'email': 'new@school.edu.ph', 'password': 'test-password', 'role': 'student'}
         with patch('admin_api.supabase_request', side_effect=self.upstream()) as upstream:
-            for change in [{'email': 'x@edu.com.ph'}, {'email': 'x@school.edu.ph'}, {'email': 'x@gmail.com'}, {'role': 'admin'}, {'email': 'x@school.edu.ph.evil.com'}, {'password': 'short'}, {'full_name': ' '}]:
+            for change in [{'email': 'x@edu.com.ph'}, {'email': 'x@edu.ph'}, {'email': 'x@gmail.com'}, {'role': 'admin'}, {'email': 'x@school.edu.ph.evil.com'}, {'password': 'short'}, {'full_name': ' '}]:
                 self.assertEqual(self.client.post('/api/admin/users', headers=self.headers, json={**body, **change}).status_code, 422)
             with patch.dict('os.environ', {'SUPABASE_SERVICE_ROLE_KEY': ''}):
                 self.assertEqual(self.client.post('/api/admin/users', headers=self.headers, json=body).status_code, 503)
@@ -65,7 +65,7 @@ class AdminApiTests(unittest.TestCase):
             return self.upstream()(path, token, payload)
         with patch.dict('os.environ', {'SUPABASE_SERVICE_ROLE_KEY': 'server-only'}), patch('admin_api.supabase_request', side_effect=upstream):
             response = self.client.post('/api/admin/users', headers=self.headers, json={
-                'full_name': 'Name', 'email': 'new@edu.ph', 'password': 'test-password', 'role': 'teacher'})
+                'full_name': 'Name', 'email': 'new@school.edu.ph', 'password': 'test-password', 'role': 'teacher'})
         self.assertEqual(response.status_code, 201)
         self.assertIn('Do not create it again', response.json()['warning'])
 

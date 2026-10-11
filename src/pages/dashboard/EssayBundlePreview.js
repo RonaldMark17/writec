@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 
-export default function EssayBundlePreview({ fileUrl, transcript }) {
+export default function EssayBundlePreview({ fileUrl, transcript, originalsOnly = false }) {
   const [state, setState] = useState({ pages: [], text: "", error: "", loading: true });
   useEffect(() => {
     let live = true;
@@ -32,13 +32,28 @@ export default function EssayBundlePreview({ fileUrl, transcript }) {
   }, [fileUrl]);
   if (state.error) return <p role="alert">{state.error}</p>;
   if (state.loading) return <p role="status">Loading essay pages…</p>;
-  return <section aria-label="Original essay pages" className="space-y-3 rounded border bg-white p-4">
-    <h3 className="font-semibold">Extracted Essay — {state.pages.length} pages</h3>
+  if (!originalsOnly) return <section aria-label="Original essay pages" className="space-y-3 rounded border bg-white p-4">
+    <h3 className="font-semibold">Extracted Essay - {state.pages.length} pages</h3>
     {state.pages.map(page => <details key={page.page_number}><summary>Page {page.page_number}: {page.name}</summary>
       <img src={page.url} alt={`Submitted page ${page.page_number}`} className="max-h-96 w-full object-contain" />
       <a href={page.url} download={page.name} className="text-sm underline">Download page {page.page_number}</a>
       <pre className="whitespace-pre-wrap font-sans text-sm">{page.text}</pre>
     </details>)}
     <details><summary>Complete Essay</summary><pre className="whitespace-pre-wrap font-sans text-sm">{transcript || state.text}</pre></details>
+  </section>;
+  return <section aria-label="Original essay pages" className="space-y-3 rounded border bg-white p-4">
+    <h3 className="font-semibold">Submitted pages - {state.pages.length} pages</h3>
+    <div className="grid gap-3 sm:grid-cols-2">
+    {state.pages.map(page => <div key={page.page_number} className="min-w-0">
+      <p className="break-words text-sm font-medium">Page {page.page_number}: {page.name}</p>
+      <a href={page.url} target="_blank" rel="noopener noreferrer" aria-label={`Open page ${page.page_number}`}>
+        <img src={page.url} alt={`Submitted page ${page.page_number}`} className="max-h-60 w-full object-contain" />
+      </a>
+      <a href={page.url} download={page.name} className="text-sm underline">Download page {page.page_number}</a>
+    </div>)}
+    </div>
+    <details><summary>View page-by-page extraction</summary>
+      {state.pages.map(page => <div key={page.page_number}><h4>Page {page.page_number}</h4><pre className="whitespace-pre-wrap break-words font-sans text-sm">{page.text}</pre></div>)}
+    </details>
   </section>;
 }

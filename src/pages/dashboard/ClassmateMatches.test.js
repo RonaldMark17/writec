@@ -5,6 +5,18 @@ jest.mock("./plagiarismScan", () => ({ checkPeerSimilarityViaBackend: jest.fn() 
 const submission = { id: "s", assignmentId: "a", classroomId: "A" };
 beforeEach(() => jest.resetAllMocks());
 
+test("compact review shows names and scores and retains scoped inspection", async () => {
+  checkPeerSimilarityViaBackend.mockResolvedValue({total_peers_compared:3, all_matches:[{submission_id:"peer", student_name:"Taylor", score_percent:41}]});
+  const inspect = jest.fn();
+  render(<ClassmateMatches submission={submission} compact onInspect={inspect}/>);
+  expect(await screen.findByText("Potential matches: 1")).toBeInTheDocument();
+  expect(screen.getByText("41%")).toBeInTheDocument();
+  expect(screen.queryByText("Similar answer detected")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:"Inspect match with Taylor"}));
+  expect(inspect).toHaveBeenCalledWith("peer");
+  expect(checkPeerSimilarityViaBackend).toHaveBeenCalledWith({submissionId:"s",assignmentId:"a",classroomId:"A"});
+});
+
 test("shows exact calculated scores and paginates all matching classmates", async () => {
   checkPeerSimilarityViaBackend.mockResolvedValue({ total_peers_compared: 12,
     all_matches: Array.from({ length: 12 }, (_, i) => ({ submission_id: `s${i}`, student_name: `Student ${i}`, score_percent: 82.3 })) });

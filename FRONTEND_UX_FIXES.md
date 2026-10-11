@@ -55,4 +55,4 @@ The browser checks use representative real utility classes, not a full authentic
 
 ## Accepted-domain correction
 
-Registration now accepts only `@edu.ph`, case-insensitively, in both frontend paths, FastAPI admin creation, and both SQL guards. `@edu.com.ph` and subdomains such as `@school.edu.ph` are invalid. Re-run the updated `registration_exact_domain.sql` if an earlier version was already applied. The updated migration has not been applied to live Supabase.
+Registration now accepts institutional addresses ending in `.edu.ph`, with at least one domain label before `edu.ph`, such as `student@school.edu.ph` or `teacher@dept.school.edu.ph`. Validation is case-insensitive. Bare `@edu.ph`, `@edu.com.ph`, malformed domains, and suffix spoofing are rejected. Frontend registration, admin creation, FastAPI, and both SQL guards enforce the same rule. Re-run the updated `registration_exact_domain.sql` if an earlier version was applied, and restart the backend. The migration has not been applied to live Supabase.

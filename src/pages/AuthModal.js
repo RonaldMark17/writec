@@ -110,7 +110,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [emailBlurred, setEmailBlurred] = useState(false);
-  const validRegistrationEmail = /^[^\s@]+@edu\.ph$/i.test(email.trim());
+  const validRegistrationEmail = /^[^\s@]+@([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+edu\.ph$/i.test(email.trim());
   const emailWarning = email.trim() && !validRegistrationEmail && (emailBlurred || /@.+/.test(email));
   const [role, setRole] = useState("student");
   const registrationComplete = Boolean(fullName.trim() && email.trim() && password.trim() && confirmPassword.trim()
@@ -334,7 +334,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     id="modal-login-email"
                     type="email"
                     autoComplete="email"
-                    placeholder="name@edu.ph"
+                    placeholder="name@school.edu.ph"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -527,7 +527,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     id="modal-register-email"
                     type="email"
                     autoComplete="email"
-                    placeholder="name@edu.ph"
+                    placeholder="name@school.edu.ph"
                     value={email}
                     onChange={(e) => { setEmail(e.target.value); setErrorMessage(""); }}
                     onBlur={() => setEmailBlurred(true)}
@@ -537,7 +537,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     className="h-10 sm:h-11 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] pl-10 pr-3.5 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
                   />
                 </div>
-                {emailWarning && <p id="registration-email-error" role="alert" className="validation-error rounded-md p-2 text-xs">Please use an email address ending in @edu.ph.</p>}
+                {emailWarning && <p id="registration-email-error" role="alert" className="validation-error rounded-md p-2 text-xs">Please use an institutional email address such as name@school.edu.ph.</p>}
               </div>
 
               {/* Password Fields Grid */}

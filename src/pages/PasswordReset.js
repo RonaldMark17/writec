@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "./dashboard/shared";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../supabaseClient";
@@ -72,10 +73,7 @@ export default function PasswordReset({ mode = "request", session, isAuthLoading
           to="/login"
           className="inline-flex items-center gap-2 text-sm font-medium text-[#5f6368] hover:text-[#137333] transition-colors rounded-full px-3 py-1.5 hover:bg-[#f1f3f4]"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m12 19-7-7 7-7" />
-            <path d="M19 12H5" />
-          </svg>
+          <ArrowLeftIcon className="h-4 w-4" />
           Back to Sign in
         </Link>
       </div>
@@ -197,7 +195,7 @@ export default function PasswordReset({ mode = "request", session, isAuthLoading
                   to="/login"
                   className="text-sm font-medium text-[#137333] hover:bg-[#e6f4ea] px-3.5 py-2 rounded-full transition w-full sm:w-auto text-center"
                 >
-                  Back to login
+                  <ArrowLeftIcon className="action-icon" />Back to login
                 </Link>
 
                 <button
@@ -218,7 +216,7 @@ export default function PasswordReset({ mode = "request", session, isAuthLoading
                 to={done ? "/dashboard" : "/login"}
                 className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[#137333] text-sm font-medium text-white hover:bg-[#0f5b28] transition"
               >
-                {done ? "Continue to dashboard" : "Back to login"}
+                {!done && <ArrowLeftIcon className="action-icon" />}{done ? "Continue to dashboard" : "Back to login"}
               </Link>
             </div>
           )}

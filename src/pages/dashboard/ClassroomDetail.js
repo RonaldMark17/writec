@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "./shared";
 import { PaginatedList } from "./Pagination";
 import { useState } from "react";
 import ClassroomRoster from "./ClassroomRoster";
@@ -25,7 +26,7 @@ export default function ClassroomDetail({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <button type="button" onClick={onBack} className="text-sm font-medium text-[#137333] hover:underline">
-          &larr; Back to classes
+          <ArrowLeftIcon className="action-icon" />Back to classes
         </button>
         <div className="flex items-center gap-2">
           {onExportGrades && <button type="button" onClick={() => onExportGrades(classroom.id)}

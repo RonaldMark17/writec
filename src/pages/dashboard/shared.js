@@ -9,6 +9,15 @@ export const ASSIGNMENT_TABLE = "assignmentTable";
 export const SUBMISSION_TABLE = "submissionTable";
 export const ESSAY_BUCKET = "essay-submissions";
 
+export function ShieldIcon({ className = "h-5 w-5" }) {
+  return <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"/><path d="m8 12 3 3 5-6"/></svg>;
+}
+export function CloseIcon({ className = "h-4 w-4" }) {
+  return <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>;
+}
+export function RefreshIcon({ className = "h-4 w-4" }) {
+  return <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg>;
+}
 export function PlusIcon({ className = "h-5 w-5" }) {
   return (
     <svg
@@ -944,15 +953,6 @@ function PageNav({ pages, activePage, onChange, label }) {
   );
 }
 
-export const AVATAR_THEMES = [
-  { id: "emerald", label: "Emerald", bg: "from-[#137333] to-[#2e7d32]", ring: "ring-[#e6f4ea]", dot: "#137333" },
-  { id: "blue", label: "Ocean Blue", bg: "from-[#1a73e8] to-[#1557b0]", ring: "ring-[#e8f0fe]", dot: "#1a73e8" },
-  { id: "purple", label: "Royal Purple", bg: "from-[#7b1fa2] to-[#512da8]", ring: "ring-[#f3e8fd]", dot: "#7b1fa2" },
-  { id: "crimson", label: "Crimson Red", bg: "from-[#c5221f] to-[#b71c1c]", ring: "ring-[#fce8e6]", dot: "#c5221f" },
-  { id: "amber", label: "Warm Amber", bg: "from-[#e37400] to-[#b06000]", ring: "ring-[#fef7e0]", dot: "#e37400" },
-  { id: "slate", label: "Dark Slate", bg: "from-[#37474f] to-[#263238]", ring: "ring-[#eceff1]", dot: "#37474f" },
-];
-
 export function getInitials(name, fallback = "T") {
   if (!name) return fallback;
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
@@ -961,20 +961,9 @@ export function getInitials(name, fallback = "T") {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export function getTeacherAvatarTheme(identifier = "", avatarColor = "") {
-  if (avatarColor) {
-    const found = AVATAR_THEMES.find((t) => t.id === avatarColor);
-    if (found) return found;
-  }
-  const str = String(identifier || "");
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = (hash << 5) - hash + str.charCodeAt(i);
-  const idx = Math.abs(hash) % (AVATAR_THEMES?.length || 6);
-  return AVATAR_THEMES[idx] || AVATAR_THEMES[1] || {
-    bg: "from-[#1a73e8] to-[#1557b0]",
-    ring: "ring-[#e8f0fe]",
-    dot: "#1a73e8",
-  };
+// Every initials fallback uses the same WriteCheck styling.
+export function getTeacherAvatarTheme() {
+  return { bg: "from-[#137333] to-[#2e7d32]", ring: "ring-[#e6f4ea]", dot: "#137333" };
 }
 
 export function getAvatarPublicUrl(userId) {
@@ -1028,9 +1017,8 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
 
   const rawAvatarUrl = localPrefs.avatarUrl !== undefined ? localPrefs.avatarUrl : (profile?.avatarUrl || "");
   const avatarUrl = isCustomAvatarUrl(rawAvatarUrl) ? rawAvatarUrl : "";
-  const avatarColorId = profile?.avatarColor || localPrefs.avatarColor || "";
   const displayName = profile?.full_name || "Teacher";
-  const selectedTheme = getTeacherAvatarTheme(profile?.id || displayName, avatarColorId);
+  const selectedTheme = getTeacherAvatarTheme();
 
   const initials = displayName
     .split(" ")

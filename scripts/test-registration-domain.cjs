@@ -20,14 +20,14 @@ const assert = require('node:assert/strict');
     await db.exec(`CREATE TRIGGER test_profile_guard BEFORE INSERT OR UPDATE ON public."userTable"
       FOR EACH ROW EXECUTE FUNCTION public.guard_profile_fields();`);
     for (const role of ['student', 'teacher']) {
-      for (const email of ['student@edu.com.ph', 'student@gmail.com', 'student@yahoo.com', 'student@school.edu.ph', 'student@edu.com', 'student@edu.com.ph.fake.com', 'student@other.edu.com.ph']) {
-        await assert.rejects(() => db.query('INSERT INTO auth.users VALUES ($1,$2,$3)', [email, email, JSON.stringify({ full_name: 'Alex', role })]), /ending in @edu.ph/);
+      for (const email of ['student@edu.com.ph', 'student@gmail.com', 'student@yahoo.com', 'student@edu.ph', 'student@-school.edu.ph', 'student@school..edu.ph', 'student@school.edu.ph.fake.com', 'student@edu.com', 'student@edu.com.ph.fake.com', 'student@other.edu.com.ph']) {
+        await assert.rejects(() => db.query('INSERT INTO auth.users VALUES ($1,$2,$3)', [email, email, JSON.stringify({ full_name: 'Alex', role })]), /institutional email address/);
         checks++;
       }
-      await db.query('INSERT INTO auth.users VALUES ($1,$2,$3)', [role, `${role}@EDU.PH`, JSON.stringify({ full_name: 'Alex', role })]);
+      await db.query('INSERT INTO auth.users VALUES ($1,$2,$3)', [role, `${role}@SCHOOL.EDU.PH`, JSON.stringify({ full_name: 'Alex', role })]);
       await db.query('INSERT INTO public."userTable"(id,email,role) VALUES ($1,$2,$3)', [role, 'forged@example.com', role]);
       const profile = (await db.query('SELECT * FROM public."userTable" WHERE id=$1', [role])).rows[0];
-      assert.equal(profile.email, `${role}@EDU.PH`);
+      assert.equal(profile.email, `${role}@SCHOOL.EDU.PH`);
       assert.equal(profile.account_status, 'pending');
       checks++;
     }

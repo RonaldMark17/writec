@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "./dashboard/shared";
 import StudentSimilarity from "./dashboard/StudentSimilarity";
 import { PaginatedList } from "./dashboard/Pagination";
 import AssignmentCalendar from "./dashboard/AssignmentCalendar";
@@ -118,11 +119,15 @@ function getSubmissionBlockMessage(draft, file) {
 
 export default function StudentDashboard({ profile, onProfileUpdated }) {
   const uploadLimits = useUploadLimits();
-  const [openedClassroomId, setOpenedClassroomId] = useState(null);
-  const [assignmentOrigin, setAssignmentOrigin] = useState(null);
+  const assignmentContextKey = `writecheck-student-assignment-${profile?.id || "student"}`;
+  const [initialAssignmentContext] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(assignmentContextKey)) || {}; } catch { return {}; }
+  });
+  const [openedClassroomId, setOpenedClassroomId] = useState(initialAssignmentContext.classroomId || null);
+  const [assignmentOrigin, setAssignmentOrigin] = useState(initialAssignmentContext.origin || null);
 
   const [activePage, setActivePage] =
-    useState("classrooms");
+    useState(initialAssignmentContext.assignmentId ? "assignments" : "classrooms");
 
   const [classrooms, setClassrooms] =
     useState([]);
@@ -198,7 +203,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     useState("");
 
   const [submissionDraft, setSubmissionDraft] =
-    useState(emptySubmissionDraft);
+    useState(() => ({ ...emptySubmissionDraft, assignmentId: initialAssignmentContext.assignmentId || "" }));
 
   const [submissionFile, setSubmissionFileState] =
     useState(null);
@@ -270,6 +275,20 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   const selectedAssignment =
     assignments.find((assignment) => assignment.id === submissionDraft.assignmentId) ??
     null;
+
+  // Assignment membership is authoritative if a stale stored origin conflicts.
+  const assignmentClassroom = selectedAssignment
+    ? classrooms.find(classroom => classroom.id === selectedAssignment.classroomId) : null;
+  useEffect(() => {
+    if (!studentDataReady) return;
+    try {
+      if (activePage === "assignments" && selectedAssignment) {
+        sessionStorage.setItem(assignmentContextKey, JSON.stringify({
+          assignmentId: selectedAssignment.id, classroomId: selectedAssignment.classroomId, origin: assignmentOrigin,
+        }));
+      } else sessionStorage.removeItem(assignmentContextKey);
+    } catch { /* Navigation still works when browser storage is unavailable. */ }
+  }, [activePage, selectedAssignment, assignmentOrigin, assignmentContextKey, studentDataReady]);
 
   const selectedClassroom =
     classrooms.find((classroom) => classroom.id === selectedClassroomId) ??
@@ -441,7 +460,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         ? existing.name
         : c.teacher_name || cached?.name || cached?.full_name || existing?.name || "Teacher";
       const finalEmail = existing?.email || cached?.email || "";
-      const avatarColor = cached?.avatarColor || "";
       const avatarUrl =
         (cached?.avatarUrl && isCustomAvatarUrl(cached.avatarUrl))
           ? cached.avatarUrl
@@ -451,7 +469,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         id: c.teacher_id,
         name: finalName,
         email: finalEmail,
-        avatarColor,
         avatarUrl,
       });
     }
@@ -909,9 +926,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     setActivePage("assignments");
   };
 
-  const handleOpenSubmissionDraft = (assignment) => {
-    setAssignmentOrigin({ page: activePage, classroomId: openedClassroomId,
+  const handleOpenSubmissionDraft = (assignment, classroomId = assignment.classroomId) => {
+    const contextId = classroomId === assignment.classroomId ? classroomId : assignment.classroomId;
+    setAssignmentOrigin({ page: activePage, classroomId: activePage === "classrooms" ? contextId : openedClassroomId,
       selectedClassroomId });
+    setSelectedClassroomId(contextId || "");
+    setActivePage("assignments");
     setErrorMessage("");
     setSuccessMessage("");
     setSubmissionFile(null);
@@ -924,7 +944,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const handleBackFromAssignment = () => {
     resetSubmissionDraft();
-    const origin = assignmentOrigin;
+    const origin = assignmentOrigin?.page === "classrooms" && selectedAssignment
+      ? { ...assignmentOrigin, classroomId: selectedAssignment.classroomId } : assignmentOrigin;
     setAssignmentOrigin(null);
     if (origin?.page === "classrooms" &&
         classrooms.some(classroom => classroom.id === origin.classroomId)) {
@@ -1312,7 +1333,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
               onLeaveClassroom={(classroom) => setLeavingClassroom(classroom)}
               onOpenAssignment={(assignment) => {
                 handleViewClassroomAssignments(openedClassroomId);
-                handleOpenSubmissionDraft(assignment);
+                handleOpenSubmissionDraft(assignment, openedClassroomId);
               }}
             />
           );
@@ -1558,15 +1579,16 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 disabled={isSubmittingEssay}
                 className="mb-5 rounded-lg px-3 py-2 text-sm font-medium text-[#137333] hover:bg-[#e6f4ea] focus:outline-none focus:ring-2 focus:ring-[#137333] disabled:opacity-50"
               >
-                ← Back to {assignmentOrigin?.page === "classrooms" ? "classroom" :
+                ← Back to {assignmentOrigin?.page === "classrooms" ? (assignmentClassroom?.name || "classroom") :
                   assignmentOrigin?.page === "calendar" ? "Calendar" :
                   assignmentOrigin?.page === "submissions" ? "Results" : "To do"}
               </button>
             )}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-[#dadce0] pb-5">
               <div>
+                {selectedAssignment && <p aria-label="Current classroom" className="mb-1 text-sm font-medium text-[#5f6368]">{assignmentClassroom?.name || selectedAssignment.classroomName || "Classroom unavailable"}{assignmentClassroom?.section ? ` - Section ${assignmentClassroom.section}` : ""}</p>}
                 <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
-                  {selectedAssignment ? (selectedAssignment.submitted ? "Submitted work" : "Submit assignment") : "To-do"}
+                  {selectedAssignment ? selectedAssignment.title : "To-do"}
                 </h2>
                 <p className="mt-1 text-sm text-[#5f6368]">
                   {selectedAssignment ? (selectedAssignment.submitted ? "Your previously submitted work is shown below." : "Review the instructions below and add your work.") : "Work assigned to you across your enrolled classes."}

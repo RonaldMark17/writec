@@ -1,3 +1,5 @@
+import { apiFetch } from "../apiFetch";
+jest.mock("../apiFetch", () => ({ ...jest.requireActual("../apiFetch"), apiFetch: jest.fn() }));
 import { checkPeerSimilarityViaBackend, checkPlagiarismViaBackend, pollPlagiarismScanResult } from "./dashboard/plagiarismScan";
 import { extractTextFromImages } from "./dashboard/ocrService";
 jest.mock("./dashboard/plagiarismScan", () => ({ ...jest.requireActual("./dashboard/plagiarismScan"), checkPeerSimilarityViaBackend: jest.fn(), checkPlagiarismViaBackend: jest.fn(), pollPlagiarismScanResult: jest.fn() }));
@@ -17,6 +19,7 @@ let archived = false;
 let extraAssignments = [];
 let onArchiveUpdate;
 beforeEach(() => {
+  apiFetch.mockReset().mockResolvedValue({ok:true,json:async()=>({})});
   downloadGrades.mockClear();
   checkPeerSimilarityViaBackend.mockResolvedValue({ total_peers_compared: 0, all_matches: [] });
   archived = false;
@@ -281,4 +284,58 @@ test.each([false, true])("teacher scans one ordered essay only when all pages fi
     expect(checkPlagiarismViaBackend).toHaveBeenCalledTimes(1);
     expect(checkPlagiarismViaBackend.mock.calls[0][0].text).toBe(text);
   }
+});
+
+async function openSavedReview() {
+  fireEvent.click(screen.getByText("Grades tab"));
+  await screen.findByRole("option", {name:/^Essay A/});
+  fireEvent.change(screen.getByLabelText("Assignment:"), {target:{value:"essayA"}});
+  fireEvent.click(await screen.findByRole("button", {name:/^Review(?: & Grade)?$/}));
+  await screen.findByText(/No classmate matches/);
+  return screen.getByRole("dialog");
+}
+
+test("review grade saves once, preserves drafts across disclosures, reloads and returns saved work", async () => {
+  const record = {id:"work",assignment_id:"essayA",classroom_id:"A",student_id:"s",essay_title:"Original",transcribed_text:"Canonical essay",grade:"",feedback:"",status:"submitted"};
+  loadTeacherSubmissionStatus.mockResolvedValue({results:[record],progress:{work:{state:"ready"}}});
+  let view = render(<TeacherDashboard profile={{id:"t",role:"teacher",full_name:"Teacher"}}/>);
+  let dialog = await openSavedReview();
+  fireEvent.change(within(dialog).getByLabelText("Grade / Score"), {target:{value:"85"}});
+  fireEvent.change(within(dialog).getByLabelText("Teacher Feedback (optional)"), {target:{value:"Good evidence"}});
+  fireEvent.click(within(dialog).getByText("Class and private comments"));
+  expect(within(dialog).getByLabelText("Teacher Feedback (optional)")).toHaveValue("Good evidence");
+  let resolveSave;
+  apiFetch.mockImplementation(url => url.endsWith("/grade") ? new Promise(resolve => {resolveSave = resolve;}) : Promise.resolve({ok:true,json:async()=>({})}));
+  const button = within(dialog).getByRole("button", {name:"Save Grade"});
+  fireEvent.click(button);
+  fireEvent.submit(button.closest("form"));
+  expect(apiFetch.mock.calls.filter(([url]) => url.endsWith("/grade"))).toHaveLength(1);
+  expect(within(dialog).getByRole("button", {name:"Saving grade..."})).toBeDisabled();
+  const saved = {...record,grade:"85",feedback:"Good evidence",status:"graded"};
+  await act(async () => resolveSave({ok:true,json:async()=>({success:true,grade_record:saved})}));
+  expect(await within(dialog).findByText(/Grade saved for/)).toBeInTheDocument();
+  view.unmount();
+  loadTeacherSubmissionStatus.mockResolvedValue({results:[saved],progress:{work:{state:"ready"}}});
+  view = render(<TeacherDashboard profile={{id:"t",role:"teacher",full_name:"Teacher"}}/>);
+  dialog = await openSavedReview();
+  expect(within(dialog).getByLabelText("Grade / Score")).toHaveValue("85");
+  expect(within(dialog).getByLabelText("Teacher Feedback (optional)")).toHaveValue("Good evidence");
+  apiFetch.mockResolvedValue({ok:true,json:async()=>({success:true,grade_record:saved})});
+  supabase.rpc.mockImplementation(name => Promise.resolve({data:name === "return_submission" ? {returned_at:"2026-10-11T02:00:00Z"} : []}));
+  fireEvent.click(within(dialog).getByRole("button", {name:"Return work"}));
+  await within(dialog).findByText(/Work returned/);
+  expect(supabase.rpc).toHaveBeenCalledWith("return_submission", {submission_key:"work"});
+});
+
+test("failed grade save leaves feedback and grade intact", async () => {
+  loadTeacherSubmissionStatus.mockResolvedValue({results:[{id:"work",assignment_id:"essayA",classroom_id:"A",student_id:"s",transcribed_text:"Essay",grade:""}],progress:{work:{state:"ready"}}});
+  render(<TeacherDashboard profile={{id:"t",role:"teacher",full_name:"Teacher"}}/>);
+  const dialog = await openSavedReview();
+  fireEvent.change(within(dialog).getByLabelText("Grade / Score"), {target:{value:"88"}});
+  fireEvent.change(within(dialog).getByLabelText("Teacher Feedback (optional)"), {target:{value:"Keep this feedback"}});
+  apiFetch.mockResolvedValue({ok:false,json:async()=>({detail:"Grade could not be saved. Please try again."})});
+  fireEvent.click(within(dialog).getByRole("button", {name:"Save Grade"}));
+  await within(dialog).findByText("Grade could not be saved. Please try again.");
+  expect(within(dialog).getByLabelText("Grade / Score")).toHaveValue("88");
+  expect(within(dialog).getByLabelText("Teacher Feedback (optional)")).toHaveValue("Keep this feedback");
 });

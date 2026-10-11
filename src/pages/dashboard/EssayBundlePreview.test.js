@@ -21,3 +21,18 @@ test("saved essay displays numbered original pages and the exact complete transc
   unmount();
   expect(URL.revokeObjectURL).toHaveBeenCalledTimes(3);
 });
+
+test("teacher originals preserve page order with optional hidden page text and no complete essay copy", async () => {
+  URL.createObjectURL = jest.fn(() => "blob:page"); URL.revokeObjectURL = jest.fn();
+  apiFetch.mockImplementation(async url => url.includes("page_number=")
+    ? {ok:true,blob:async()=>new Blob(["image"],{type:"image/png"})}
+    : {ok:true,json:async()=>({text:"First\nLast",pages:[{page_number:2,name:"a.png",text:"Last"},{page_number:1,name:"z.png",text:"First"}]})});
+  render(<SubmissionFilePreview fileUrl="/work.essay.zip" transcript="First\nLast" originalsOnly/>);
+  const images = await screen.findAllByRole("img");
+  expect(images.map(image => image.alt)).toEqual(["Submitted page 1","Submitted page 2"]);
+  expect(screen.queryByText("Complete Essay")).not.toBeInTheDocument();
+  expect(screen.queryByText("First\nLast",{normalizer:text=>text})).not.toBeInTheDocument();
+  const details = screen.getByText("View page-by-page extraction").closest("details");
+  expect(details).not.toHaveAttribute("open");
+  expect(screen.getByText("First").closest("details")).toBe(details);
+});

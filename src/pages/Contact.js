@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "./dashboard/shared";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getBackendUrl } from "../apiFetch";
@@ -28,7 +29,7 @@ export default function Contact() {
   }
   return <main className="min-h-screen bg-[#f8f9fa] px-4 py-10 text-[#202124]">
     <div className="mx-auto max-w-xl rounded-2xl border border-[#dadce0] bg-white p-6 sm:p-8">
-      <Link to="/" className="text-sm font-medium text-[#137333] hover:underline">Back to WriteCheck</Link>
+      <Link to="/" className="text-sm font-medium text-[#137333] hover:underline"><ArrowLeftIcon className="action-icon" />Back to WriteCheck</Link>
       <h1 className="mt-5 text-2xl font-medium">Contact Us</h1>
       <form onSubmit={send} className="mt-6 space-y-4">
         {[['name', 'Name', 120], ['email', 'Email', 254], ['subject', 'Subject', 200], ['message', 'Message', 10000]].map(([key, label, maxLength]) => <label key={key} className="block text-sm font-medium">

@@ -55,7 +55,6 @@ body { background-color: var(--workspace-bg); color: var(--workspace-text); }
 :where(:root[data-theme="dark"]) .bg-amber-100 { background-color: rgb(57 50 22); }
 :where(:root[data-theme="dark"]) .bg-amber-100\/80 { background-color: rgb(57 50 22 / 0.8); }
 :where(:root[data-theme="dark"]) .bg-amber-50\/70 { background-color: color-mix(in srgb, var(--panel-soft) 70%, transparent); }
-:where(:root[data-theme="dark"]) .bg-amber-50\/80 { background-color: color-mix(in srgb, var(--panel-soft) 80%, transparent); }
 :where(:root[data-theme="dark"]) .bg-emerald-200\/80 { background-color: color-mix(in srgb, var(--accent-soft) 80%, transparent); }
 :where(:root[data-theme="dark"]) .bg-emerald-50\/40 { background-color: color-mix(in srgb, var(--accent-soft) 40%, transparent); }
 :where(:root[data-theme="dark"]) .bg-emerald-50\/50 { background-color: color-mix(in srgb, var(--accent-soft) 50%, transparent); }
@@ -63,7 +62,6 @@ body { background-color: var(--workspace-bg); color: var(--workspace-text); }
 :where(:root[data-theme="dark"]) .bg-gray-50\/60 { background-color: color-mix(in srgb, var(--page-bg) 60%, transparent); }
 :where(:root[data-theme="dark"]) .bg-gray-50\/75 { background-color: color-mix(in srgb, var(--page-bg) 75%, transparent); }
 :where(:root[data-theme="dark"]) .bg-gray-50\/80 { background-color: color-mix(in srgb, var(--page-bg) 80%, transparent); }
-:where(:root[data-theme="dark"]) .bg-red-50\/80,
 :where(:root[data-theme="dark"]) .bg-rose-100\/80,
 :where(:root[data-theme="dark"]) .bg-rose-200\/80 { background-color: color-mix(in srgb, var(--danger-background) 80%, transparent); }
 :where(:root[data-theme="dark"]) .bg-white { background-color: var(--panel); }
@@ -192,7 +190,6 @@ body { background-color: var(--workspace-bg); color: var(--workspace-text); }
 :where(:root[data-theme="dark"]) .text-red-600,
 :where(:root[data-theme="dark"]) .text-red-700,
 :where(:root[data-theme="dark"]) .text-red-800,
-:where(:root[data-theme="dark"]) .text-red-950,
 :where(:root[data-theme="dark"]) .text-rose-800,
 :where(:root[data-theme="dark"]) .text-rose-950 { color: var(--danger-text); }
 :where(:root[data-theme="dark"]) .text-amber-600 { color: rgb(224 184 137); }

@@ -112,13 +112,27 @@ class AccountCreate(BaseModel):
     role: Literal["student", "teacher"]
 
 
+class PendingBatch(BaseModel):
+    user_ids: list[str] = Field(min_length=1, max_length=25)
+    status: Literal["active", "rejected"]
+
+
+@router.post("/users/bulk-status")
+def review_pending(body: PendingBatch, request: Request, account=Depends(require_admin)):
+    ids = list(dict.fromkeys(body.user_ids))
+    if any(not value.strip() or len(value) > 128 for value in ids):
+        raise HTTPException(422, "Invalid account ID.")
+    return supabase_request("/rest/v1/rpc/admin_review_pending", request.state.access_token,
+        {"user_ids": ids, "new_status": body.status})
+
+
 @router.post("/users", status_code=201)
 def create_account(body: AccountCreate, request: Request, account=Depends(require_admin)):
     email = body.email.strip().lower()
     name = body.full_name.strip()
     password = body.password.get_secret_value()
-    if not name or not re.fullmatch(r"[^\s@]+@edu\.ph", email):
-        raise HTTPException(422, "Enter a name and an email ending in @edu.ph.")
+    if not name or not re.fullmatch(r"[^\s@]+@([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+edu\.ph", email):
+        raise HTTPException(422, "Enter a name and an institutional email such as name@school.edu.ph.")
     if not 8 <= len(password) <= 128:
         raise HTTPException(422, "Password must contain 8 to 128 characters.")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")

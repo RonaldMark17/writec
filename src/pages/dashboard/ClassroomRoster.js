@@ -12,7 +12,7 @@ function initials(name = "") {
     : (name.slice(0, 2) || "??").toUpperCase();
 }
 
-function Avatar({ id, name, size = "h-10 w-10", text = "text-sm", avatarUrl = "", avatarColor = "" }) {
+function Avatar({ id, name, size = "h-10 w-10", text = "text-sm", avatarUrl = "" }) {
   const [hasError, setHasError] = useState(false);
   if (isCustomAvatarUrl(avatarUrl) && !hasError) {
     return (
@@ -24,7 +24,7 @@ function Avatar({ id, name, size = "h-10 w-10", text = "text-sm", avatarUrl = ""
       />
     );
   }
-  const theme = getTeacherAvatarTheme(id, avatarColor);
+  const theme = getTeacherAvatarTheme();
   return (
     <div
       className={`${size} bg-gradient-to-tr ${theme.bg} ${text} flex shrink-0 items-center justify-center rounded-full font-semibold text-white select-none shadow-xs`}
@@ -35,10 +35,10 @@ function Avatar({ id, name, size = "h-10 w-10", text = "text-sm", avatarUrl = ""
   );
 }
 
-function PersonRow({ id, name, email, badge, badgeColor, avatarUrl, avatarColor, action }) {
+function PersonRow({ id, name, email, badge, badgeColor, avatarUrl, action }) {
   return (
     <div className="flex items-center gap-3 py-3">
-      <Avatar id={id} name={name} avatarUrl={avatarUrl} avatarColor={avatarColor} />
+      <Avatar id={id} name={name} avatarUrl={avatarUrl} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-[#202124]">{name}</p>
         {email && <p className="truncate text-xs text-[#5f6368]">{email}</p>}
@@ -123,7 +123,6 @@ export default function ClassroomRoster({ classroomId, teacher, canRemove = fals
       name: (teacher.name && teacher.name !== "Teacher") ? teacher.name : (cached?.name || cached?.full_name || teacher.name || "Teacher"),
       email: teacher.email || cached?.email || "",
       avatarUrl: teacher.avatarUrl || cached?.avatarUrl || (teacher.id ? getAvatarPublicUrl(teacher.id) : ""),
-      avatarColor: teacher.avatarColor || cached?.avatarColor || "",
     };
   })();
 
@@ -238,7 +237,6 @@ export default function ClassroomRoster({ classroomId, teacher, canRemove = fals
               name={resolvedTeacher.name || "Teacher"}
               email={resolvedTeacher.email || ""}
               avatarUrl={resolvedTeacher.avatarUrl}
-              avatarColor={resolvedTeacher.avatarColor}
               badge="Teacher"
               badgeColor="bg-[#e6f4ea] text-[#137333]"
             />

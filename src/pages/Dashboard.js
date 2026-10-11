@@ -98,7 +98,6 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           const metaAvatar = isCustomAvatarUrl(metadata?.avatar_url)
             ? metadata.avatar_url
             : (isCustomAvatarUrl(user?.user_metadata?.avatar_url) ? user.user_metadata.avatar_url : (metadata.avatar_url || ""));
-          const metaColor = metadata.avatar_color || user?.user_metadata?.avatar_color || "";
           const customLocalAvatar = isCustomAvatarUrl(localPrefs?.avatarUrl) ? localPrefs.avatarUrl : "";
           const publicStorageAvatar = data?.id ? getAvatarPublicUrl(data.id) : "";
           const finalAvatarUrl = customLocalAvatar || metaAvatar || publicStorageAvatar;
@@ -126,7 +125,6 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           setProfile((prev) => ({
             ...(prev || {}),
             avatarUrl: finalAvatarUrl,
-            avatarColor: metaColor,
             ...data,
             ...profilePreferences(localPrefs),
             ...profilePreferences(metadata.writecheck_preferences ?? localPrefs),
