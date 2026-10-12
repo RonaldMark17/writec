@@ -1,3 +1,4 @@
+import { compareStudentsByLastName, studentGradeName } from "./rosterSort";
 export async function loadGradeExport(client, { classroomId, assignmentId } = {}) {
   if (!classroomId && !assignmentId) {
     throw new Error("Open a classroom or select one classroom before exporting grades.");
@@ -48,7 +49,8 @@ export function gradeExportRows(assignments, submissions, members) {
       const numeric = graded && Number.isFinite(Number(grade));
       rows.push({
         student: member.studentName || submission?.studentName || "Student",
-        studentId, classroom: assignment.classroomName, section: assignment.classroomSection,
+        first_name: member.first_name || member.firstName, last_name: member.last_name || member.lastName,
+        assignmentId: assignment.id, studentId, classroom: assignment.classroomName, section: assignment.classroomSection,
         subject: assignment.classroomSubject, assignment: assignment.title,
         due: assignment.dueDate, submitted: submission?.createdAt,
         score: graded ? (numeric ? Number(grade) : String(grade)) : null,
@@ -71,28 +73,23 @@ export async function buildGradeWorkbook(rows, teacher, scope) {
   const columns = [
     ["Subject", "subject", 24], ["Assignment", "assignment", 35],
     ["Student Name", "student", 28], ["Grade", "score", 20],
-    ["Student account ID", "studentId", 38], ["Class", "classroom", 24],
-    ["Section", "section", 18], ["Submitted date (UTC)", "submitted", 24],
-    ["Due date (UTC)", "due", 24], ["Status", "status", 20],
-    ["Submission timing", "timing", 20], ["Returned date (UTC)", "returned", 24],
-    ["Teacher feedback", "feedback", 50],
   ];
   sheet.columns = columns.map(([header, key, width]) => ({ header, key, width }));
-  const dateValue = (value) => value && Number.isFinite(new Date(value).getTime()) ? new Date(value) : null;
-  rows.forEach((row) => sheet.addRow({ ...row, due: dateValue(row.due), submitted: dateValue(row.submitted), returned: dateValue(row.returned) }));
-  ["due", "submitted", "returned"].forEach((key) => { sheet.getColumn(key).numFmt = "yyyy-mm-dd hh:mm"; });
-  sheet.autoFilter = { from: "A1", to: "M1" };
+  const groups = new Map();
+  rows.forEach(row => {
+    const key = row.assignmentId || `${row.subject}::${row.assignment}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+  for (const group of groups.values()) {
+    group.slice().sort(compareStudentsByLastName).forEach(row => sheet.addRow({
+      subject: row.subject, assignment: row.assignment, student: studentGradeName(row),
+      score: row.score == null || String(row.score).trim() === "" ? null : row.score,
+    }));
+  }
+  sheet.autoFilter = { from: "A1", to: "D1" };
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF137333" } };
-  sheet.getColumn("feedback").alignment = { wrapText: true, vertical: "top" };
-  const notes = workbook.addWorksheet("Export details");
-  notes.columns = [{ width: 24 }, { width: 100 }];
-  notes.addRows([
-    ["Teacher", teacher], ["Exported at (UTC)", new Date().toISOString()], ["Scope", scope],
-    ["Rows", rows.length], ["Submission selection", "Latest submission per student and assignment. Includes enrolled students with no submission."],
-    ["Scores", "Saved scores are preserved as recorded. Blank means ungraded or not submitted; no percentage or maximum score is assumed."],
-    ["Data source", "Classroom records queried from the database at export time."],
-  ]);
   return workbook;
 }
 

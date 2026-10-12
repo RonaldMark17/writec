@@ -31,8 +31,10 @@ def normalize_provider(payload):
     for kind in ('internet', 'database', 'repositories'):
         for match in results.get(kind) or []:
             url = match.get('url') or match.get('address') or match.get('sourceUrl') or match.get('link') or ''
-            sources.append({'title': match.get('title') or url or 'Provider source', 'url': url,
-                            'matched_words': match.get('matchedWords', 0)})
+            sources.append({'id': match.get('id'), 'source_type': kind,
+                            'title': match.get('title') or url or 'Provider source', 'url': url,
+                            'matched_words': match.get('matchedWords', 0),
+                            **{key: match[key] for key in ('matched_text', 'matching_fragments') if key in match}})
     return {'score': percentage, 'wordCount': document.get('totalWords', 0),
             'identicalWords': score.get('identicalWords', 0), 'matchedSources': sources}
 
@@ -92,6 +94,17 @@ def check_submission(job, submission, text, checkpoint, save_checkpoint):
             time.sleep(5)
         if provider is None:
             raise ValueError('Similarity results have not arrived. Verify the webhook, then retry this check.')
+    if mode == 'copyleaks' and provider.get('matchedSources') and not checkpoint.get('evidence_export'):
+        try:
+            copyleaks_service.export_match_evidence(expected_scan_id, provider['matchedSources'],
+                os.getenv('COPYLEAKS_WEBHOOK_BASE_URL') or os.getenv('COPYLEAKS_WEBHOOK_URL')
+                or 'https://writecheck-scanner.vercel.app')
+            checkpoint['evidence_export'] = 'requested'
+            checkpoint['evidence_exported_at'] = datetime.now(timezone.utc).isoformat()
+        except Exception:
+            # A valid similarity score remains useful if evidence export fails.
+            checkpoint['evidence_export'] = 'unavailable'
+        save_checkpoint(checkpoint)
     peer = None
     if preferences['peerCrossCheck']:
         peers = load_classmates({**submission, 'id': job['submission_id']}, token)

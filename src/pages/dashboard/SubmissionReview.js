@@ -1,16 +1,22 @@
-import { ArrowLeftIcon } from "./shared";
+import EssayEvidence from "./EssayEvidence";
+import { useMemo, useState } from "react";
+import { collectEvidence, scopedPeerMatches, staleReport } from "./similarityEvidence";
 import SubmissionFilePreview from "./SubmissionFilePreview";
 import ClassmateMatches from "./ClassmateMatches";
 import AssignmentComments from "./AssignmentComments";
 import { PaginatedList } from "./Pagination";
 import { formatDateTime, StatusMessage } from "./shared";
 
-export default function SubmissionReview({ submission, profile, text, onTextChange, result, scanning,
+export default function SubmissionReview({ submission, submissions = [], profile, text, onTextChange, onSaveText, result, scanning,
   progress, onRecheck, onClose, saving, onCopy, copied, error, message, grading,
   imageUrl, imageLoading, imageExpanded, onExpandImage }) {
+  const [editing, setEditing] = useState(false);
+  const stale = staleReport({ ...submission, transcribedText: text, scanResult: result });
+  const peers = useMemo(() => scopedPeerMatches({ ...submission, scanResult: result }, submissions), [submission, result, submissions]);
+  const evidence = useMemo(() => stale ? { ranges: [], unresolved: [] } : collectEvidence(text, result, peers), [text, result, peers, stale]);
+  const { ranges, unresolved } = evidence;
   const pending = ["submitted", "processing"].includes(submission.processingState);
   const failed = submission.processingState === "failed";
-  const edited = text.trim() !== String(submission.transcribedText || "").trim();
   const sources = result?.matchedSources || [];
   const score = result?.score;
   const hasScore = score !== null && score !== undefined && score !== "" && Number.isFinite(Number(score));
@@ -45,24 +51,35 @@ export default function SubmissionReview({ submission, profile, text, onTextChan
             {!text && <p role={failed ? "alert" : "status"} className="mb-2 text-sm text-gray-600">
               {failed ? "Text extraction did not complete. Retry processing below." : pending ? "Text extraction is in progress." : "Extracted text is not available."}
             </p>}
-            <textarea id="review-transcription" rows={12} value={text} disabled={pending || scanning}
-              onChange={event => onTextChange(event.target.value)}
-              className="w-full max-w-full rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm leading-7 text-gray-900 whitespace-pre-wrap break-words" />
-            <p className="mt-1 text-xs text-gray-500">Review or correct the saved essay. Recheck corrections before saving a grade.</p>
-            {edited && <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-amber-800">
-              <p>Edited text has not been checked yet.</p>
-              <button type="button" onClick={onRecheck} disabled={scanning || pending || !text.trim()} className="rounded-lg bg-[#137333] px-3 py-2 text-white disabled:opacity-50">{scanning ? "Rechecking..." : "Recheck corrected text"}</button>
-            </div>}
+            {editing ? <>
+              <textarea id="review-transcription" aria-label="Edit extracted student work" rows={12} value={text} disabled={saving}
+                onChange={event => onTextChange(event.target.value)}
+                className="w-full max-w-full rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm leading-7 text-gray-900 whitespace-pre-wrap break-words" />
+              <div className="mt-2 flex flex-wrap gap-3">
+                <button type="button" disabled={saving} onClick={() => { onTextChange(submission.transcribedText || ""); setEditing(false); }} className="similarity-chip">Cancel</button>
+                <button type="button" disabled={saving || !text.trim()} onClick={async () => { if (await onSaveText()) setEditing(false); }} className="similarity-chip">{saving ? "Saving..." : "Save Changes"}</button>
+              </div>
+            </> : <>
+              <EssayEvidence text={text} ranges={ranges} submission={submission} />
+              {profile?.role === "teacher" && <button type="button" disabled={pending || scanning || saving} onClick={() => setEditing(true)} className="similarity-chip mt-2">Edit Student Work</button>}
+            </>}
+            {stale && <p role="status" className="mt-2 text-sm">Similarity results were generated before the extracted text was edited. Re-run the check to review the updated work.</p>}
+            {!editing && !pending && <button type="button" onClick={onRecheck} disabled={scanning || saving || !text.trim()} className="similarity-chip mt-2">Re-run Similarity Check</button>}
+
           </section>
           <section aria-label="Similarity Analysis" className="min-w-0 border-t border-gray-200 pt-4">
-            <h3 className="font-semibold text-gray-900">Similarity Analysis</h3>
+            <h3 className="font-semibold text-gray-900">Online Source Similarity</h3>
             {scanning || pending ? <p role="status" className="mt-2 text-sm">{progress || "Processing submission…"}</p>
               : failed ? <div className="validation-error mt-2 rounded-lg p-3"><p role="alert">{submission.processingError || "Automated processing could not be completed."}</p>
                 <button type="button" disabled={scanning || saving} onClick={onRecheck} className="mt-2 underline">Retry processing</button></div>
               : <>
-                <p className="mt-2 text-xl font-semibold">{hasScore ? `${score}% Similarity` : "Similarity result not available yet"}</p>
+                <p className="mt-2 text-xl font-semibold">{stale ? "Previous transcription - recheck required" : result?.mode === "classroom" ? "Online: Not checked" : hasScore ? `${score}% Similarity` : "Similarity result not available yet"}</p>
                 <p className="mt-1 text-xs text-gray-500">Similarity indicates matching content and does not by itself determine plagiarism.</p>
-                {result && <details className="mt-3 text-sm"><summary className="cursor-pointer font-medium">View similarity details</summary>
+                {result?.evidenceStatus === "loading" && !stale && <p role="status" className="mt-2 text-sm">Loading saved matching passages...</p>}
+                {unresolved.length > 0 && !stale && <details className="mt-2 text-sm"><summary>Passages without reliable locations</summary>{unresolved.filter(p => p.text !== text).map((p, i) => <blockquote key={i} className="mt-2 whitespace-pre-wrap border-l-2 pl-3">{p.label}: {p.text}</blockquote>)}</details>}
+                {hasScore && !stale && result?.mode !== "classroom" && !ranges.some(r => r.type === "online") && <p className="mt-2 text-sm">Exact matching passages are not available for this result.</p>}
+                {peers.length > 0 && !ranges.some(r => r.type === "peer") && <p className="mt-2 text-sm">Exact peer matching passages are unavailable for this transcription.</p>}
+                {result && !stale && <details className="mt-3 text-sm"><summary className="cursor-pointer font-medium">View similarity details</summary>
                   <div className="mt-3 space-y-3 break-words">
                     {result.provider && <p>Provider: {result.provider}{result.scanId ? ` · Scan ${result.scanId}` : ""}</p>}
                     {result.wordCount != null && <p>Words checked: {result.wordCount}</p>}
@@ -74,17 +91,13 @@ export default function SubmissionReview({ submission, profile, text, onTextChan
                       {source.source_type && <p>{source.source_type}</p>}
                       {source.snippet && source.snippet.trim() !== text.trim() && <blockquote className="whitespace-pre-wrap border-l-2 border-gray-300 pl-3">{source.snippet}</blockquote>}
                     </div>)}</PaginatedList> : <p>No source details were supplied.</p>}
-                    {(result.highlighted_sentences || result.result_data?.highlighted_sentences || []).filter(passage => passage.sentence && passage.sentence.trim() !== text.trim()).map((passage, index) => <blockquote key={index} className="whitespace-pre-wrap border-l-2 border-gray-300 pl-3">
-                      <p>{passage.sentence}</p>
-                      {passage.source_title && <cite>{passage.source_title}</cite>}
-                    </blockquote>)}
                     {result.summary && result.summary.trim() !== text.trim() && <p>{result.summary}</p>}
                     {result.flags?.map((flag, index) => <p key={index}>{flag}</p>)}
                   </div>
                 </details>}
               </>}
           </section>
-          <ClassmateMatches key={submission.id} submission={submission} compact />
+          <ClassmateMatches key={submission.id} submission={submission} compact storedMatches={peers} stale={stale} />
         </div>
         <aside aria-label="Grading" className="review-grading min-w-0 self-start lg:sticky lg:top-4 lg:max-h-[84vh] lg:overflow-y-auto">
           <StatusMessage error={error} message={message} />

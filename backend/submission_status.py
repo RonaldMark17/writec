@@ -1,6 +1,7 @@
 """Teacher-facing results validated against the durable provider callback."""
 import os
 import uuid
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
@@ -8,11 +9,12 @@ from admin_api import authenticated_account, supabase_request
 from submission_checker import normalize_provider
 from copyleaks_service import copyleaks_service
 from user_preferences import review_badge
+from match_evidence import attach_evidence
 
 router = APIRouter(prefix='/api/submissions', tags=['Submissions'])
 
 
-def verified_status(row, job):
+def verified_status(row, job, artifacts=None):
     row = dict(row)
     report = row.get('scan_result') or {}
     checkpoint = (job or {}).get('checkpoint') or {}
@@ -36,6 +38,17 @@ def verified_status(row, job):
             # worker subsequently replaced those fields with a local estimate.
             report = {**report, **provider, 'provider': 'copyleaks', 'scanId': scan_id,
                       'scanStatus': 'Completed', 'summary': 'Verified Copyleaks API result.'}
+            if artifacts:
+                report = attach_evidence(report, artifacts)
+            else:
+                report['evidenceStatus'] = 'unavailable'
+            if report.get('evidenceStatus') in ('loading', 'unavailable'):
+                try:
+                    age = (datetime.now(timezone.utc) - datetime.fromisoformat(checkpoint['evidence_exported_at'])).total_seconds()
+                    waiting = checkpoint.get('evidence_export') == 'requested' and 0 <= age < 180
+                except (KeyError, TypeError, ValueError):
+                    waiting = False
+                report['evidenceStatus'] = 'loading' if waiting and not (artifacts or {}).get('completion') else 'unavailable'
             score = provider['score']
             report.update(review_badge(score, checkpoint.get('preferences') or report.get('preferences') or {}))
             row['scan_result'] = report
@@ -45,6 +58,9 @@ def verified_status(row, job):
             error = ('No verified Copyleaks result is available. '
                      + ((job or {}).get('provider_error') or 'This stored report came from an older, unverified processing path.')
                      + ' Check API credits and ensure all workers use the updated backend before retrying.')
+    if report.get('stale') or (isinstance(report.get('transcribedText'), str) and report['transcribedText'] != row.get('transcribed_text')):
+        row['scan_result'] = {**report, 'stale': True}
+        row['plagiarism_score'] = None
     if state != 'ready':
         row['scan_result'] = None
         row['plagiarism_score'] = None
@@ -68,9 +84,22 @@ def teacher_submission_status(request: Request):
         found = supabase_request('/rest/v1/submission_jobs?submission_id=in.(' + quote(ids, safe=',')
             + ')&select=submission_id,id,state,error,provider_error,provider_result,checkpoint', token)
         jobs.update({str(job['submission_id']): job for job in found})
+    evidence = {}
+    # One batch per existing status batch; no per-student/provider calls.
+    job_ids = [str(uuid.UUID(job['id'])) for job in jobs.values()]
+    try:
+        for start in range(0, len(job_ids), 50):
+            found = supabase_request('/rest/v1/submission_match_evidence?job_id=in.('
+                + ','.join(job_ids[start:start + 50]) + ')&select=job_id,artifact,data', token)
+            for item in found:
+                evidence.setdefault(str(item['job_id']), {})[item['artifact']] = item['data']
+    except Exception:
+        # Deployments without the evidence migration retain normal review/grades.
+        evidence = {}
     results, progress = [], {}
     for row in rows:
-        verified, state = verified_status(row, jobs.get(str(row['id'])))
+        job = jobs.get(str(row['id']))
+        verified, state = verified_status(row, job, evidence.get(str((job or {}).get('id'))))
         results.append(verified)
         progress[str(row['id'])] = state
     try:

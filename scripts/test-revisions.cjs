@@ -10,7 +10,7 @@ async function main() {
   const db = new PGlite();
   try {
     await db.exec(`
-      CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+      CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
       CREATE SCHEMA auth;
       CREATE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql AS $$ SELECT NULLIF(current_setting('test.uid', true), '')::uuid $$;
       CREATE FUNCTION auth.role() RETURNS TEXT LANGUAGE sql AS $$ SELECT current_setting('test.role', true) $$;
@@ -33,8 +33,10 @@ async function main() {
       await db.exec(security.slice(start, security.indexOf('$$;', start) + 3));
     }
     await db.exec('CREATE TRIGGER guard_submission_fields BEFORE INSERT OR UPDATE ON public."submissionTable" FOR EACH ROW EXECUTE FUNCTION public.guard_submission_fields();');
-    for (const file of ['submission_release.sql', 'submission_processing.sql', 'submission_provenance.sql', 'student_resubmission.sql', 'submission_revisions.sql']) await db.exec(read(file));
+    for (const file of ['submission_release.sql', 'submission_processing.sql', 'submission_provenance.sql', 'student_resubmission.sql', 'submission_revisions.sql', 'submission_teacher_edit.sql', 'submission_match_evidence.sql']) await db.exec(read(file));
     await db.exec(read('submission_revisions.sql')); // Repeatable migration.
+    await db.exec(read('submission_teacher_edit.sql'));
+    await db.exec(read('submission_match_evidence.sql'));
     await db.exec(`
       SET test.role = 'service_role';
       INSERT INTO public."userTable" VALUES ('${id(1)}','teacher','active'),('${id(2)}','student','active'),('${id(3)}','teacher','active'),('${id(4)}','student','active');
@@ -51,6 +53,47 @@ async function main() {
       await db.exec(`RESET ROLE; SET test.uid = '${id(who)}'; SET test.role = '${role}'; SET ROLE ${role};`);
     };
     const query = async (sql, args = []) => (await db.query(sql, args)).rows;
+    await login(1, 'service_role');
+    const evidenceJob = (await query('SELECT id FROM public.submission_jobs WHERE submission_id = $1', [id(30)]))[0].id;
+    await query('SELECT public.save_submission_match_artifact($1,$2,$3)', [evidenceJob, 'r', JSON.stringify({ranges:[]})]);
+    await query('SELECT public.save_submission_match_artifact($1,$2,$3)', [evidenceJob, 'r', JSON.stringify({ranges:[{start:0,end:5}]})]);
+    assert.equal((await query('SELECT * FROM public.submission_match_evidence')).length, 1);
+    await login(2);
+    await assert.rejects(query('SELECT * FROM public.submission_match_evidence'), /permission denied/);
+    await assert.rejects(query('SELECT public.save_submission_match_artifact($1,$2,$3)', [evidenceJob, 'r', '{}']), /permission denied/);
+    await login(1);
+    await assert.rejects(query('SELECT * FROM public.submission_match_evidence'), /permission denied/);
+    await login(1, 'service_role');
+    await query('UPDATE public.submission_jobs SET id = gen_random_uuid() WHERE submission_id = $1', [id(30)]);
+    assert.equal((await query('SELECT * FROM public.submission_match_evidence')).length, 0);
+    const edit = (text, expected = 'Earlier essay') => query('SELECT public.edit_submission_transcription($1,$2,$3) AS result', [id(30), text, expected]);
+    await login(2);
+    await assert.rejects(edit('Student edit'), /Only the classroom teacher/);
+    await login(3);
+    await assert.rejects(edit('Other teacher edit'), /Only the classroom teacher/);
+    await login(1);
+    await assert.rejects(edit('  '), /Enter extracted/);
+    await assert.rejects(edit('Corrected', 'Outdated'), /transcription changed/);
+    const corrected = (await edit('Corrected'))[0].result;
+    assert.equal(corrected.transcribed_text, 'Corrected');
+    await login(1, 'service_role');
+    await db.exec('RESET ROLE');
+    const unchanged = (await query('SELECT * FROM public."submissionTable" WHERE id = $1', [id(30)]))[0];
+    assert.equal(unchanged.grade, '80');
+    assert.equal(unchanged.file_url, `${id(2)}/${id(20)}/old.txt`);
+    await query(`UPDATE public."submissionTable" SET transcribed_text = 'Earlier essay', scan_result = '{"mode":"classroom","score":24}', plagiarism_score = 24 WHERE id = $1`, [id(30)]);
+    await login(1);
+    assert.equal((await edit('Corrected again'))[0].result.scan_result.stale, true);
+    assert.equal((await query('SELECT public.submission_report_verified($1) AS ok',[id(30)]))[0].ok, false);
+    await login(1, 'service_role');
+    await db.exec('RESET ROLE');
+    await query(`UPDATE public."submissionTable" SET transcribed_text = 'Earlier essay', scan_result = NULL, plagiarism_score = NULL WHERE id = $1`, [id(30)]);
+    await query(`UPDATE public.submission_jobs SET state = 'processing' WHERE submission_id = $1`,[id(30)]);
+    await login(1);
+    await assert.rejects(edit('Racing edit'), /Wait for processing/);
+    await login(1, 'service_role');
+    await db.exec('RESET ROLE');
+    await query(`UPDATE public.submission_jobs SET state = 'ready' WHERE submission_id = $1`,[id(30)]);
     const request = message => query('SELECT public.request_submission_revision($1,$2) AS result', [id(30), message]);
     await login(3);
     await assert.rejects(request('Revise'), /Only the classroom teacher/);

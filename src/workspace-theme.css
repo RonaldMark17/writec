@@ -257,3 +257,12 @@ body { background-color: var(--workspace-bg); color: var(--workspace-text); }
 :root[data-theme="dark"] .hover\:bg-\[\#0f5b28\]:hover { background-color: var(--accent-hover); color: var(--page-bg); }
 :root[data-theme="dark"] .bg-emerald-600 { background-color: var(--accent); color: var(--page-bg); }
 :root[data-theme="dark"] .bg-\[var\(--accent\)\] { color: var(--page-bg); }
+
+/* Teacher review evidence follows the shared palette in either theme. */
+.similarity-chip { border: 1px solid var(--workspace-border); background: var(--panel-soft, #f1f3f4); color: var(--workspace-text); border-radius: .6rem; padding: .35rem .6rem; }
+.similarity-chip:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 2px; }
+.similarity-chip:disabled { opacity: .55; }
+.essay-match { background: var(--accent-soft, #e6f4ea); color: var(--workspace-text); text-decoration: underline solid var(--accent, #137333) 2px; text-underline-offset: 3px; }
+.essay-match-peer { background: var(--panel-soft, #f1f3f4); text-decoration-style: dotted; outline: 1px dotted var(--accent, #137333); }
+
+.essay-match[role="button"]:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }

@@ -34,6 +34,13 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(self.service.submit_scan.call_args.kwargs['text'], self.text)
         self.assertIs(self.service.submit_scan.call_args.kwargs['sandbox'], False)
 
+    def test_exact_provider_evidence_is_preserved_without_inventing_ranges(self):
+        fragments = [{'start': 2, 'end': 10, 'text': 'evidence'}]
+        result = normalize_provider({'results': {'score': {'aggregatedScore': 24},
+            'internet': [{'title': 'Source', 'matched_text': 'evidence', 'matching_fragments': fragments}]}})
+        self.assertEqual(result['matchedSources'][0]['matching_fragments'], fragments)
+        self.assertEqual(result['matchedSources'][0]['matched_text'], 'evidence')
+
     def test_provider_error_is_not_replaced_by_local_or_zero_score(self):
         self.service.submit_scan.side_effect = RuntimeError('API unavailable')
         with self.assertRaisesRegex(RuntimeError, 'API unavailable'):

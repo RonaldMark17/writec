@@ -1,3 +1,5 @@
+import { compareStudentsByLastName } from "./dashboard/rosterSort";
+import SimilarityPreview from "./dashboard/SimilarityPreview";
 import SubmissionReview from "./dashboard/SubmissionReview";
 import EssayPagePicker from "./dashboard/EssayPagePicker";
 import { combinePageText, isEssayImage, validateEssayPages, useUploadLimits } from "./dashboard/essayPages";
@@ -378,7 +380,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     const roster = enrolledMembers.map((member) => {
       const sub = submissionByStudentId.get(member.studentId);
       const isSubmitted = Boolean(sub);
-      const isGraded = Boolean(sub?.grade);
+      const isGraded = sub?.grade != null && String(sub.grade).trim() !== "";
 
       let status = "missing";
       if (sub?.revisionRequest) {
@@ -405,7 +407,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         status,
         fileUrl: sub?.fileUrl || null,
         essayTitle: sub?.essayTitle || "",
-        grade: sub?.grade || "",
+        grade: sub?.grade ?? "",
         feedback: sub?.feedback || "",
         submittedAt: sub?.createdAt || null,
       };
@@ -438,14 +440,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           status,
           fileUrl: sub.fileUrl || null,
           essayTitle: sub.essayTitle || "",
-          grade: sub.grade || "",
+          grade: sub.grade ?? "",
           feedback: sub.feedback || "",
           submittedAt: sub.createdAt || null,
         });
       }
     }
 
-    return roster;
+    return roster.sort(compareStudentsByLastName);
   }, [selectedAssignment, classroomMembers, submissions]);
 
   const filteredAssignmentRoster = useMemo(() => {
@@ -626,7 +628,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     const roster = enrolledMembers.map((member) => {
       const sub = submissionByStudentId.get(String(member.studentId));
       const isSubmitted = Boolean(sub);
-      const isGraded = Boolean(sub?.grade);
+      const isGraded = sub?.grade != null && String(sub.grade).trim() !== "";
 
       let status = "missing";
       if (isGraded) {
@@ -652,7 +654,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         status,
         fileUrl: sub?.fileUrl || null,
         essayTitle: sub?.essayTitle || "",
-        grade: sub?.grade || "",
+        grade: sub?.grade ?? "",
         feedback: sub?.feedback || "",
         submittedAt: sub?.createdAt || null,
         scanResult: sub?.scanResult || null,
@@ -663,7 +665,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     for (const sub of assignmentSubmissions) {
       const sId = String(sub.studentId || sub.student_id);
       if (!enrolledIds.has(sId)) {
-        const isGraded = Boolean(sub?.grade);
+        const isGraded = sub?.grade != null && String(sub.grade).trim() !== "";
         roster.push({
           studentId: sId,
           studentName: sub.studentName || "Student",
@@ -674,7 +676,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           status: isGraded ? "graded" : "submitted",
           fileUrl: sub?.fileUrl || null,
           essayTitle: sub?.essayTitle || "",
-          grade: sub?.grade || "",
+          grade: sub?.grade ?? "",
           feedback: sub?.feedback || "",
           submittedAt: sub?.createdAt || null,
           scanResult: sub?.scanResult || null,
@@ -683,7 +685,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       }
     }
 
-    return roster;
+    return roster.sort(compareStudentsByLastName);
   }, [selectedScanAssignment, classroomMembers, submissions]);
 
   const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, true, { assignments, members: classroomMembers });
@@ -1993,6 +1995,27 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   };
 
+  const handleSaveReviewText = async () => {
+    if (isSavingGrade || isReviewScanning) return false;
+    setIsSavingGrade(true);
+    setErrorMessage(""); setSuccessMessage("");
+    try {
+      const { data, error } = await supabase.rpc("edit_submission_transcription", {
+        submission_key: String(reviewingSubmission.id), corrected_text: reviewTranscribedText,
+        expected_text: reviewingSubmission.transcribedText || "",
+      });
+      if (error || !data?.id) throw new Error(error?.message || "Text could not be saved.");
+      const update = row => ({ ...row, transcribedText: data.transcribed_text,
+        scanResult: data.scan_result, returnedAt: data.returned_at });
+      setSubmissions(rows => rows.map(row => row.id === reviewingSubmission.id ? update(row) : row));
+      setReviewingSubmission(update);
+      setReviewScanResult(data.scan_result);
+      setSuccessMessage("Extracted student work updated successfully.");
+      return true;
+    } catch (error) { setErrorMessage(error.message); return false; }
+    finally { setIsSavingGrade(false); }
+  };
+
   const handleRunReviewScan = async () => {
     if (!reviewingSubmission || isReviewScanning || isSavingGrade) return;
     setIsReviewScanning(true);
@@ -2473,6 +2496,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
 
                     <div className="min-w-0">
+                      {item.submission && <SimilarityPreview submission={item.submission} submissions={submissions} onReview={handleOpenReview} />}
                       {item.fileUrl ? (
                         <div className="flex items-center gap-2">
                           <button
@@ -4484,17 +4508,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                     </span>
                                   )}
                                   {item.isSubmitted && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-800">{processingLabel(item.submission?.processingState)}</span>}
-                                  {item.scanResult && (
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                      (item.scanResult.plagiarism_score ?? item.scanResult.score ?? 0) >= 50
-                                        ? "bg-red-50 text-red-700"
-                                        : (item.scanResult.plagiarism_score ?? item.scanResult.score ?? 0) >= 20
-                                          ? "bg-amber-50 text-amber-700"
-                                          : "bg-emerald-50 text-emerald-700"
-                                    }`}>
-                                      {Math.round(item.scanResult.plagiarism_score ?? item.scanResult.score ?? 0)}% similarity
-                                    </span>
-                                  )}
+                                  {item.isSubmitted && <SimilarityPreview submission={item.submission} submissions={submissions} onReview={handleOpenReview} />}
+
                                 </div>
                                 <p className="text-xs text-[#5f6368] truncate">
                                   {item.studentEmail || (item.essayTitle ? `Essay: ${item.essayTitle}` : "No email")}
@@ -4857,7 +4872,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           )}
 
           {reviewingSubmission && <SubmissionReview key={reviewingSubmission.id}
-            submission={reviewingSubmission} profile={profile}
+            submission={reviewingSubmission} submissions={submissions} profile={profile} onSaveText={handleSaveReviewText}
             text={reviewTranscribedText} onTextChange={setReviewTranscribedText}
             result={reviewScanResult} scanning={isReviewScanning} progress={reviewScanProgressText}
             onRecheck={handleRunReviewScan} onClose={handleCloseReview} saving={isSavingGrade}

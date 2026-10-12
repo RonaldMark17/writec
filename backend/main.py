@@ -472,6 +472,7 @@ def prepare_ocr_input(file, started_at):
 from admin_api import router as admin_router, install_account_guard
 from submission_intake import router as submission_intake_router
 from submission_status import router as submission_status_router
+from match_evidence import router as match_evidence_router
 
 app = FastAPI()
 from service_status import router as service_status_router
@@ -483,6 +484,7 @@ app.include_router(service_status_router)
 app.include_router(admin_router)
 app.include_router(submission_intake_router)
 app.include_router(submission_status_router)
+app.include_router(match_evidence_router)
 app.state.upload_root = UPLOAD_DIR
 install_account_guard(app)
 

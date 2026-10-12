@@ -6,6 +6,7 @@ import re
 import threading
 import time
 import uuid
+from urllib.parse import quote
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -193,8 +194,8 @@ class CopyleaksService:
         if file_bytes:
             content_b64 = base64.b64encode(file_bytes).decode("utf-8")
         else:
-            clean_text = (text or "").strip()
-            if not clean_text:
+            clean_text = text or ""
+            if not clean_text.strip():
                 raise ValueError("Text content cannot be empty.")
             content_b64 = base64.b64encode(clean_text.encode("utf-8")).decode("utf-8")
 
@@ -277,6 +278,23 @@ class CopyleaksService:
             "sandbox": use_sandbox,
             "status": "processing",
         }
+
+    def export_match_evidence(self, scan_id, sources, webhook_base):
+        """Export an existing scan; never submits/rechecks a document."""
+        if not webhook_base.startswith('https://'):
+            raise ValueError('Evidence export requires a public HTTPS webhook URL.')
+        base = webhook_base.rstrip('/') + '/api/plagiarism/evidence/' + quote(scan_id, safe='')
+        def target(artifact):
+            return {'endpoint': base + '/' + quote(artifact, safe=''), 'verb': 'POST',
+                    'headers': [['x-writecheck-evidence', self.webhook_token(f'evidence:{scan_id}:{artifact}')]]}
+        completion = target('completion')
+        # completionWebhook supports a URL, not custom headers; authenticate it in the query.
+        payload = {'completionWebhook': completion['endpoint'] + '?token=' + completion['headers'][0][1],
+                   'crawledVersion': target('crawled'), 'maxRetries': 3,
+                   'results': [{'id': key, **target(key)} for key in dict.fromkeys(str(s['id']) for s in sources if s.get('id'))]}
+        response = requests.post(f'{COPYLEAKS_API_BASE}/downloads/{quote(scan_id, safe="")}/export/evidence',
+                                 headers={'Authorization': f'Bearer {self.get_access_token()}'}, json=payload, timeout=20)
+        response.raise_for_status()
 
     def get_scan_results(self, scan_id: str) -> Optional[Dict[str, Any]]:
         """

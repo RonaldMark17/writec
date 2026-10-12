@@ -40,6 +40,26 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(row['scan_result']['provider'], 'copyleaks')
         self.assertEqual(row['scan_result']['scanId'], SCAN_ID)
 
+    def test_saved_edit_remains_stale_after_provider_verification(self):
+        row = self.row()
+        row['scan_result'].update(stale=True, transcribedText='Previous essay')
+        verified, state = verified_status(row, self.job(provider_result=self.payload(24)))
+        self.assertEqual(state['state'], 'ready')
+        self.assertTrue(verified['scan_result']['stale'])
+        self.assertIsNone(verified['plagiarism_score'])
+        self.assertEqual(verified['transcribed_text'], 'Saved essay')
+
+    def test_exported_fragments_survive_status_normalization_and_reload(self):
+        row = self.row()
+        row['scan_result']['transcribedText'] = row['transcribed_text']
+        payload = self.payload(24)
+        payload['results']['internet'] = [{'id': 'r', 'title': 'Actual source', 'url': 'https://example.com'}]
+        artifacts = {'crawled': {'text': 'Saved essay'}, 'r': {'ranges': [{'start': 0, 'end': 5, 'kind': 'identical'}]}}
+        for _ in range(2):
+            report, _ = verified_status(row, self.job(provider_result=payload), artifacts)
+            self.assertEqual(report['scan_result']['matchedSources'][0]['matching_fragments'][0]['matched_text'], 'Saved')
+            self.assertEqual(report['scan_result']['evidenceStatus'], 'ready')
+
     def test_another_scans_callback_is_rejected(self):
         payload = self.payload()
         payload['scannedDocument']['scanId'] = 'other-scan'

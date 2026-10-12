@@ -59,8 +59,20 @@ test("xlsx round trip retains numeric grades, dates, and literal user text", asy
   expect(sheet.getRow(1).values.slice(1, 5)).toEqual(["Subject", "Assignment", "Student Name", "Grade"]);
   expect(sheet.getCell("D2").value).toBe(85.5);
   expect(sheet.getCell("D3").value).toBeNull();
-  expect(sheet.getCell("H2").value.toISOString()).toBe("2026-09-01T09:00:00.000Z");
-  expect(sheet.getCell("M2").value).toBe('=HYPERLINK("test")');
-  expect(sheet.getCell("M2").formula).toBeUndefined();
-  expect(restored.getWorksheet("Export details")).toBeDefined();
+  expect(sheet.columnCount).toBe(4);
+  expect(restored.worksheets).toHaveLength(1);
+});
+
+test("groups assignments and sorts structured and fallback names, preserving zero", async () => {
+  const workbook = await buildGradeWorkbook([
+    {assignmentId:"a",student:"Juan Dela Cruz",score:null},
+    {assignmentId:"b",student:"Zoe Santos",score:90},
+    {assignmentId:"a",student:"Maria Aquino",score:0},
+    {assignmentId:"a",student:"Pedro Cruz",score:80},
+    {assignmentId:"a",student:"Display name",last_name:"Aquino",first_name:"Ana",score:95},
+  ]);
+  const sheet = workbook.getWorksheet("Grades");
+  expect(sheet.getColumn(3).values.slice(2)).toEqual(["Aquino, Ana", "Aquino, Maria", "Cruz, Pedro", "Dela Cruz, Juan", "Santos, Zoe"]);
+  expect(sheet.getCell("D3").value).toBe(0);
+  expect(sheet.getCell("D5").value).toBeNull();
 });
