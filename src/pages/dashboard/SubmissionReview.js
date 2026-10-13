@@ -5,7 +5,7 @@ import SubmissionFilePreview from "./SubmissionFilePreview";
 import ClassmateMatches from "./ClassmateMatches";
 import AssignmentComments from "./AssignmentComments";
 import { PaginatedList } from "./Pagination";
-import { formatDateTime, StatusMessage } from "./shared";
+import { CloseIcon, formatDateTime, StatusMessage } from "./shared";
 
 export default function SubmissionReview({ submission, submissions = [], profile, text, result, scanning,
   progress, onRecheck, onClose, saving, onCopy, copied, error, message, grading,
@@ -25,9 +25,16 @@ export default function SubmissionReview({ submission, submissions = [], profile
   return <div role="dialog" aria-modal="true" aria-labelledby="submission-review-title"
     className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4 backdrop-blur-sm">
     <div className="review-workspace relative max-h-[94vh] w-full max-w-6xl overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-2xl">
-      <div className="border-b border-gray-200 pb-4">
+      <div className="review-close-row">
         <button type="button" onClick={onClose} disabled={saving || scanning}
-          className="mb-3 text-sm font-medium text-[#137333] disabled:opacity-50">← Back to submissions</button>
+          className="text-sm font-medium text-[#137333] disabled:opacity-50">← Back to submissions</button>
+        <button type="button" onClick={onClose} disabled={saving || scanning}
+          aria-label="Close submitted work" title="Back to submissions"
+          className="classroom-icon disabled:opacity-50 disabled:cursor-not-allowed">
+          <CloseIcon className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="border-b border-gray-200 pb-4">
         <h2 id="submission-review-title" className="text-xl font-semibold text-gray-900">{submission.studentName}</h2>
         <p className="mt-1 text-base font-medium text-gray-900">{submission.assignmentTitle}</p>
         <p className="mt-1 text-sm text-gray-600">{submission.classroomName}{submission.classroomSection ? ` · Section ${submission.classroomSection}` : ""}{submission.classroomSubject ? ` · ${submission.classroomSubject}` : ""}</p>

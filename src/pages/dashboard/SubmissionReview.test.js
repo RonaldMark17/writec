@@ -203,3 +203,32 @@ test("restored filters preserve one canonical essay and source identity without 
   fireEvent.click(screen.getAllByRole("button",{name:"View Match"})[0]);
   await waitFor(() => expect(screen.getByRole("link",{name:"View Source"})).toHaveAttribute("href","https://example.com/one"));
 });
+
+
+test("submitted work X shares the Back handler without mutating review data", () => {
+  const actions = props();
+  const before = JSON.stringify({submission:actions.submission,result:actions.result,text:actions.text});
+  render(<SubmissionReview {...actions}/>);
+  fireEvent.change(screen.getByLabelText("Feedback"), {target:{value:"Draft feedback"}});
+  const close = screen.getByRole("button", {name:"Close submitted work"});
+  expect(close).toHaveAttribute("title", "Back to submissions");
+  expect(close.querySelector("svg")).toBeInTheDocument();
+  close.focus(); expect(close).toHaveFocus();
+  fireEvent.click(close);
+  expect(actions.onClose).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", {name:/Back to submissions/}));
+  expect(actions.onClose).toHaveBeenCalledTimes(2);
+  expect(actions.onRecheck).not.toHaveBeenCalled();
+  expect(actions.onSaveText).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Feedback")).toHaveValue("Draft feedback");
+  expect(JSON.stringify({submission:actions.submission,result:actions.result,text:actions.text})).toBe(before);
+});
+
+test.each([{saving:true}, {scanning:true}])("both close controls respect existing busy state %j", busy => {
+  const actions = props(busy); render(<SubmissionReview {...actions}/>);
+  for (const name of ["Close submitted work", /Back to submissions/]) {
+    const button = screen.getByRole("button", {name});
+    expect(button).toBeDisabled(); fireEvent.click(button);
+  }
+  expect(actions.onClose).not.toHaveBeenCalled();
+});

@@ -3,7 +3,7 @@
 Implemented in the existing React UI; no API, database migration, permission policy, or package installation was needed.
 
 1. **Files:** added `src/pages/dashboard/ClassroomInformation.js`; updated `ClassroomDetail.js`, `TeacherDashboard.js`, `StudentDashboard.js`, and `src/workspace-theme.css`. Added `ClassroomInformation.test.js`, updated both dashboard workspace test files, and added `scripts/test-classroom-information.cjs` for browser checks.
-2. **Student code location:** the opened classroom details area displays the stored class code. Active and archived classroom cards also have an information dialog containing the code. Missing codes are not invented.
+2. **Student code location:** Students see the stored class code only after opening Classroom information from a card or the classroom details toolbar. The Student classroom header does not display it. Teacher code displays remain available. Missing codes are not invented.
 3. **Copy:** the shared `ClassCode` component replaces the previous Teacher card clipboard block and is reused by Students and dialogs. It copies the exact code through the existing Clipboard API approach, confirms success only after the promise resolves, clears feedback after three seconds or code changes, and reports clipboard failures.
 4. **Permissions:** these are read-only controls. Students receive no rename, regenerate, archive or member-management action from them. The existing membership-scoped classroom loading and backend/database authorization remain unchanged. No broader query or new endpoint was introduced.
 5. **Grades X:** an accessible Close icon is at the upper right of the Teacher Grades & Submissions header.

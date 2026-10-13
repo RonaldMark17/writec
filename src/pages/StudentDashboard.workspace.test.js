@@ -266,7 +266,7 @@ test("student receives renamed classroom in the open assignment without reloadin
 });
 
 
-test("student classroom information and header show each stored code without management controls", async () => {
+test("student class codes appear only in information without management controls", async () => {
   setup({multipleClasses:true});
   render(<StudentDashboard profile={profile} />);
   const icons = await screen.findAllByRole("button", {name:"Classroom information: English"});
@@ -276,12 +276,18 @@ test("student classroom information and header show each stored code without man
   expect(screen.queryByRole("button", {name:/Back to classes/})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", {name:"Close classroom information"}));
   fireEvent.click(screen.getAllByRole("button", {name:"English"})[0]);
-  expect(screen.getByText("ENG")).toBeInTheDocument();
+  expect(screen.queryByText("ENG")).not.toBeInTheDocument();
   expect(screen.queryByText("ENGB")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:"Classroom information: English"}));
+  expect(within(screen.getByRole("dialog")).getByText("ENG")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:"Close classroom information"}));
+  expect(screen.queryByText("ENG")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", {name:"Edit Classroom Name"})).not.toBeInTheDocument();
   expect(screen.queryByRole("button", {name:"Archive classroom"})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", {name:/Back to classes/}));
   fireEvent.click(screen.getAllByRole("button", {name:"English"})[1]);
-  expect(screen.getByText("ENGB")).toBeInTheDocument();
+  expect(screen.queryByText("ENGB")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:"Classroom information: English"}));
+  expect(within(screen.getByRole("dialog")).getByText("ENGB")).toBeInTheDocument();
   expect(screen.queryByText("ENG")).not.toBeInTheDocument();
 });

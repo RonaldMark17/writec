@@ -157,7 +157,7 @@ export default function ClassroomDetail({
           )}
         </div>
       </div>
-      <ClassCode key={classroom.id} code={classroom.code} />
+      {(onRenamed || onToggleArchive) && <ClassCode key={classroom.id} code={classroom.code} />}
       <div className="flex gap-2 border-b border-gray-200" aria-label="Classroom views">
         {[['homework', 'Homework'], ['people', 'People']].map(([id, label]) => (
           <button key={id} type="button" aria-pressed={tab === id} aria-label={label === "People" ? "Members" : label} onClick={() => setTab(id)}
