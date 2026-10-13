@@ -69,7 +69,9 @@ test("student academic details load and persist with the existing account prefer
 test("student cannot save incomplete academic details", async () => {
   show({ profile: { id: "student", role: "student", full_name: "Alex" } });
   fireEvent.click(screen.getByText("Save profile"));
-  expect(await screen.findByRole("alert")).toHaveTextContent("college level, course, and university");
+  expect(await screen.findAllByRole("alert")).toHaveLength(3);
+  expect(screen.getByLabelText("College level / Year level")).toHaveFocus();
+  expect(screen.getByText("Course / program is required.")).toBeInTheDocument();
   expect(supabase.auth.updateUser).not.toHaveBeenCalled();
 });
 

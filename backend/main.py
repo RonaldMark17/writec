@@ -475,6 +475,8 @@ from submission_status import router as submission_status_router
 from match_evidence import router as match_evidence_router
 
 app = FastAPI()
+from classroom_settings import router as classroom_settings_router
+app.include_router(classroom_settings_router)
 from service_status import router as service_status_router
 from notifications import NotificationWorker
 from contact_api import router as contact_router

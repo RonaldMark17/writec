@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 from admin_api import supabase_request
-from copyleaks_service import copyleaks_service
+from copyleaks_service import copyleaks_service, public_callback_base
 from plagiarism_db import compute_peer_similarity
 from classmate_matching import load_classmates
 from user_preferences import teacher_preferences, review_badge
+from match_evidence import export_checkpoint
 
 
 def normalize_provider(payload):
@@ -64,10 +65,7 @@ def check_submission(job, submission, text, checkpoint, save_checkpoint):
         if len(text.split()) < 20:
             raise ValueError('At least 20 words are needed for similarity checking. Correct the transcription and retry.')
 
-        webhook = os.getenv('COPYLEAKS_WEBHOOK_BASE_URL') or os.getenv('COPYLEAKS_WEBHOOK_URL') or ''
-        webhook = webhook.rstrip('/')
-        if not webhook.startswith('https://') or 'localhost' in webhook:
-            webhook = 'https://writecheck-scanner.vercel.app'
+        webhook = public_callback_base()
 
         if copyleaks_service.is_sandbox:
             raise ValueError('Disable COPYLEAKS_SANDBOX for real submission checks; sandbox results are simulated.')
@@ -95,12 +93,11 @@ def check_submission(job, submission, text, checkpoint, save_checkpoint):
         if provider is None:
             raise ValueError('Similarity results have not arrived. Verify the webhook, then retry this check.')
     if mode == 'copyleaks' and provider.get('matchedSources') and not checkpoint.get('evidence_export'):
+        checkpoint.update(export_checkpoint(checkpoint))
+        save_checkpoint(checkpoint)
         try:
             copyleaks_service.export_match_evidence(expected_scan_id, provider['matchedSources'],
-                os.getenv('COPYLEAKS_WEBHOOK_BASE_URL') or os.getenv('COPYLEAKS_WEBHOOK_URL')
-                or 'https://writecheck-scanner.vercel.app')
-            checkpoint['evidence_export'] = 'requested'
-            checkpoint['evidence_exported_at'] = datetime.now(timezone.utc).isoformat()
+                public_callback_base())
         except Exception:
             # A valid similarity score remains useful if evidence export fails.
             checkpoint['evidence_export'] = 'unavailable'

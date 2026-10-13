@@ -107,7 +107,7 @@ test.each(["user@edu.ph", "user@edu.com.ph", "user@yahoo.com", "user@edu.com", "
   fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "password123" } });
   fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "password123" } });
   fireEvent.submit(screen.getByRole("button", { name: "Create Student Account" }).closest("form"));
-  expect(screen.getByRole("alert")).toHaveTextContent("@school.edu.ph");
+  expect(screen.getAllByRole("alert").some(alert => alert.textContent.includes("@school.edu.ph"))).toBe(true);
   expect(supabase.auth.signUp).not.toHaveBeenCalled();
 });
 
@@ -124,20 +124,20 @@ test.each(["Full name", "Email address", "Password", "Confirm password"])("regis
     fireEvent.change(screen.getByLabelText(label, { exact: true }), { target: { value: label === field ? "   " : value } });
   }
   const submit = screen.getByRole("button", { name: "Create Student Account" });
-  expect(submit).toBeDisabled();
+  expect(submit).toBeEnabled();
   fireEvent.submit(submit.closest("form"));
-  expect(screen.getByRole("alert")).toHaveTextContent("Please fill in every field");
+  expect(screen.getByRole("alert")).toHaveTextContent(`${field.charAt(0).toUpperCase()}${field.slice(1).toLowerCase()} is required.`);
   expect(supabase.auth.signUp).not.toHaveBeenCalled();
 });
 
-test("registration enables only after all fields are filled and still rejects mismatched passwords", () => {
+test("registration allows validation attempts and still rejects mismatched passwords", () => {
   render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthModal initialMode="register" /></MemoryRouter>);
   const submit = screen.getByRole("button", { name: "Create Student Account" });
-  expect(submit).toBeDisabled();
+  expect(submit).toBeEnabled();
   fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Alex" } });
   fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "alex@school.edu.ph" } });
   fireEvent.change(screen.getByLabelText("Password", { exact: true }), { target: { value: "password123" } });
-  expect(submit).toBeDisabled();
+  expect(submit).toBeEnabled();
   fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "different123" } });
   expect(submit).toBeEnabled();
   fireEvent.click(submit);
@@ -153,10 +153,10 @@ test("registration enables only after all fields are filled and still rejects mi
   fireEvent.change(email, {target:{value:"alex"}});
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   fireEvent.blur(email);
-  expect(screen.getByRole("alert")).toHaveTextContent("@school.edu.ph");
+  expect(screen.getAllByRole("alert").some(alert => alert.textContent.includes("@school.edu.ph"))).toBe(true);
   fireEvent.change(email, {target:{value:"alex@gmail.com"}});
   expect(email).toHaveAttribute("aria-invalid", "true");
-  expect(screen.getByRole("button", {name:/Create (Student|Teacher) Account/})).toBeDisabled();
+  expect(screen.getByRole("button", {name:/Create (Student|Teacher) Account/})).toBeEnabled();
   fireEvent.change(email, {target:{value:"alex@SCHOOL.EDU.PH"}});
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(email).toHaveAttribute("aria-invalid", "false");

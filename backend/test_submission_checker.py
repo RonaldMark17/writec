@@ -7,6 +7,20 @@ from submission_checker import check_submission, normalize_provider, record_subm
 @patch.dict('os.environ', {'SUPABASE_SERVICE_ROLE_KEY': 'test-service',
     'SUBMISSION_SIMILARITY_MODE': 'copyleaks', 'COPYLEAKS_WEBHOOK_BASE_URL': 'https://backend.example.com'})
 class CheckerTests(unittest.TestCase):
+    def test_fresh_arbitrary_completed_scan_exports_every_source_before_review(self):
+        sources = [{'id': 'new-alpha'}, {'id': 'new-beta'}]
+        self.job['provider_result'] = {'scannedDocument': {'scanId': 'j00000000000000000000000000000010'},
+            'results': {'score': {'aggregatedScore': 100}, 'internet': sources, 'repositories': [{'id': 'repo-result'}]}}
+        checkpoint = {}
+        snapshots = []
+        result = check_submission(self.job, self.submission, self.text, checkpoint, lambda value: snapshots.append(dict(value)))
+        self.service.submit_scan.assert_not_called()
+        self.service.export_match_evidence.assert_called_once()
+        self.assertEqual({s['id'] for s in self.service.export_match_evidence.call_args.args[1]}, {'new-alpha', 'new-beta', 'repo-result'})
+        self.assertTrue(any(c.get('evidence_export') == 'requested' for c in snapshots))
+        self.assertEqual(checkpoint['evidence_export_attempts'], 1)
+        self.assertEqual(result['score'], 100)
+
     def setUp(self):
         self.job = {'id': '00000000-0000-0000-0000-000000000010', 'submission_id': 'submission'}
         self.submission = {'assignment_id': 'assignment', 'classroom_id': 'classroom', 'student_id': 'student'}

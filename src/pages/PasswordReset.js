@@ -1,3 +1,4 @@
+import ValidatedForm, { ValidatedInput } from "../ValidatedForm";
 import { ArrowLeftIcon } from "./dashboard/shared";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -117,14 +118,14 @@ export default function PasswordReset({ mode = "request", session, isAuthLoading
               </Link>
             </div>
           ) : !done ? (
-            <form onSubmit={submit} className="mt-8 space-y-4">
+            <ValidatedForm onSubmit={submit} className="mt-8 space-y-4">
               {resetting ? (
                 <>
                   <div>
                     <label htmlFor="reset-new-password" className="block text-xs font-medium uppercase tracking-wider text-[#444746] mb-1.5">
                       New password
                     </label>
-                    <input
+                    <ValidatedInput
                       id="reset-new-password"
                       type="password"
                       autoComplete="new-password"
@@ -141,7 +142,7 @@ export default function PasswordReset({ mode = "request", session, isAuthLoading
                     <label htmlFor="reset-confirm-password" className="block text-xs font-medium uppercase tracking-wider text-[#444746] mb-1.5">
                       Confirm password
                     </label>
-                    <input
+                    <ValidatedInput
                       id="reset-confirm-password"
                       type="password"
                       autoComplete="new-password"
@@ -159,7 +160,7 @@ export default function PasswordReset({ mode = "request", session, isAuthLoading
                   <label htmlFor="reset-email" className="block text-xs font-medium uppercase tracking-wider text-[#444746] mb-1.5">
                     Email
                   </label>
-                  <input
+                  <ValidatedInput
                     id="reset-email"
                     type="email"
                     autoComplete="email"
@@ -206,7 +207,7 @@ export default function PasswordReset({ mode = "request", session, isAuthLoading
                   {busy ? "Sending…" : resetting ? "Save password" : "Send reset link"}
                 </button>
               </div>
-            </form>
+            </ValidatedForm>
           ) : (
             <div className="mt-8 space-y-4">
               <div role="status" className="rounded-xl border border-[#ceead6] bg-[#e6f4ea] p-4 text-sm text-[#137333]">

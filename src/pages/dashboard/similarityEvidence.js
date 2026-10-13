@@ -51,15 +51,24 @@ export function exactRanges(text, phrase) {
 }
 
 export function normalizeRanges(text, ranges) {
-  return asArray(ranges).filter(r => Number.isInteger(r.start) && Number.isInteger(r.end) && r.end > r.start)
-    .map(r => ({ ...r, start: Math.max(0, r.start), end: Math.min(text.length, r.end) }))
-    .filter(r => r.end > r.start).sort((a, b) => a.start - b.start || a.end - b.end);
+  return asArray(ranges).filter(r => r && Number.isInteger(r.start) && Number.isInteger(r.end)
+    && r.start >= 0 && r.end <= text.length && r.end > r.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
 }
 
 // Keep evidence and its metadata together; never infer matches from source titles/snippets.
 export function collectEvidence(text, report, peers = []) {
   const ranges = [], unresolved = [];
   if (!report || report.stale || (typeof report.transcribedText === "string" && report.transcribedText !== text)) return { ranges, unresolved };
+  function record(start, end, passage, metadata) {
+    ranges.push({ start, end, ...metadata, matchType: passage.match_kind });
+    // Only explicit comparison keywords within a proven passage receive emphasis.
+    for (const word of asArray(passage.matched_words || passage.overlapping_keywords)) {
+      for (const [offset, finish] of exactRanges(text.slice(start, end), word)) {
+        ranges.push({ start: start + offset, end: start + finish, ...metadata, keyword: true });
+      }
+    }
+  }
   function add(passage, metadata) {
     if (!passage) return;
     const phrase = typeof passage === "string" ? passage : passage.matched_text || passage.matchedText || passage.matching_text || passage.text || passage.sentence;
@@ -70,7 +79,7 @@ export function collectEvidence(text, report, peers = []) {
     if (bound && Number.isInteger(start) && Number.isInteger(end)) {
       const valid = normalizeRanges(text, [{ start, end }]);
       if (valid.length && (!phrase || text.slice(valid[0].start, valid[0].end) === phrase)) {
-        ranges.push({ ...valid[0], ...metadata }); return;
+        record(valid[0].start, valid[0].end, passage, metadata); return;
       }
     }
     if (typeof phrase !== "string" || !phrase.trim()) return;
@@ -78,16 +87,18 @@ export function collectEvidence(text, report, peers = []) {
     if (!found.length && metadata.type === "peer") found = phraseRanges(text, phrase);
     // A repeated phrase without location/multiplicity is ambiguous; display it in details instead.
     if (metadata.type !== "peer" && found.length > 1 && passage.all_occurrences !== true) found = [];
-    if (found.length) found.forEach(([start, end]) => ranges.push({ start, end, ...metadata }));
+    if (found.length) found.forEach(([start, end]) => record(start, end, passage, metadata));
     else unresolved.push({ text: phrase, ...metadata });
   }
   const data = report.result_data || {};
+  const sources = asArray(report.matchedSources || data.matched_sources);
   for (const passage of asArray(report.highlighted_sentences || data.highlighted_sentences)) {
     if (!passage || passage.type === "peer") continue;
-    add(passage, { type: "online", label: passage.source_title || "Online Source Match", title: passage.source_title, url: passage.source_url });
+    const source = sources.find(s => (passage.source_id && s.id === passage.source_id) || (passage.source_url && s.url === passage.source_url));
+    add(passage, { type: "online", source, id: source?.id, domain: source?.domain, score: source?.score_percent, label: passage.source_title || "Online Source Match", title: passage.source_title || source?.title, url: passage.source_url || source?.url });
   }
   for (const source of asArray(report.matchedSources || data.matched_sources)) {
-    const metadata = { type: "online", id: source.id, label: source.title || "Online Source Match",
+    const metadata = { type: "online", source, id: source.id, label: source.title || "Online Source Match",
       title: source.title, url: source.url, domain: source.domain, score: source.score_percent };
     const matched = source.matched_text || source.matchedText || source.matching_text;
     if (matched) add({ ...source, text: matched }, metadata);

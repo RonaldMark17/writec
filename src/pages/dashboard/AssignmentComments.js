@@ -1,3 +1,4 @@
+import ValidatedForm, { ValidatedTextarea, ValidatedSelect } from "../../ValidatedForm";
 import { PaginatedList } from "./Pagination";
 import { useEffect, useState } from "react";
 import { supabase } from "../../supabaseClient";
@@ -36,7 +37,7 @@ export default function AssignmentComments({ assignmentId, classroomId, profile 
 
   async function submit(event, kind) {
     event.preventDefault();
-    if (saving || !drafts[kind].trim() || (teacher && !recipient)) return;
+    if (saving || (teacher && !recipient)) return;
     setSaving(kind); setError("");
     try {
       const { error } = await supabase.rpc("post_assignment_comment", {
@@ -66,10 +67,10 @@ export default function AssignmentComments({ assignmentId, classroomId, profile 
         <h3 className="font-medium text-[#202124]">{title}</h3>
         <p className="text-xs text-gray-500">{kind === "class" ? "Visible to enrolled classmates and the classroom teacher." : "Visible only to the student in this conversation and the classroom teacher."}</p>
         {teacher && kind === "private" && <label className="block text-sm">Student conversation
-          <select value={recipient} onChange={(event) => { setRecipient(event.target.value); setDrafts((d) => ({ ...d, private: "" })); }} className="ml-2 rounded-lg border p-2">
+          <ValidatedSelect value={recipient} onChange={(event) => { setRecipient(event.target.value); setDrafts((d) => ({ ...d, private: "" })); }} className="ml-2 rounded-lg border p-2">
             <option value="">Select a student</option>
             {[...recipients].map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-          </select>
+          </ValidatedSelect>
         </label>}
         {loading ? <p role="status" className="text-sm text-gray-500">Loading comments...</p> :
           !error && (teacher && kind === "private" && !recipient ? <p className="text-sm text-gray-500">Select a student to view or reply privately.</p> :
@@ -79,15 +80,15 @@ export default function AssignmentComments({ assignmentId, classroomId, profile 
             <time className="text-xs text-gray-500" dateTime={comment.created_at}>{formatDateTime(comment.created_at)}</time>
             <p className="mt-2 whitespace-pre-wrap break-words text-sm">{comment.comment_text}</p>
           </li>)}</ul>}</PaginatedList>)}
-        {canPost && <form onSubmit={(event) => submit(event, kind)} className="space-y-3">
+        {canPost && <ValidatedForm onSubmit={(event) => submit(event, kind)} className="space-y-3">
           <label className="block text-sm">{kind === "class" ? "Class Comment" : "Private Comment"}
-            <textarea value={drafts[kind]} onChange={(event) => setDrafts((current) => ({ ...current, [kind]: event.target.value }))}
+            <ValidatedTextarea value={drafts[kind]} onChange={(event) => setDrafts((current) => ({ ...current, [kind]: event.target.value }))}
               required maxLength={2000} rows={3} className="mt-1 block w-full rounded-lg border border-[#dadce0] p-3 text-sm focus:border-[#137333]" />
           </label>
-          <button type="submit" disabled={Boolean(saving) || loading || !drafts[kind].trim()} className="rounded-full bg-[#137333] px-4 py-2 text-sm text-white disabled:opacity-50">
+          <button type="submit" disabled={Boolean(saving) || loading} className="rounded-full bg-[#137333] px-4 py-2 text-sm text-white disabled:opacity-50">
             {saving === kind ? "Posting..." : kind === "class" ? "Post class comment" : teacher ? "Reply privately" : "Post private comment"}
           </button>
-        </form>}
+        </ValidatedForm>}
       </section>;
     })}
   </div>;

@@ -18,6 +18,38 @@ jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shar
 let archived = false;
 let extraAssignments = [];
 let onArchiveUpdate;
+
+test("create classroom identifies blank name and section without writing", async () => {
+  render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
+  await screen.findByRole("button", { name: "Class A" });
+  fireEvent.click(screen.getByText("Classes tab"));
+  fireEvent.click(screen.getByRole("button", { name: "Create class" }));
+  const name = screen.getByLabelText(/Classroom name \(required\)/);
+  fireEvent.change(name, { target: { value: "   " } });
+  supabase.from.mockClear();
+  fireEvent.submit(name.closest("form"));
+  expect(screen.getByText("Classroom name is required.")).toBeInTheDocument();
+  expect(screen.getByText("Section is required.")).toBeInTheDocument();
+  expect(name).toHaveFocus();
+  expect(supabase.from).not.toHaveBeenCalled();
+  fireEvent.change(name, { target: { value: "CSST 106" } });
+  expect(screen.queryByText("Classroom name is required.")).not.toBeInTheDocument();
+});
+
+test("confirmed rename updates the classroom header and classwork context", async () => {
+  apiFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "A", classroom_name: "Renamed classroom", classroom_code: "A" }) });
+  render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Class A" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit Classroom Name" }));
+  fireEvent.change(screen.getByLabelText("Classroom name"), { target: { value: "Renamed classroom" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+  await screen.findByText("Classroom name updated successfully.");
+  expect(screen.getByRole("heading", { name: "Renamed classroom" })).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Classwork tab"));
+  fireEvent.click(screen.getAllByText("Essay A")[0]);
+  expect(screen.getAllByText(/Renamed classroom/).length).toBeGreaterThan(0);
+  await screen.findAllByText("No comments yet.");
+});
 beforeEach(() => {
   apiFetch.mockReset().mockResolvedValue({ok:true,json:async()=>({})});
   downloadGrades.mockClear();
@@ -338,4 +370,25 @@ test("failed grade save leaves feedback and grade intact", async () => {
   await within(dialog).findByText("Grade could not be saved. Please try again.");
   expect(within(dialog).getByLabelText("Grade / Score")).toHaveValue("88");
   expect(within(dialog).getByLabelText("Teacher Feedback (optional)")).toHaveValue("Keep this feedback");
+});
+
+
+test("close grades returns to its original classroom despite filter changes", async () => {
+  render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
+  fireEvent.click(await screen.findByRole("button", {name:"Class A"}));
+  fireEvent.click(screen.getByText("Grades tab"));
+  fireEvent.change(screen.getByLabelText("Classroom:"), {target:{value:"B"}});
+  fireEvent.click(screen.getByRole("button", {name:"Close grades"}));
+  expect(screen.getByRole("heading", {name:"Class A"})).toBeInTheDocument();
+  expect(screen.queryByRole("heading", {name:"Grades & Submissions"})).not.toBeInTheDocument();
+});
+
+test("close dashboard grades returns to class list even after selecting a filter", async () => {
+  render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
+  await screen.findByRole("button", {name:"Class A"});
+  fireEvent.click(screen.getByText("Grades tab"));
+  fireEvent.change(screen.getByLabelText("Classroom:"), {target:{value:"B"}});
+  fireEvent.click(screen.getByRole("button", {name:"Close grades"}));
+  expect(screen.getByRole("button", {name:"Class A"})).toBeInTheDocument();
+  expect(screen.getByRole("button", {name:"Class B"})).toBeInTheDocument();
 });

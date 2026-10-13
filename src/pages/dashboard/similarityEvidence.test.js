@@ -4,12 +4,12 @@ test.each([[null, "Not checked"], [0, "0%"], [24, "24%"], ["", "Not checked"], [
   expect(onlinePreview({ scanResult: { score } })).toBe(expected);
 });
 
-test("ranges require same scanned text, clamp bounds and preserve metadata", () => {
+test("ranges require same scanned text, reject invalid bounds and preserve metadata", () => {
   const text = "First paragraph.\n\nSecond paragraph.";
   const report = { transcribedText: text, matchedSources: [{ id: "source", title: "Actual title", url: "https://example.com",
-    matching_fragments: [{ start: -4, end: 5 }, { start: 18, end: 500 }, { start: 8, end: 3 }, { start: NaN, end: 9 }] }] };
+    matching_fragments: [{ start: 0, end: 5 }, { start: -4, end: 5 }, { start: 18, end: 500 }, { start: 8, end: 3 }, { start: NaN, end: 9 }] }] };
   const ranges = evidenceRanges(text, report);
-  expect(ranges.map(r => [r.start, r.end])).toEqual([[0, 5], [18, text.length]]);
+  expect(ranges.map(r => [r.start, r.end])).toEqual([[0, 5]]);
   expect(ranges[0]).toMatchObject({ id: "source", title: "Actual title" });
   expect(evidenceRanges("Changed " + text, report)).toEqual([]);
   expect(evidenceRanges(text, { matchedSources: report.matchedSources })).toEqual([]);
@@ -58,4 +58,28 @@ test("exact evidence preserves whitespace and splits overlaps without nesting or
   expect(parts.some(p => p.matches.length === 2)).toBe(true);
   expect(parts.find(p => p.text.includes("Conclusion")).matches).toEqual([]);
   expect(evidenceRanges(text, { score: 24, matchedSources: [{ title: text }] })).toEqual([]);
+});
+
+
+test("only explicit keywords inside supported passages are underlined, preserving overlap", () => {
+  const text = "First exact passage. Next.";
+  const report = {transcribedText:text, matchedSources:[{id:"s", matched_text:"First exact passage.", matched_words:["exact", "Next"]}]};
+  const ranges = evidenceRanges(text,report,[{submission_id:"p",matching_snippets:["exact passage"]}]);
+  const parts = evidenceSegments(text,ranges);
+  expect(parts.map(p => p.text).join("")).toBe(text);
+  expect(parts.filter(p => p.matches.some(m => m.keyword)).map(p => p.text)).toEqual(["exact"]);
+  expect(parts.find(p => p.text === "exact").matches.some(m => m.type === "peer")).toBe(true);
+});
+
+test("overlapping external sources retain every source ID in flat canonical segments", () => {
+  const text = "First exact passage. Next.";
+  const ranges = evidenceRanges(text, {transcribedText:text, matchedSources:[
+    {id:"a", ranges:[{start:0,end:11}]},
+    {id:"b", ranges:[{start:6,end:20}]},
+    {id:"c", ranges:[{start:20,end:text.length}]},
+  ]});
+  const segments = evidenceSegments(text,ranges);
+  expect(segments.map(segment => segment.text).join("")).toBe(text);
+  expect(segments.find(segment => segment.text === "exact").matches.map(match => match.id)).toEqual(["a","b"]);
+  expect(segments.at(-1).matches[0].id).toBe("c");
 });

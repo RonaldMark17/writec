@@ -1,7 +1,9 @@
+import ClassroomInformation, { ClassCode } from "./ClassroomInformation";
 import { ArrowLeftIcon } from "./shared";
 import { PaginatedList } from "./Pagination";
 import { useState } from "react";
 import ClassroomRoster from "./ClassroomRoster";
+import RenameClassroom from "./RenameClassroom";
 import { formatDateTime, ArchiveIcon, UnarchiveIcon, CopyIcon, DownloadIcon, LeaveIcon } from "./shared";
 
 export default function ClassroomDetail({
@@ -17,18 +19,27 @@ export default function ClassroomDetail({
   onLeaveClassroom,
   onMemberRemoved,
   onExportGrades,
+  onRenamed,
 }) {
+  const [renaming, setRenaming] = useState(false);
+  const [renameMessage, setRenameMessage] = useState("");
   const [tab, setTab] = useState("homework");
   const homework = assignments.filter((assignment) => assignment.classroomId === classroom.id);
   const isArchived = Boolean(classroom.isArchived);
 
   return (
     <div className="space-y-6">
+      {renaming && <RenameClassroom classroom={classroom} onClose={() => setRenaming(false)} onRenamed={row => {
+        onRenamed(row); setRenameMessage("Classroom name updated successfully.");
+      }} />}
+      {renameMessage && <p role="status" className="text-sm text-[#137333]">{renameMessage}</p>}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <button type="button" onClick={onBack} className="text-sm font-medium text-[#137333] hover:underline">
           <ArrowLeftIcon className="action-icon" />Back to classes
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ClassroomInformation classroom={classroom} teacherView={Boolean(onRenamed || onToggleArchive)} />
+          {onRenamed && <button type="button" onClick={() => setRenaming(true)} className="similarity-chip text-xs">Edit Classroom Name</button>}
           {onExportGrades && <button type="button" onClick={() => onExportGrades(classroom.id)}
             className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Export Excel</button>}
           {onCopyClassroom && (
@@ -146,6 +157,7 @@ export default function ClassroomDetail({
           )}
         </div>
       </div>
+      <ClassCode key={classroom.id} code={classroom.code} />
       <div className="flex gap-2 border-b border-gray-200" aria-label="Classroom views">
         {[['homework', 'Homework'], ['people', 'People']].map(([id, label]) => (
           <button key={id} type="button" aria-pressed={tab === id} aria-label={label === "People" ? "Members" : label} onClick={() => setTab(id)}

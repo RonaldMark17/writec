@@ -1,3 +1,4 @@
+import ValidatedForm, { ValidatedInput, ValidatedTextarea, ValidatedSelect } from "../../ValidatedForm";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../supabaseClient";
@@ -367,7 +368,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
         {setupMode && <div className="px-6 pt-6 pr-16"><h2 className="text-lg font-semibold text-[#137333]">Complete your student profile</h2><p className="mt-1 text-sm text-[#5f6368]">Add your college level, course, and university. You can update these later in your profile.</p></div>}
 
         {/* Hidden File Input for Avatar Photo */}
-        <input
+        <ValidatedInput
           ref={fileInputRef}
           type="file"
           accept="image/png,image/jpeg,image/jpg,image/webp"
@@ -538,10 +539,9 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
           </div>
 
           {/* Form Content */}
-          <form onSubmit={save} className="mt-5 space-y-4">
+          <ValidatedForm onSubmit={save} onValidationError={() => setActiveTab("profile")} className="mt-5 space-y-4">
             {/* TAB 1: Profile & Bio */}
-            {activeTab === "profile" && (
-              <div className="space-y-4 animate-fadeIn">
+              <div hidden={activeTab !== "profile"} className="space-y-4 animate-fadeIn">
                 {/* Profile Photo Option Card */}
                 <div className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -614,7 +614,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                         <path d="M20 21a8 8 0 0 0-16 0" />
                       </svg>
                     </div>
-                    <input
+                    <ValidatedInput
                       id="display-name"
                       required
                       maxLength={120}
@@ -634,7 +634,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                         <label htmlFor="academic-title" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
                           Academic title / Prefix
                         </label>
-                        <select
+                        <ValidatedSelect
                           id="academic-title"
                           value={academicTitle}
                           onChange={(e) => setAcademicTitle(e.target.value)}
@@ -647,14 +647,14 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                           <option value="Ms.">Ms.</option>
                           <option value="Mrs.">Mrs.</option>
                           <option value="Instructor">Instructor</option>
-                        </select>
+                        </ValidatedSelect>
                       </div>
 
                       <div>
                         <label htmlFor="academic-dept" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
                           Subject / Department
                         </label>
-                        <input
+                        <ValidatedInput
                           id="academic-dept"
                           value={department}
                           onChange={(e) => setDepartment(e.target.value)}
@@ -669,8 +669,9 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                       <label htmlFor="institution-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
                         School / Institution
                       </label>
-                      <input
+                      <ValidatedInput
                         id="institution-input"
+                          required={isStudent}
                         value={institution}
                         onChange={(e) => setInstitution(e.target.value)}
                         placeholder="e.g. Greenwood High School / University"
@@ -683,7 +684,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                       <label htmlFor="bio-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
                         Bio / Note to Students
                       </label>
-                      <textarea
+                      <ValidatedTextarea
                         id="bio-input"
                         rows={2}
                         value={bio}
@@ -701,8 +702,9 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                         <label htmlFor="student-grade-level" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
                           College level / Year level
                         </label>
-                        <select
+                        <ValidatedSelect
                           id="student-grade-level"
+                          required={isStudent}
                           value={gradeLevel}
                           onChange={(e) => setGradeLevel(e.target.value)}
                           className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
@@ -725,15 +727,16 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                             <option value="6th Year College">6th Year College</option>
                             <option value="Graduate Studies">Graduate Studies</option>
                           </optgroup>
-                        </select>
+                        </ValidatedSelect>
                       </div>
 
                       <div>
                         <label htmlFor="student-course-track" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
                           Course / Program
                         </label>
-                        <input
+                        <ValidatedInput
                           id="student-course-track"
+                          required={isStudent}
                           maxLength={150}
                           value={courseTrack}
                           onChange={(e) => setCourseTrack(e.target.value)}
@@ -748,8 +751,9 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                       <label htmlFor="institution-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
                         University / College
                       </label>
-                      <input
+                      <ValidatedInput
                         id="institution-input"
+                          required={isStudent}
                         value={institution}
                         onChange={(e) => setInstitution(e.target.value)}
                         placeholder="e.g. Laguna State Polytechnic University"
@@ -762,7 +766,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                       <label htmlFor="bio-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
                         Bio / About Me
                       </label>
-                      <textarea
+                      <ValidatedTextarea
                         id="bio-input"
                         rows={2}
                         value={bio}
@@ -774,8 +778,6 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                   </>
                 )}
               </div>
-            )}
-
             {/* TAB 2: AI & Preferences */}
             {isTeacher && activeTab === "preferences" && (
               <div className="space-y-4 animate-fadeIn">
@@ -804,7 +806,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                         <label htmlFor="plagiarism-sensitivity" className="block text-[11px] font-semibold text-[#444746] mb-1">
                           Detection Sensitivity Threshold
                         </label>
-                        <select
+                        <ValidatedSelect
                           id="plagiarism-sensitivity"
                           disabled={profile?.role !== "teacher"}
                           value={plagiarismSensitivity}
@@ -814,7 +816,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                           <option value="standard">Standard (10% similarity alert — Recommended)</option>
                           <option value="strict">Strict (5% similarity alert)</option>
                           <option value="permissive">Permissive (20% similarity alert)</option>
-                        </select>
+                        </ValidatedSelect>
                         <p className="mt-2 text-[11px] text-[#5f6368]">Applies to new automatic submission checks. Changes the review alert threshold, not the provider's similarity percentage. Saved checks retain their original settings.</p>
                         {profile?.role !== "teacher" && <p className="mt-2 text-xs">The classroom teacher controls submission checks and email notifications.</p>}
                       </div>
@@ -845,7 +847,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                           <p className="text-xs font-semibold text-[#202124]">Peer-to-Peer Cross Check</p>
                           <p className="text-[11px] text-[#5f6368]">Compare student essays against classmates' submissions</p>
                         </div>
-                        <input
+                        <ValidatedInput
                           type="checkbox"
                           checked={peerCrossCheck}
                           disabled={profile?.role !== "teacher"}
@@ -859,7 +861,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                           <p className="text-xs font-semibold text-[#202124]">Submission Email Notifications</p>
                           <p className="text-[11px] text-[#5f6368]">Receive notifications when students turn in work</p>
                         </div>
-                        <input
+                        <ValidatedInput
                           type="checkbox"
                           checked={notifyOnSubmissions}
                           disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
@@ -873,7 +875,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                           <p className="text-xs font-semibold text-[#202124]">Weekly Submission Digest</p>
                           <p className="text-[11px] text-[#5f6368]">Receive a submission-count summary on Mondays (UTC)</p>
                         </div>
-                        <input
+                        <ValidatedInput
                           type="checkbox"
                           checked={weeklyDigest}
                           disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
@@ -913,7 +915,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                         <label htmlFor="student-report-view" className="block text-[11px] font-semibold text-[#444746] mb-1">
                           Originality Report View
                         </label>
-                        <select
+                        <ValidatedSelect
                           id="student-report-view"
                           value={studentReportView}
                           onChange={(e) => setStudentReportView(e.target.value)}
@@ -921,7 +923,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                         >
                           <option value="detailed">Detailed Match Highlighting (Identifies matched sources & quotes)</option>
                           <option value="summary">Summary Only (Overall similarity percentage)</option>
-                        </select>
+                        </ValidatedSelect>
                       </div>
                     </div>
 
@@ -950,7 +952,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                           <p className="text-xs font-semibold text-[#202124]">Submission Confirmation Receipts</p>
                           <p className="text-[11px] text-[#5f6368]">Receive an email receipt whenever you turn in an essay</p>
                         </div>
-                        <input
+                        <ValidatedInput
                           type="checkbox"
                           checked={notifyOnSubmissions}
                           onChange={(e) => setNotifyOnSubmissions(e.target.checked)}
@@ -963,7 +965,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                           <p className="text-xs font-semibold text-[#202124]">Grade & Feedback Alerts</p>
                           <p className="text-[11px] text-[#5f6368]">Get notified when your teacher returns reviewed papers and comments</p>
                         </div>
-                        <input
+                        <ValidatedInput
                           type="checkbox"
                           checked={peerCrossCheck}
                           onChange={(e) => setPeerCrossCheck(e.target.checked)}
@@ -976,7 +978,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                           <p className="text-xs font-semibold text-[#202124]">Weekly Writing Progress Digest</p>
                           <p className="text-[11px] text-[#5f6368]">Receive a weekly recap of your submissions, originality scores, and returned grades</p>
                         </div>
-                        <input
+                        <ValidatedInput
                           type="checkbox"
                           checked={weeklyDigest}
                           onChange={(e) => setWeeklyDigest(e.target.checked)}
@@ -1131,7 +1133,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                 )}
               </button>
             </div>
-          </form>
+          </ValidatedForm>
         </div>
       </section>
     </div>,

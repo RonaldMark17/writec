@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from submission_status import verified_status, teacher_submission_status
 
 JOB_ID = '00000000-0000-0000-0000-000000000001'
@@ -9,6 +9,18 @@ SCAN_ID = 'j00000000000000000000000000000001'
 
 
 class StatusTests(unittest.TestCase):
+    def test_legacy_missing_text_binding_is_restored_only_from_equal_provider_text(self):
+        row = self.row()
+        payload = self.payload(100)
+        payload['results']['internet'] = [{'id': 'arbitrary'}]
+        artifacts = {'crawled': {'text': 'Saved essay'}, 'arbitrary': {'ranges': [{'start': 0, 'end': 5, 'kind': 'identical'}]}}
+        verified, _ = verified_status(row, self.job(provider_result=payload), artifacts)
+        self.assertEqual(verified['scan_result']['transcribedText'], 'Saved essay')
+        self.assertEqual(verified['scan_result']['matchedSources'][0]['matching_fragments'][0]['start'], 0)
+        artifacts['crawled']['text'] = 'Other essay'
+        verified, _ = verified_status(row, self.job(provider_result=payload), artifacts)
+        self.assertNotIn('transcribedText', verified['scan_result'])
+
     def job(self, **values):
         return {'id': JOB_ID, 'state': 'ready', 'checkpoint': {'mode': 'copyleaks'}, **values}
 
@@ -89,7 +101,7 @@ class StatusTests(unittest.TestCase):
     @patch('submission_status.authenticated_account', return_value={'role': 'student'})
     def test_student_cannot_read_private_job_diagnostics(self, auth, db):
         with self.assertRaises(HTTPException):
-            teacher_submission_status(SimpleNamespace())
+            teacher_submission_status(SimpleNamespace(), BackgroundTasks())
         db.assert_not_called()
 
     @patch.dict('os.environ', {'SUPABASE_SERVICE_ROLE_KEY': 'service'})
@@ -100,13 +112,40 @@ class StatusTests(unittest.TestCase):
         row = self.row()
         job = self.job(submission_id=JOB_ID, provider_result=self.payload())
         db.side_effect = [[row], [job]]
-        response = teacher_submission_status(SimpleNamespace(state=SimpleNamespace(access_token='teacher-token')))
+        response = teacher_submission_status(SimpleNamespace(state=SimpleNamespace(access_token='teacher-token')), BackgroundTasks())
         self.assertEqual(db.call_args_list[0].args[1], 'teacher-token')
         self.assertIn(JOB_ID, db.call_args_list[1].args[0])
         self.assertEqual(response['provider']['credits'], 0)
         self.assertEqual(response['results'][0]['scan_result']['score'], 0)
         self.assertNotIn('checkpoint', response['results'][0])
         self.assertNotIn('provider_result', response['progress'][JOB_ID])
+
+    @patch.dict('os.environ', {'SUPABASE_SERVICE_ROLE_KEY': 'service'})
+    @patch('submission_status.copyleaks_service.get_credit_balance', return_value=1)
+    @patch('submission_status.queue_missing_evidence')
+    @patch('submission_status.supabase_request')
+    @patch('submission_status.authenticated_account', return_value={'role': 'teacher'})
+    def test_status_schedules_missing_details_only_for_verified_visible_current_results(self, auth, db, queue, balance):
+        row = self.row()
+        row['scan_result']['transcribedText'] = row['transcribed_text']
+        payload = self.payload(75.2)
+        payload['results']['internet'] = [{'id': 'r', 'title': 'Actual source'}]
+        job = self.job(submission_id=JOB_ID, provider_result=payload)
+        db.side_effect = [[row], [job], []]
+        tasks = BackgroundTasks()
+        response = teacher_submission_status(SimpleNamespace(state=SimpleNamespace(access_token='teacher-token')), tasks)
+        queue.assert_called_once_with(job, response['results'][0]['scan_result']['matchedSources'], tasks)
+        queue.reset_mock()
+        artifacts = [{'job_id': JOB_ID, 'artifact': 'crawled', 'data': {'text': 'Saved essay'}},
+                     {'job_id': JOB_ID, 'artifact': 'r', 'data': {'ranges': [{'start': 0, 'end': 5, 'kind': 'identical'}]}}]
+        db.side_effect = [[row], [job], artifacts]
+        response = teacher_submission_status(SimpleNamespace(state=SimpleNamespace(access_token='teacher-token')), BackgroundTasks())
+        queue.assert_not_called()
+        self.assertEqual(response['results'][0]['scan_result']['evidenceStatus'], 'ready')
+        row['scan_result']['transcribedText'] = 'Old essay'
+        db.side_effect = [[row], [job], []]
+        teacher_submission_status(SimpleNamespace(state=SimpleNamespace(access_token='teacher-token')), BackgroundTasks())
+        queue.assert_not_called()
 
 
 if __name__ == '__main__':

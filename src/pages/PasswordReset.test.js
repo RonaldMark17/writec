@@ -24,7 +24,7 @@ test("rejects mismatched passwords and saves matching passwords", async () => {
   fireEvent.change(screen.getByLabelText("New password"), { target: { value: "newpassword123" } });
   fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "different123" } });
   fireEvent.click(screen.getByText("Save password"));
-  expect(screen.getByRole("alert")).toHaveTextContent("both passwords match");
+  expect(await screen.findByRole("alert")).toHaveTextContent("both passwords match");
   expect(supabase.auth.updateUser).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "newpassword123" } });
   fireEvent.click(screen.getByText("Save password"));
@@ -41,7 +41,7 @@ test("invalid reset sessions cannot set a password", () => {
 test.each(["student", "teacher"])("saves a %s name and preserves their role", async (role) => {
   supabase.rpc.mockResolvedValue({ data: [{ full_name: "New Name" }] });
   const saved = jest.fn();
-  show(<ProfileEditor profile={{ id: "u1", full_name: "Old Name", role }} onSaved={saved} />);
+  show(<ProfileEditor profile={{ id: "u1", full_name: "Old Name", gradeLevel: "2nd Year College", courseTrack: "BS CS", institution: "University", role }} onSaved={saved} />);
   fireEvent.change(screen.getByLabelText("Display name"), { target: { value: " New Name " } });
   fireEvent.click(screen.getByText("Save profile"));
   expect(await screen.findByRole("status")).toHaveTextContent("Profile updated");
@@ -52,7 +52,7 @@ test.each(["student", "teacher"])("saves a %s name and preserves their role", as
 test("profile errors do not report success", async () => {
   supabase.rpc.mockResolvedValue({ error: { message: "Unable to save" } });
   const saved = jest.fn();
-  show(<ProfileEditor profile={{ full_name: "Name" }} onSaved={saved} />);
+  show(<ProfileEditor profile={{ full_name: "Name", role: "teacher" }} onSaved={saved} />);
   fireEvent.click(screen.getByText("Save profile"));
   expect(await screen.findByRole("alert")).toHaveTextContent("Unable to save");
   expect(saved).not.toHaveBeenCalled();
@@ -61,7 +61,7 @@ test("profile errors do not report success", async () => {
 test("allows uploading and removing custom profile photo", async () => {
   supabase.rpc.mockResolvedValue({ data: [{ full_name: "Student Name" }] });
   const saved = jest.fn();
-  show(<ProfileEditor profile={{ id: "u2", full_name: "Student Name", role: "student" }} onSaved={saved} />);
+  show(<ProfileEditor profile={{ id: "u2", full_name: "Student Name", gradeLevel: "2nd Year College", courseTrack: "BS CS", institution: "University", role: "student" }} onSaved={saved} />);
 
   const fileInput = screen.getByTestId("profile-photo-input");
   const testFile = new File(["dummy image"], "avatar.png", { type: "image/png" });

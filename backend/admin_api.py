@@ -207,7 +207,8 @@ def install_account_guard(app):
             return await call_next(request)
         protected = path.startswith("/api/") or path in ("/upload", "/upload-stream") or path.startswith("/uploads/")
         # Preserve the existing provider callback contract; it has no user JWT.
-        callback = path.startswith("/api/plagiarism/webhook/")
+        callback = request.method == "POST" and path.startswith((
+            "/api/plagiarism/webhook/", "/api/plagiarism/evidence/"))
         if request.method != "OPTIONS" and protected and not callback:
             try:
                 account = await run_in_threadpool(authenticated_account, request)

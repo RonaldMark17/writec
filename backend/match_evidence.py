@@ -5,11 +5,77 @@ Export artifacts arrive independently; scan UUIDs prevent mixing versions.
 """
 import os
 import uuid
+import logging
+from urllib.parse import quote
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request
 from admin_api import supabase_request
 from copyleaks_service import copyleaks_service
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+EXPORT_WAIT_SECONDS = 300
+MAX_EXPORT_ATTEMPTS = 3
+
+
+def export_age(checkpoint):
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(checkpoint['evidence_exported_at'])).total_seconds()
+    except (KeyError, TypeError, ValueError):
+        return float('inf')
+
+
+def export_checkpoint(checkpoint):
+    return {**checkpoint, 'evidence_export': 'requested',
+            'evidence_export_attempts': int(checkpoint.get('evidence_export_attempts') or 0) + 1,
+            'evidence_exported_at': datetime.now(timezone.utc).isoformat()}
+
+
+def queue_missing_evidence(job, sources, background_tasks):
+    """Claim missing evidence without submitting a new paid scan.
+
+    A conditional database update claims the export across concurrent status
+    requests. Pending claims are reused; expired/failed claims have a bounded
+    retry budget. The caller excludes reports whose stored evidence is ready.
+    """
+    checkpoint = (job or {}).get('checkpoint') or {}
+    if (not job or job.get('state') != 'ready'
+            or not any(source.get('id') for source in sources)):
+        return
+    previous = checkpoint.get('evidence_export')
+    if previous == 'ready' or int(checkpoint.get('evidence_export_attempts') or 0) >= MAX_EXPORT_ATTEMPTS:
+        return
+    if previous and export_age(checkpoint) < EXPORT_WAIT_SECONDS:
+        return
+    # Compare the observed claim timestamp as well as its state. Only one reader
+    # can replace an expired/failed claim; ordinary polling never repeats exports.
+    condition = ('&checkpoint->>evidence_export=eq.' + quote(previous, safe='')
+                 if previous else '&checkpoint->>evidence_export=is.null')
+    stamp = checkpoint.get('evidence_exported_at')
+    condition += ('&checkpoint->>evidence_exported_at=eq.' + quote(stamp, safe='')
+                  if stamp else '&checkpoint->>evidence_exported_at=is.null')
+    checkpoint = export_checkpoint(checkpoint)
+    token = os.environ['SUPABASE_SERVICE_ROLE_KEY']
+    claimed = supabase_request('/rest/v1/submission_jobs?id=eq.' + str(uuid.UUID(job['id']))
+        + '&state=eq.ready' + condition, token,
+        {'checkpoint': checkpoint}, method='PATCH')
+    if claimed:
+        job['checkpoint'] = checkpoint
+        background_tasks.add_task(export_saved_evidence, job['id'], sources, checkpoint)
+
+
+def export_saved_evidence(job_id, sources, checkpoint):
+    try:
+        copyleaks_service.export_match_evidence('j' + uuid.UUID(job_id).hex, sources,
+            os.getenv('COPYLEAKS_WEBHOOK_BASE_URL') or os.getenv('COPYLEAKS_WEBHOOK_URL') or '')
+    except Exception as error:
+        log.warning('Evidence export failed job=%s error_type=%s', job_id, type(error).__name__)
+        # Failed export never changes the completed score or initiates a rescan.
+        supabase_request('/rest/v1/submission_jobs?id=eq.' + str(uuid.UUID(job_id))
+            + '&checkpoint->>evidence_export=eq.requested'
+            + ('&checkpoint->>evidence_exported_at=eq.' + quote(checkpoint['evidence_exported_at'], safe='')
+               if checkpoint.get('evidence_exported_at') else ''), os.environ['SUPABASE_SERVICE_ROLE_KEY'],
+            {'checkpoint': {**checkpoint, 'evidence_export': 'unavailable'}}, method='PATCH')
 
 
 def compact_artifact(artifact, payload):
@@ -48,7 +114,7 @@ async def receive_evidence(scan_id: str, artifact: str, request: Request):
     except ValueError:
         raise HTTPException(400, 'Invalid scan identity.') from None
     token = os.environ['SUPABASE_SERVICE_ROLE_KEY']
-    jobs = supabase_request('/rest/v1/submission_jobs?id=eq.' + job_id + '&select=id,provider_result', token)
+    jobs = supabase_request('/rest/v1/submission_jobs?id=eq.' + job_id + '&select=id,submission_id,provider_result', token)
     if not jobs:
         raise HTTPException(404, 'Scan has been replaced or removed.')
     summary = jobs[0].get('provider_result') or {}
@@ -65,6 +131,8 @@ async def receive_evidence(scan_id: str, artifact: str, request: Request):
     # Idempotent upsert of one artifact; simultaneous callbacks cannot overwrite each other.
     supabase_request('/rest/v1/rpc/save_submission_match_artifact', token,
                      {'job_key': job_id, 'artifact_key': artifact, 'artifact_data': data})
+    log.info('Evidence callback saved scan=%s artifact=%s submission=%s signature_valid=true ranges=%s',
+             scan_id, artifact, jobs[0].get('submission_id'), len(data.get('ranges', [])))
     return {'saved': True}
 
 
@@ -72,6 +140,11 @@ def attach_evidence(report, artifacts):
     """Project export data onto verified reports without replacing sources or scores."""
     report = dict(report)
     crawled = artifacts.get('crawled', {}).get('text')
+    if isinstance(crawled, str):
+        display = report.get('transcribedText') or ''
+        log.debug('Evidence text scan=%s provider_units=%s display_units=%s exact=%s',
+                  report.get('scanId'), len(crawled.encode('utf-16-le')) // 2,
+                  len(display.encode('utf-16-le')) // 2, crawled == display)
     sources = []
     for source in report.get('matchedSources') or []:
         source = dict(source)
@@ -81,8 +154,9 @@ def attach_evidence(report, artifacts):
             encoded = crawled.encode('utf-16-le')
             fragments = []
             for span in detail.get('ranges') or []:
-                start, end = span['start'], min(span['end'], len(encoded) // 2)
-                if start >= end:
+                start, end = span.get('start'), span.get('end')
+                if (type(start) is not int or type(end) is not int
+                        or start < 0 or end > len(encoded) // 2 or start >= end):
                     continue
                 try:
                     phrase = encoded[start * 2:end * 2].decode('utf-16-le')

@@ -11,14 +11,17 @@ export function useClassroomArchiveSync(classrooms, setClassrooms) {
     let pending = false;
     function apply(rows) {
       if (cancelled) return;
-      const values = new Map(rows.filter((row) => typeof row.is_archived === "boolean").map((row) => [row.id, row.is_archived]));
-      setClassrooms((current) => current.map((c) => values.has(c.id) ? { ...c, isArchived: values.get(c.id) } : c));
+      const values = new Map(rows.map(row => [row.id, row]));
+      setClassrooms((current) => current.map((c) => values.has(c.id) ? { ...c,
+        ...(typeof values.get(c.id).is_archived === "boolean" ? { isArchived: values.get(c.id).is_archived } : {}),
+        ...(typeof values.get(c.id).classroom_name === "string" ? { name: values.get(c.id).classroom_name } : {}),
+      } : c));
     }
     async function refresh() {
       if (pending || document.hidden) return;
       pending = true;
       try {
-        const { data, error } = await supabase.from("classroomTable").select("id, is_archived").in("id", classroomIds);
+        const { data, error } = await supabase.from("classroomTable").select("id, is_archived, classroom_name").in("id", classroomIds);
         if (!error && Array.isArray(data)) apply(data);
       } finally { pending = false; }
     }

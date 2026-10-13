@@ -1,3 +1,4 @@
+import ValidatedForm, { ValidatedInput, ValidatedSelect } from "../ValidatedForm";
 import { ShieldIcon, ClockIcon, CheckIcon, CloseIcon, RefreshIcon, EditIcon, LeaveIcon, DownloadIcon, SearchIcon } from "./dashboard/shared";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, NavLink, useLocation } from "react-router-dom";
@@ -169,10 +170,10 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
           {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
           {notice && <p role="status" className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}
           {["users", "approvals", "classes", "activity-logs"].includes(page) && <div className="flex flex-wrap gap-3">
-            <label className="flex flex-1 flex-col gap-1 text-sm"><span className="inline-flex items-center gap-2"><SearchIcon className="h-4 w-4" />Search</span><input disabled={saving} type="search" maxLength={200} value={search} onChange={(e) => { setSearch(e.target.value); setPageNumber(1); }} placeholder={page === "classes" ? "Class name or teacher" : ["users", "approvals"].includes(page) ? "Name or email" : "User, action, or related record"} className={control} /></label>
-            {page !== "classes" && <label className="flex flex-col gap-1 text-sm">Role<select disabled={saving} value={role} onChange={(e) => { setRole(e.target.value); setPageNumber(1); }} className={control}><option value="all">All roles</option><option value="student">Student</option><option value="teacher">Teacher</option>{page === "activity-logs" && <option value="admin">Admin</option>}</select></label>}
-            {page === "users" && <label className="flex flex-col gap-1 text-sm">Status<select disabled={saving} value={status} onChange={(e) => { setStatus(e.target.value); setPageNumber(1); }} className={control}><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="pending">Pending approval</option><option value="rejected">Rejected</option></select></label>}
-            {page === "activity-logs" && <label className="flex flex-col gap-1 text-sm">Date (UTC)<input type="date" value={date} onChange={(e) => { setDate(e.target.value); setPageNumber(1); }} className={control} /></label>}
+            <label className="flex flex-1 flex-col gap-1 text-sm"><span className="inline-flex items-center gap-2"><SearchIcon className="h-4 w-4" />Search</span><ValidatedInput disabled={saving} type="search" maxLength={200} value={search} onChange={(e) => { setSearch(e.target.value); setPageNumber(1); }} placeholder={page === "classes" ? "Class name or teacher" : ["users", "approvals"].includes(page) ? "Name or email" : "User, action, or related record"} className={control} /></label>
+            {page !== "classes" && <label className="flex flex-col gap-1 text-sm">Role<ValidatedSelect disabled={saving} value={role} onChange={(e) => { setRole(e.target.value); setPageNumber(1); }} className={control}><option value="all">All roles</option><option value="student">Student</option><option value="teacher">Teacher</option>{page === "activity-logs" && <option value="admin">Admin</option>}</ValidatedSelect></label>}
+            {page === "users" && <label className="flex flex-col gap-1 text-sm">Status<ValidatedSelect disabled={saving} value={status} onChange={(e) => { setStatus(e.target.value); setPageNumber(1); }} className={control}><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="pending">Pending approval</option><option value="rejected">Rejected</option></ValidatedSelect></label>}
+            {page === "activity-logs" && <label className="flex flex-col gap-1 text-sm">Date (UTC)<ValidatedInput type="date" value={date} onChange={(e) => { setDate(e.target.value); setPageNumber(1); }} className={control} /></label>}
             <button className={`${action} self-end`} disabled={saving} onClick={resetFilters}>Clear filters</button>
             <button className={`${action} self-end`} disabled={loading || !rows.length} onClick={() => {
               try { downloadAdminCsv(page === "approvals" ? "users" : page, rows, pageNumber); setNotice(`Exported ${rows.length} records from page ${pageNumber}.`); }
@@ -192,9 +193,9 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
               <button className={action} disabled={saving} onClick={() => { setSelected([]); setBatchFailures({}); }}><CloseIcon />Clear Selection</button>
             </div>}
             {["users", "approvals"].includes(page) && rows.length > 0 && <Table headings={[
-              ...(page === "approvals" ? [<input ref={selectAllRef} type="checkbox" aria-label="Select all pending users on this page" disabled={saving || !eligible.length} checked={eligible.length > 0 && selected.length === eligible.length} onChange={event => setSelected(event.target.checked ? eligible.map(user => user.id) : [])} />] : []),
+              ...(page === "approvals" ? [<ValidatedInput ref={selectAllRef} type="checkbox" aria-label="Select all pending users on this page" disabled={saving || !eligible.length} checked={eligible.length > 0 && selected.length === eligible.length} onChange={event => setSelected(event.target.checked ? eligible.map(user => user.id) : [])} />] : []),
               "Name", "Email", "Role", "Date registered", "Status", "Actions"]}>{rows.map(u => <tr key={u.id} className={selected.includes(u.id) ? "bg-emerald-50" : ""}>
-              {page === "approvals" && <Cell><input type="checkbox" aria-label={`Select ${u.full_name}`} checked={selected.includes(u.id)} disabled={saving || !eligible.some(user => user.id === u.id)} onChange={() => toggleSelection(u.id)} /></Cell>}
+              {page === "approvals" && <Cell><ValidatedInput type="checkbox" aria-label={`Select ${u.full_name}`} checked={selected.includes(u.id)} disabled={saving || !eligible.some(user => user.id === u.id)} onChange={() => toggleSelection(u.id)} /></Cell>}
               <Cell>{u.full_name}{batchFailures[u.id] && <p role="alert" className="mt-1 text-sm text-red-700">{batchFailures[u.id]}</p>}</Cell><Cell>{u.email}</Cell><Cell>{u.role}</Cell><Cell>{dateLabel(u.registered_at)}</Cell><Cell><Status value={u.account_status}/></Cell>
               <Cell><div className="flex gap-2"><button disabled={saving || detailLoading} className={action} onClick={() => view(u)}>View</button>
               <button disabled={saving} className={action} onClick={() => setConfirmation({...u,nextStatus:u.account_status === "active" ? "inactive" : "active"})}>{u.account_status === "active" ? <CloseIcon /> : <CheckIcon className="h-4 w-4" />}{u.account_status === "active" ? "Disable" : ["pending","rejected"].includes(u.account_status) ? "Approve" : "Reactivate"}</button>
@@ -209,14 +210,14 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
       </div>
       {creating && <AdminModal title="Create account" onClose={() => { if (!saving) { setCreating(false); setNewAccount({ full_name: "", email: "", password: "", role: "student" }); } }}>
         <p className="text-sm text-gray-600">Create an approved student or teacher account. Its email will be marked confirmed; verify the address belongs to the intended person. No email is sent automatically.</p>
-        <form onSubmit={createAccount} className="space-y-4">
-          <label className="flex flex-col gap-1">Full name<input required maxLength={150} className={control} value={newAccount.full_name} onChange={(e) => setNewAccount({ ...newAccount, full_name: e.target.value })} /></label>
-          <label className="flex flex-col gap-1">Email address<input required type="email" maxLength={254} placeholder="name@school.edu.ph" className={control} value={newAccount.email} onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })} /></label>
-          <label className="flex flex-col gap-1">Account role<select className={control} value={newAccount.role} onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}><option value="student">Student</option><option value="teacher">Teacher</option></select></label>
-          <label className="flex flex-col gap-1">Password<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} className={control} value={newAccount.password} onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })} /></label>
+        <ValidatedForm onSubmit={createAccount} className="space-y-4">
+          <label className="flex flex-col gap-1">Full name<ValidatedInput required maxLength={150} className={control} value={newAccount.full_name} onChange={(e) => setNewAccount({ ...newAccount, full_name: e.target.value })} /></label>
+          <label className="flex flex-col gap-1">Email address<ValidatedInput required type="email" maxLength={254} placeholder="name@school.edu.ph" className={control} value={newAccount.email} onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })} /></label>
+          <label className="flex flex-col gap-1">Account role<ValidatedSelect className={control} value={newAccount.role} onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}><option value="student">Student</option><option value="teacher">Teacher</option></ValidatedSelect></label>
+          <label className="flex flex-col gap-1">Password<ValidatedInput required type="password" autoComplete="new-password" minLength={8} maxLength={128} className={control} value={newAccount.password} onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })} /></label>
           {error && <p role="alert" className="text-red-700">{error}</p>}
           <button disabled={saving} className={action} type="submit">{saving ? "Creating?" : "Create and approve"}</button>
-        </form>
+        </ValidatedForm>
       </AdminModal>}
       {editing && <ProfileEditor profile={profile} onSaved={onProfileUpdated} onClose={() => setEditing(false)} />}
       {detail && <AdminModal title={page === "classes" ? "Class details" : "User details"} onClose={() => setDetail(null)}>

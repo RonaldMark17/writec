@@ -1,15 +1,14 @@
 """Teacher-facing results validated against the durable provider callback."""
 import os
 import uuid
-from datetime import datetime, timezone
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from admin_api import authenticated_account, supabase_request
 from submission_checker import normalize_provider
 from copyleaks_service import copyleaks_service
 from user_preferences import review_badge
-from match_evidence import attach_evidence
+from match_evidence import attach_evidence, queue_missing_evidence, export_age, EXPORT_WAIT_SECONDS
 
 router = APIRouter(prefix='/api/submissions', tags=['Submissions'])
 
@@ -38,17 +37,22 @@ def verified_status(row, job, artifacts=None):
             # worker subsequently replaced those fields with a local estimate.
             report = {**report, **provider, 'provider': 'copyleaks', 'scanId': scan_id,
                       'scanStatus': 'Completed', 'summary': 'Verified Copyleaks API result.'}
-            if artifacts:
+            if ('transcribedText' not in report and artifacts
+                    and artifacts.get('crawled', {}).get('text') == row.get('transcribed_text')):
+                # Older summary serializers omitted this binding. Restore it
+                # only from an exact provider-text comparison, never the score.
+                report['transcribedText'] = row['transcribed_text']
+            if not provider['matchedSources']:
+                report['evidenceStatus'] = 'ready'
+            elif artifacts:
                 report = attach_evidence(report, artifacts)
             else:
                 report['evidenceStatus'] = 'unavailable'
             if report.get('evidenceStatus') in ('loading', 'unavailable'):
-                try:
-                    age = (datetime.now(timezone.utc) - datetime.fromisoformat(checkpoint['evidence_exported_at'])).total_seconds()
-                    waiting = checkpoint.get('evidence_export') == 'requested' and 0 <= age < 180
-                except (KeyError, TypeError, ValueError):
-                    waiting = False
-                report['evidenceStatus'] = 'loading' if waiting and not (artifacts or {}).get('completion') else 'unavailable'
+                waiting = checkpoint.get('evidence_export') == 'requested' and 0 <= export_age(checkpoint) < EXPORT_WAIT_SECONDS
+                # A completion from a previous failed export must not terminate
+                # a new claim while its delayed callbacks are still arriving.
+                report['evidenceStatus'] = 'loading' if waiting else 'unavailable'
             score = provider['score']
             report.update(review_badge(score, checkpoint.get('preferences') or report.get('preferences') or {}))
             row['scan_result'] = report
@@ -68,7 +72,7 @@ def verified_status(row, job, artifacts=None):
 
 
 @router.get('/status')
-def teacher_submission_status(request: Request):
+def teacher_submission_status(request: Request, background_tasks: BackgroundTasks):
     account = authenticated_account(request)
     if account.get('role') != 'teacher':
         raise HTTPException(403, 'Only teachers can inspect API processing details.')
@@ -100,6 +104,15 @@ def teacher_submission_status(request: Request):
     for row in rows:
         job = jobs.get(str(row['id']))
         verified, state = verified_status(row, job, evidence.get(str((job or {}).get('id'))))
+        report = verified.get('scan_result') or {}
+        if (state['state'] == 'ready' and not report.get('stale')
+                and report.get('provider') == 'copyleaks' and report.get('evidenceStatus') == 'unavailable'):
+            try:
+                queue_missing_evidence(job, report.get('matchedSources') or [], background_tasks)
+                verified, state = verified_status(row, job, evidence.get(str((job or {}).get('id'))))
+            except Exception:
+                # Missing storage/configuration must not hide the existing report.
+                pass
         results.append(verified)
         progress[str(row['id'])] = state
     try:

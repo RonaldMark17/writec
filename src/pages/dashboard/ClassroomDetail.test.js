@@ -12,6 +12,7 @@ test("shows only this classroom's homework and switches to its members", () => {
   ];
   render(<ClassroomDetail classroom={{ id: "c1", name: "English", section: "A" }} assignments={assignments} onBack={back} onOpenAssignment={open} />);
   expect(screen.getByText("English essay")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Edit Classroom Name" })).not.toBeInTheDocument();
   expect(screen.queryByText("Biology report")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /English essay/ }));
   expect(open).toHaveBeenCalledWith(assignments[0]);

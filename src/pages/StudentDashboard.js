@@ -1,3 +1,5 @@
+import ClassroomInformation from "./dashboard/ClassroomInformation";
+import ValidatedForm, { ValidatedInput, ValidatedTextarea, ValidatedSelect } from "../ValidatedForm";
 import { ArrowLeftIcon } from "./dashboard/shared";
 import StudentSimilarity from "./dashboard/StudentSimilarity";
 import { PaginatedList } from "./dashboard/Pagination";
@@ -174,14 +176,17 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   const [loadedAssignments, setAssignments] =
     useState([]);
 
-  const [submissions, setSubmissions] =
+  const [loadedSubmissions, setSubmissions] =
     useState([]);
+  const submissions = useMemo(() => loadedSubmissions.map(submission => ({ ...submission,
+    classroomName: classrooms.find(c => c.id === submission.classroomId)?.name || submission.classroomName,
+  })), [loadedSubmissions, classrooms]);
 
   const assignments = useMemo(() => loadedAssignments.map((assignment) => {
     const submission = submissions.filter((row) => row.studentId === profile?.id &&
       row.assignmentId === assignment.id && row.classroomId === assignment.classroomId)
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
-    return { ...assignment, isArchived: Boolean(classrooms.find((c) => c.id === assignment.classroomId)?.isArchived),
+    return { ...assignment, classroomName: classrooms.find(c => c.id === assignment.classroomId)?.name || assignment.classroomName, isArchived: Boolean(classrooms.find((c) => c.id === assignment.classroomId)?.isArchived),
       submitted: Boolean(submission) && !submission?.revisionRequest, revisionRequest: submission?.revisionRequest, submission: submission || null };
   }), [loadedAssignments, submissions, classrooms, profile?.id]);
   const [studentDataReady, setStudentDataReady] = useState(false);
@@ -1226,10 +1231,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 </button>
               </div>
 
-              <form onSubmit={handleJoinClassroom} className="mt-5 space-y-4">
+              <ValidatedForm onSubmit={handleJoinClassroom} className="mt-5 space-y-4">
                 <label className="block">
                   <span className="text-xs font-medium text-[#3c4043]">Class code</span>
-                  <input
+                  <ValidatedInput
                     type="text"
                     value={joinCode}
                     onChange={(event) => { setJoinCode(event.target.value); setJoinError(""); }}
@@ -1268,7 +1273,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     {isJoiningClassroom ? "Joining..." : "Join"}
                   </button>
                 </div>
-              </form>
+              </ValidatedForm>
             </div>
           </div>
         )}
@@ -1466,6 +1471,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   >
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
+                        <ClassroomInformation classroom={classroom} />
                         <div className="min-w-0 pr-14">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3>
@@ -1605,7 +1611,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   <span className="text-xs font-medium text-[#3c4043]">
                     Classroom filter
                   </span>
-                  <select
+                  <ValidatedSelect
                     value={selectedClassroomId}
                     onChange={(event) => {
                       setSelectedClassroomId(event.target.value);
@@ -1623,24 +1629,24 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         {classroom.name}{classroom.section ? ` — Section ${classroom.section}` : ""}
                       </option>
                     ))}
-                  </select>
+                  </ValidatedSelect>
                 </label>
               )}
             </div>
 
             {!selectedAssignment && <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4">
               <label className="flex-1 text-sm">Search assignments
-                <input type="search" value={todoSearch} onChange={e => setTodoSearch(e.target.value)} placeholder="Title, subject, or section" className="mt-1 block w-full rounded border p-2" />
+                <ValidatedInput type="search" value={todoSearch} onChange={e => setTodoSearch(e.target.value)} placeholder="Title, subject, or section" className="mt-1 block w-full rounded border p-2" />
               </label>
               <label className="text-sm">Assignment status
-                <select value={todoStatus} onChange={e => setTodoStatus(e.target.value)} className="mt-1 block rounded border p-2">
+                <ValidatedSelect value={todoStatus} onChange={e => setTodoStatus(e.target.value)} className="mt-1 block rounded border p-2">
                   <option value="all">All statuses</option><option value="pending">To do</option><option value="submitted">Turned In</option><option value="revision">Revision requested</option>
-                </select>
+                </ValidatedSelect>
               </label>
               <label className="text-sm">Deadline
-                <select value={todoDeadline} onChange={e => setTodoDeadline(e.target.value)} className="mt-1 block rounded border p-2">
+                <ValidatedSelect value={todoDeadline} onChange={e => setTodoDeadline(e.target.value)} className="mt-1 block rounded border p-2">
                   <option value="all">All deadlines</option><option value="overdue">Overdue</option><option value="soon">Due soon</option><option value="undated">No due date</option>
-                </select>
+                </ValidatedSelect>
               </label>
               <button type="button" className="rounded border px-3 py-2 text-sm" onClick={() => { setTodoSearch(""); setTodoStatus("all"); setTodoDeadline("all"); }}>Clear search and filters</button>
               <p role="status" className="w-full text-xs text-gray-600">{assignmentGroups.allCount} matching assignment{assignmentGroups.allCount === 1 ? "" : "s"}</p>
@@ -1842,7 +1848,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     )}
 
                     {isDraftOpen && (!assignment.submitted || submissionDraft.retrySubmissionId) && (
-                      <form
+                      <ValidatedForm
                         id={`assignment-draft-${assignment.id}`}
                         onSubmit={handleSubmitAssignment}
                         className="mt-5 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:p-5"
@@ -1851,7 +1857,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           <span className="text-sm font-extrabold text-gray-800">
                             Essay title
                           </span>
-                          <input
+                          <ValidatedInput
                             type="text"
                             value={submissionDraft.essayTitle}
                             disabled={isSubmittingEssay}
@@ -1929,7 +1935,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                     </span>
                                   </>
                                 )}
-                                <input
+                                <ValidatedInput
                                   type="file"
                                   multiple
                                   disabled={isSubmittingEssay}
@@ -1984,7 +1990,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                               <span className="text-sm font-extrabold text-gray-800">
                                 Paste text
                               </span>
-                              <textarea
+                              <ValidatedTextarea
                                 value={submissionDraft.text}
                                 disabled={isSubmittingEssay}
                                 onChange={(event) =>
@@ -2022,7 +2028,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           <UploadIcon className="h-5 w-5" />
                           {isSubmittingEssay ? "Saving your work..." : transcription.status === "processing" && submissionDraft.mode !== "text" ? "Transcribing…" : submissionDraft.retrySubmissionId ? "Resubmit assignment" : "Submit assignment"}
                         </button>
-                      </form>
+                      </ValidatedForm>
                     )}
                     {isDraftOpen && <AssignmentComments key={`${assignment.classroomId}:${assignment.id}`} assignmentId={assignment.id} classroomId={assignment.classroomId} profile={profile} />}
                   </article>
@@ -2074,7 +2080,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 {/* Search */}
                 <div className="relative flex-1 min-w-[200px]">
                   <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
-                  <input
+                  <ValidatedInput
                     type="search"
                     value={submissionSearch}
                     onChange={(e) => setSubmissionSearch(e.target.value)}
@@ -2095,7 +2101,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
                 {/* Classroom Filter */}
                 {classrooms.length > 0 && (
-                  <select
+                  <ValidatedSelect
                     value={submissionClassroomId}
                     onChange={(e) => setSubmissionClassroomId(e.target.value)}
                     className="h-10 rounded-lg border border-[#dadce0] bg-white px-3 text-xs sm:text-sm font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] max-w-full sm:max-w-[220px] truncate"
@@ -2106,7 +2112,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                         {c.name} {c.section ? `— ${c.section}` : ""}
                       </option>
                     ))}
-                  </select>
+                  </ValidatedSelect>
                 )}
               </div>
 
@@ -2133,7 +2139,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   ))}
                 </div>
 
-                <select
+                <ValidatedSelect
                   value={submissionSort}
                   onChange={(e) => setSubmissionSort(e.target.value)}
                   className="h-9 rounded-lg border border-[#dadce0] bg-white px-2.5 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333]"
@@ -2142,7 +2148,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   <option value="oldest">Oldest first</option>
                   <option value="grade">Highest grade</option>
                   <option value="assignment">Assignment (A–Z)</option>
-                </select>
+                </ValidatedSelect>
               </div>
             </div>
 

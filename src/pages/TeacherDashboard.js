@@ -1,3 +1,6 @@
+import { CloseIcon } from "./dashboard/shared";
+import ClassroomInformation, { ClassCode } from "./dashboard/ClassroomInformation";
+import ValidatedForm, { ValidatedInput, ValidatedTextarea, ValidatedSelect } from "../ValidatedForm";
 import { compareStudentsByLastName } from "./dashboard/rosterSort";
 import SimilarityPreview from "./dashboard/SimilarityPreview";
 import SubmissionReview from "./dashboard/SubmissionReview";
@@ -154,11 +157,27 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   const [copyForm, setCopyForm] = useState({ name: "", section: "", subject: "" });
   const [isCopying, setIsCopying] = useState(false);
 
-  const [assignments, setAssignments] =
+  const [loadedAssignments, setAssignments] =
     useState([]);
+  const assignments = useMemo(() => loadedAssignments.map(assignment => ({ ...assignment,
+    classroomName: classrooms.find(c => c.id === assignment.classroomId)?.name || assignment.classroomName,
+  })), [loadedAssignments, classrooms]);
 
   const [submissions, setSubmissions] =
     useState([]);
+
+  useEffect(() => {
+    setSubmissions(current => {
+      let changed = false;
+      const next = current.map(item => {
+        const name = classrooms.find(c => String(c.id) === String(item.classroomId))?.name;
+        if (!name || name === item.classroomName) return item;
+        changed = true;
+        return { ...item, classroomName: name };
+      });
+      return changed ? next : current;
+    });
+  }, [classrooms]);
 
   const [classroomForm, setClassroomForm] =
     useState(emptyClassroomForm);
@@ -510,6 +529,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       setAssignmentFilterClassroomId(assignment.classroomId);
     }
   }
+
+  const [gradesOrigin, setGradesOrigin] = useState(null);
 
   function selectGradeClassroom(classroomId) {
     setSelectedSubmissionsClassroomId(classroomId);
@@ -1995,27 +2016,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   };
 
-  const handleSaveReviewText = async () => {
-    if (isSavingGrade || isReviewScanning) return false;
-    setIsSavingGrade(true);
-    setErrorMessage(""); setSuccessMessage("");
-    try {
-      const { data, error } = await supabase.rpc("edit_submission_transcription", {
-        submission_key: String(reviewingSubmission.id), corrected_text: reviewTranscribedText,
-        expected_text: reviewingSubmission.transcribedText || "",
-      });
-      if (error || !data?.id) throw new Error(error?.message || "Text could not be saved.");
-      const update = row => ({ ...row, transcribedText: data.transcribed_text,
-        scanResult: data.scan_result, returnedAt: data.returned_at });
-      setSubmissions(rows => rows.map(row => row.id === reviewingSubmission.id ? update(row) : row));
-      setReviewingSubmission(update);
-      setReviewScanResult(data.scan_result);
-      setSuccessMessage("Extracted student work updated successfully.");
-      return true;
-    } catch (error) { setErrorMessage(error.message); return false; }
-    finally { setIsSavingGrade(false); }
-  };
-
   const handleRunReviewScan = async () => {
     if (!reviewingSubmission || isReviewScanning || isSavingGrade) return;
     setIsReviewScanning(true);
@@ -2023,7 +2023,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     try {
       const { data, error } = await supabase.rpc("retry_submission_processing", {
         submission_key: String(reviewingSubmission.id),
-        corrected_text: reviewTranscribedText.trim() || null,
+        corrected_text: reviewingSubmission.transcribedText || null,
       });
       if (error || !data?.state) throw new Error(error?.message || "Could not queue this check.");
       const update = (row) => ({ ...row, returnedAt: null, processingState: data.state, processingError: null });
@@ -2043,11 +2043,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     const latest = submissions.find((row) => row.id === reviewingSubmission.id);
     if (!latest || !latest.processingState || (latest.processingState === reviewingSubmission.processingState
       && latest.processingError === reviewingSubmission.processingError
+      && latest.classroomName === reviewingSubmission.classroomName
       && latest.transcribedText === reviewingSubmission.transcribedText
       && JSON.stringify(latest.scanResult) === JSON.stringify(reviewingSubmission.scanResult))) return;
     setReviewingSubmission((current) => ({ ...current, ...latest }));
     if (latest.processingState === "ready") {
-      setReviewTranscribedText(current => current === (reviewingSubmission.transcribedText || "") || isReviewScanning ? (latest.transcribedText || "") : current);
+      setReviewTranscribedText(latest.transcribedText || "");
       setReviewScanResult(latest.scanResult || null);
     } else {
       setReviewScanResult(null);
@@ -2058,10 +2059,6 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   const handleSaveGrade = async (event, returnWork = false) => {
     if (event) event.preventDefault();
     if (!reviewingSubmission || gradeSaveInFlight.current || isSavingGrade || isReviewScanning) return;
-    if (reviewTranscribedText.trim() !== String(reviewingSubmission.transcribedText || "").trim()) {
-      setErrorMessage("Recheck the corrected transcription before saving or returning the grade.");
-      return;
-    }
 
     gradeSaveInFlight.current = true;
     setIsSavingGrade(true);
@@ -2363,7 +2360,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
                 <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
+                <ValidatedInput
                   type="text"
                   value={submissionRosterSearch}
                   onChange={(e) => setSubmissionRosterSearch(e.target.value)}
@@ -2587,6 +2584,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         onPageChange={(page) => {
           setSuccessMessage("");
           setErrorMessage("");
+          if (page === "submissions" && activePage !== "submissions") setGradesOrigin(openedClassroomId || null);
           if (page === "submissions" && openedClassroomId &&
               String(selectedAssignment?.classroomId) !== String(openedClassroomId)) {
             selectGradeClassroom(openedClassroomId);
@@ -2638,10 +2636,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 </button>
               </div>
 
-              <form onSubmit={handleCreateClassroom} className="mt-5 space-y-4">
+              <ValidatedForm onSubmit={handleCreateClassroom} className="mt-5 space-y-4">
                 <label className="block">
-                  <span className="text-xs font-medium text-[#3c4043]">Subject name (required)</span>
-                  <input
+                  <span className="text-xs font-medium text-[#3c4043]">Classroom name (required)</span>
+                  <ValidatedInput
                     type="text"
                     value={classroomForm.name}
                     onChange={(e) => setClassroomForm((f) => ({ ...f, name: e.target.value }))}
@@ -2653,7 +2651,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                 <label className="block">
                   <span className="text-xs font-medium text-[#3c4043]">Section (required)</span>
-                  <input
+                  <ValidatedInput
                     type="text"
                     value={classroomForm.section}
                     onChange={(e) => setClassroomForm((f) => ({ ...f, section: e.target.value }))}
@@ -2682,7 +2680,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     {isSavingClassroom ? "Creating..." : "Create"}
                   </button>
                 </div>
-              </form>
+              </ValidatedForm>
             </div>
           </div>
         )}
@@ -2708,12 +2706,12 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 </button>
               </div>
 
-              <form onSubmit={handleCreateAssignment} className="mt-5 space-y-4">
+              <ValidatedForm onSubmit={handleCreateAssignment} className="mt-5 space-y-4">
                 <p className="text-sm text-[#5f6368]">{classrooms.find((c) => c.id === assignmentForm.classroomId)?.name}</p>
 
                 <label className="block">
                   <span className="text-xs font-medium text-[#3c4043]">Title</span>
-                  <input
+                  <ValidatedInput
                     type="text"
                     value={assignmentForm.title}
                     onChange={(e) => setAssignmentForm((f) => ({ ...f, title: e.target.value }))}
@@ -2725,7 +2723,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                 <label className="block">
                   <span className="text-xs font-medium text-[#3c4043]">Instructions (optional)</span>
-                  <textarea
+                  <ValidatedTextarea
                     value={assignmentForm.instructions}
                     onChange={(e) => setAssignmentForm((f) => ({ ...f, instructions: e.target.value }))}
                     placeholder="Add instructions, prompt details, and guidelines for students..."
@@ -2736,7 +2734,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                 <label className="block">
                   <span className="text-xs font-medium text-[#3c4043]">Due date</span>
-                  <input
+                  <ValidatedInput
                     type="datetime-local"
                     value={assignmentForm.dueDate}
                     onChange={(e) => setAssignmentForm((f) => ({ ...f, dueDate: e.target.value }))}
@@ -2746,7 +2744,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                 <div className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-3.5">
                   <label className="flex items-start gap-3 cursor-pointer">
-                    <input
+                    <ValidatedInput
                       type="checkbox"
                       checked={assignmentForm.acceptLateSubmissions !== false}
                       onChange={(e) => setAssignmentForm((f) => ({ ...f, acceptLateSubmissions: e.target.checked }))}
@@ -2780,7 +2778,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     {isSavingAssignment ? "Assigning..." : "Assign"}
                   </button>
                 </div>
-              </form>
+              </ValidatedForm>
             </div>
           </div>
         )}
@@ -2813,6 +2811,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             onCopyClassroom={handleOpenCopyModal}
             onExportCSV={handleExportClassroomCSV}
             onExportGrades={(classroomId) => handleExportGrades({ classroomId })}
+            onRenamed={row => {
+              setClassrooms(current => current.map(c => String(c.id) === String(row.id) ? { ...c, name: row.classroom_name } : c));
+              setSubmissions(current => current.map(item => String(item.classroomId) === String(row.id) ? { ...item, classroomName: row.classroom_name } : item));
+            }}
             onMemberRemoved={() => { loadTeacherData(); }}
           />
         )}
@@ -2944,6 +2946,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   >
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
+                        <ClassroomInformation classroom={classroom} teacherView />
                         <div className="min-w-0 pr-14">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3>
@@ -2998,21 +3001,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <div className="p-4 pt-7 flex-1 flex flex-col justify-between">
                       <div>
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 rounded-md bg-[#f8f9fa] border border-[#dadce0] px-2.5 py-1 text-xs text-[#3c4043]">
-                            <span className="font-medium text-[#5f6368]">Code:</span>
-                            <span className="font-mono font-bold">{classroom.code}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(classroom.code);
-                                setSuccessMessage(`Class code ${classroom.code} copied!`);
-                              }}
-                              className="ml-1 text-[#5f6368] hover:text-[#137333]"
-                              title="Copy class code"
-                            >
-                              <CopyIcon className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
+                          <ClassCode key={classroom.id} code={classroom.code} />
 
                           <span className="text-xs text-[#5f6368]">
                             {classroom.students} {classroom.students === 1 ? "student" : "students"}
@@ -3051,6 +3040,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             type="button"
                             onClick={() => {
                               selectGradeClassroom(classroom.id);
+                              setGradesOrigin(classroom.id);
                               setActivePage("submissions");
                             }}
                             className="inline-flex items-center gap-1 text-[#5f6368] hover:text-[#202124]"
@@ -3182,7 +3172,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <label htmlFor="section-filter" className="text-xs font-medium text-[#5f6368] shrink-0">
                           Section:
                         </label>
-                        <select
+                        <ValidatedSelect
                           id="section-filter"
                           value={assignmentFilterClassroomId}
                           onChange={(e) => { setAssignmentFilterClassroomId(e.target.value); setOpenedClassroomId(e.target.value === "all" ? null : e.target.value); }}
@@ -3194,7 +3184,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                               {c.name} — Section {c.section}
                             </option>
                           ))}
-                        </select>
+                        </ValidatedSelect>
                       </div>
                     )}
                   </div>
@@ -3483,11 +3473,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     </div>
 
                     {isEditingTranscript && (
-                      <form onSubmit={handleRunManualCheck} className="mt-4 border-t border-emerald-200/70 pt-4">
+                      <ValidatedForm onSubmit={handleRunManualCheck} className="mt-4 border-t border-emerald-200/70 pt-4">
                         <label className="block text-xs font-black uppercase tracking-wider text-emerald-900 mb-2">
                           Edit transcript before re-scanning:
                         </label>
-                        <textarea
+                        <ValidatedTextarea
                           value={uploadMode === "text" ? manualCheckText : transcribedText}
                           onChange={(e) => {
                             if (uploadMode === "text") {
@@ -3521,11 +3511,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             </button>
                           </div>
                         </div>
-                      </form>
+                      </ValidatedForm>
                     )}
                   </div>
                 ) : (
-                  <form
+                  <ValidatedForm
                     id="scan-station-form-top"
                     onSubmit={handleRunManualCheck}
                     className="flex min-h-[560px] flex-col rounded-lg border border-gray-200 bg-gray-50 p-4 sm:p-6"
@@ -3599,7 +3589,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <span className="text-sm font-extrabold text-gray-800">
                       Check title
                     </span>
-                    <input
+                    <ValidatedInput
                       type="text"
                       value={manualCheckTitle}
                       onChange={(event) => setManualCheckTitle(event.target.value)}
@@ -3709,7 +3699,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                 <div className="flex items-center gap-2 shrink-0">
                                   <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-[#dadce0] bg-white px-3 py-1.5 text-xs font-semibold text-[#3c4043] hover:bg-[#f1f3f4] transition shadow-2xs">
                                     <span>Change file</span>
-                                    <input
+                                    <ValidatedInput
                                       type="file"
                                       accept={ACCEPTED_CHECK_FILE_TYPES}
                                       multiple
@@ -3801,7 +3791,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                 </span>
                               </>
                             )}
-                            <input
+                            <ValidatedInput
                               type="file"
                               accept={
                                 uploadMode === "picture"
@@ -3824,7 +3814,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         </p>}
                         {transcriptionResult?.pages?.length > 1 && <details open className="mt-4"><summary>Page transcriptions</summary>
                           {transcriptionResult.pages.map((page, index) => <label key={page.page_number} className="mt-2 block">Page {page.page_number}
-                            <textarea aria-label={`Page ${page.page_number} transcription`} value={page.text} rows={5}
+                            <ValidatedTextarea aria-label={`Page ${page.page_number} transcription`} value={page.text} rows={5}
                               disabled={isTranscribing || isScanningManualCheck} className="block w-full rounded border p-3"
                               onChange={event => {
                                 const pages = transcriptionResult.pages.map((old, i) => i === index ? { ...old, text: event.target.value } : old);
@@ -3962,7 +3952,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                               <label className="block text-xs font-bold text-gray-500 mb-1">
                                 {isTranscribing ? "Live streaming recognition:" : "Editable transcript (refine words before scanning if needed):"}
                               </label>
-                              <textarea
+                              <ValidatedTextarea
                                 readOnly={manualCheckFiles.length > 1}
                                 disabled={isTranscribing || isScanningManualCheck}
                                 value={transcribedText || manualLiveOcrText}
@@ -4037,7 +4027,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <span className="text-sm font-extrabold text-gray-800">
                           Paste text
                         </span>
-                        <textarea
+                        <ValidatedTextarea
                           value={manualCheckText}
                           onChange={(event) => {
                             setManualCheckText(event.target.value);
@@ -4071,7 +4061,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           ? "Scan transcribed essay for plagiarism"
                           : "Scan for plagiarism"}
                   </button>
-                </form>
+                </ValidatedForm>
                 )}
 
                 {(isScanningManualCheck || manualCheckResult) && (
@@ -4566,33 +4556,37 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
           {activePage === "submissions" && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-medium tracking-tight text-[#202124]">Grades & Submissions</h2>
-                <p className="mt-1 text-sm text-[#5f6368]">Review student work and grades.</p>
+              <div className="flex items-start justify-between gap-3">
+                <div><h2 className="text-xl sm:text-2xl font-medium tracking-tight text-[#202124]">Grades & Submissions</h2>
+                <p className="mt-1 text-sm text-[#5f6368]">Review student work and grades.</p></div>
+                <button type="button" className="classroom-icon" aria-label="Close grades" title="Close grades" onClick={() => {
+                  setOpenedClassroomId(classrooms.some(c => c.id === gradesOrigin) ? gradesOrigin : null);
+                  setActivePage("classrooms");
+                }}><CloseIcon className="h-5 w-5" /></button>
               </div>
 
               <div aria-label="Grade filters and actions" className="flex flex-wrap items-end gap-4 rounded-2xl border border-[#dadce0] bg-white p-4 shadow-2xs">
                 <label htmlFor="filter-classroom" className="min-w-0 text-xs font-medium text-[#5f6368]">
                   Classroom:
-                  <select id="filter-classroom" value={selectedSubmissionsClassroomId}
+                  <ValidatedSelect id="filter-classroom" value={selectedSubmissionsClassroomId}
                     onChange={event => selectGradeClassroom(event.target.value)}
                     className="mt-1 block h-10 max-w-full rounded-lg border border-[#dadce0] bg-[#fafafa] px-3 text-sm text-[#202124] outline-none focus:border-[#137333]">
                     <option value="all">All classrooms</option>
                     {classrooms.map(classroom => <option key={classroom.id} value={classroom.id}>
                       {classroom.name}{classroom.section ? ` / Section ${classroom.section}` : ""}
                     </option>)}
-                  </select>
+                  </ValidatedSelect>
                 </label>
                 <label htmlFor="filter-classwork" className="min-w-0 text-xs font-medium text-[#5f6368]">
                   Assignment:
-                  <select id="filter-classwork" value={selectedAssignment?.id || "all"}
+                  <ValidatedSelect id="filter-classwork" value={selectedAssignment?.id || "all"}
                     onChange={event => selectGradeAssignment(event.target.value)}
                     className="mt-1 block h-10 max-w-full rounded-lg border border-[#dadce0] bg-[#fafafa] px-3 text-sm text-[#202124] outline-none focus:border-[#137333]">
                     <option value="all">All assignments</option>
                     {gradeClasswork.map(assignment => <option key={assignment.id} value={assignment.id}>
                       {assignment.title}{selectedSubmissionsClassroomId === "all" ? ` / ${assignment.classroomName}` : ""}
                     </option>)}
-                  </select>
+                  </ValidatedSelect>
                 </label>
                 {selectedSubmissionsClassroomId !== "all" && <button type="button" onClick={() => selectGradeClassroom("all")}
                   className="h-10 rounded-full px-3 text-xs font-medium text-[#137333] hover:bg-[#e6f4ea]">Reset filters</button>}
@@ -4773,14 +4767,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   </button>
                 </div>
 
-                <form onSubmit={handleUpdateAssignment} className="mt-5 space-y-4">
+                <ValidatedForm onSubmit={handleUpdateAssignment} className="mt-5 space-y-4">
                   <p className="text-sm text-gray-600">{classrooms.find((c) => c.id === editingAssignment.classroomId)?.name}</p>
 
                   <label className="block">
                     <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
                       Title
                     </span>
-                    <input
+                    <ValidatedInput
                       type="text"
                       value={editingAssignment.title}
                       onChange={(e) =>
@@ -4798,7 +4792,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
                       Instructions
                     </span>
-                    <textarea
+                    <ValidatedTextarea
                       value={editingAssignment.instructions}
                       onChange={(e) =>
                         setEditingAssignment((prev) => ({
@@ -4815,7 +4809,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
                       Due date
                     </span>
-                    <input
+                    <ValidatedInput
                       type="datetime-local"
                       value={editingAssignment.dueDate}
                       onChange={(e) =>
@@ -4830,7 +4824,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                   <div className="mt-4 rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-3.5">
                     <label className="flex items-start gap-3 cursor-pointer">
-                      <input
+                      <ValidatedInput
                         type="checkbox"
                         checked={editingAssignment.acceptLateSubmissions !== false}
                         onChange={(e) =>
@@ -4866,14 +4860,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       {isUpdatingAssignment ? "Saving..." : "Save changes"}
                     </button>
                   </div>
-                </form>
+                </ValidatedForm>
               </div>
             </div>
           )}
 
-          {reviewingSubmission && <SubmissionReview key={reviewingSubmission.id}
-            submission={reviewingSubmission} submissions={submissions} profile={profile} onSaveText={handleSaveReviewText}
-            text={reviewTranscribedText} onTextChange={setReviewTranscribedText}
+          {reviewingSubmission && <SubmissionReview key={reviewingSubmission.id} ocrEngineInfo={ocrEngineInfo}
+            submission={reviewingSubmission} submissions={submissions} profile={profile}
+            text={reviewTranscribedText}
             result={reviewScanResult} scanning={isReviewScanning} progress={reviewScanProgressText}
             onRecheck={handleRunReviewScan} onClose={handleCloseReview} saving={isSavingGrade}
             onCopy={handleCopyReviewTranscript} copied={reviewCopySuccess}
@@ -4881,7 +4875,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             imageUrl={reviewImagePreviewUrl} imageLoading={isLoadingImagePreview}
             imageExpanded={isImageExpanded} onExpandImage={setIsImageExpanded}
             grading={
-                  <form onSubmit={handleSaveGrade} className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <ValidatedForm onSubmit={handleSaveGrade} className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <h4 className="text-base font-black text-emerald-950">
                       Grading
                     </h4>
@@ -4894,7 +4888,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         Grade / Score
                       </label>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <input
+                        <ValidatedInput
                           type="text"
                           id="review-grade"
                           disabled={isSavingGrade}
@@ -4927,7 +4921,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       <label htmlFor="review-feedback" className="block text-xs font-extrabold uppercase tracking-wider text-gray-700">
                         Teacher Feedback (optional)
                       </label>
-                      <textarea
+                      <ValidatedTextarea
                         id="review-feedback"
                         disabled={isSavingGrade}
                         rows={5}
@@ -4968,7 +4962,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         {isSavingGrade ? "Saving grade..." : <><CheckIcon className="action-icon" />Save Grade</>}
                       </button>
                     </div>
-                  </form>
+                  </ValidatedForm>
             }
           />}
           {/* Lightbox for Upload station manual check image */}
@@ -5099,7 +5093,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 </button>
               </div>
 
-              <form onSubmit={handleConfirmCopyClassroom} className="mt-4 space-y-4">
+              <ValidatedForm onSubmit={handleConfirmCopyClassroom} className="mt-4 space-y-4">
                 <div className="rounded-xl bg-[#f8f9fa] border border-[#dadce0] p-3 text-xs text-[#5f6368] space-y-1">
                   <p className="font-semibold text-[#202124]">What gets copied:</p>
                   <ul className="list-disc list-inside space-y-0.5 text-[11px] text-[#444746]">
@@ -5117,7 +5111,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   <label htmlFor="copy-class-name" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1">
                     Class name (required)
                   </label>
-                  <input
+                  <ValidatedInput
                     id="copy-class-name"
                     required
                     value={copyForm.name}
@@ -5132,7 +5126,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <label htmlFor="copy-section" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1">
                       Section (required)
                     </label>
-                    <input
+                    <ValidatedInput
                       id="copy-section"
                       required
                       value={copyForm.section}
@@ -5145,7 +5139,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <label htmlFor="copy-subject" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1">
                       Subject
                     </label>
-                    <input
+                    <ValidatedInput
                       id="copy-subject"
                       value={copyForm.subject}
                       onChange={(e) => setCopyForm((prev) => ({ ...prev, subject: e.target.value }))}
@@ -5172,7 +5166,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     {isCopying ? "Copying class..." : "Copy class"}
                   </button>
                 </div>
-              </form>
+              </ValidatedForm>
             </div>
           </div>
         )}

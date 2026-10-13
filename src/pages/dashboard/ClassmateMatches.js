@@ -23,15 +23,18 @@ export default function ClassmateMatches({ submission, onInspect, compact = fals
   }, [id, assignmentId, classroomId, savedText, attempt, storedMatches]);
   const displayResult = storedMatches !== undefined ? { all_matches: storedMatches, stored: true,
     enabled: submission.scanResult?.peerComparisonEnabled,
+    total_peers_compared: submission.scanResult?.peerSimilarity?.total_peers_compared,
     checked: Boolean(submission.scanResult?.peerSimilarity) } : result;
   return <section aria-label="Classmate similarity" className="mt-5 space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-    <h4 className="font-semibold">{compact ? "Peer Similarity" : "Classmate similarity"}</h4>
+    <h4 className="font-semibold">{compact ? "Classroom Peer Similarity" : "Classmate similarity"}</h4>
     <p className="text-sm">Same classroom and assignment. Similarity is information for review, not a finding of plagiarism.</p>
     {error ? <p role="alert">{error} <button type="button" onClick={() => setAttempt(value => value + 1)} className="underline">Retry matches</button></p>
       : !displayResult ? <p role="status">Checking classmate matches...</p>
       : displayResult.enabled === false ? <p>Classroom comparison is disabled in your profile.</p>
       : <>
         <p className="text-sm">{stale ? "Previous transcription: re-run similarity to update peer matches." : displayResult.stored ? (displayResult.checked ? "Saved matches for the current transcription." : "No saved peer comparison is available.") : `Compared with ${displayResult.total_peers_compared} classmate submissions.`}</p>
+        {!stale && displayResult.total_peers_compared === 0 && <p>No other classmate submissions for this assignment yet. <span className="similarity-chip inline-block">Only Submission (No Peers)</span></p>}
+        {!stale && displayResult.all_matches?.length > 0 && <p className="font-semibold">Highest Match: {Math.max(...displayResult.all_matches.map(match => Number(match.score_percent)))}%</p>}
         {compact && <p className="text-sm">Potential matches: {displayResult.all_matches?.length || 0}</p>}
         {displayResult.all_matches?.length ? <PaginatedList items={displayResult.all_matches} resetKey={id} label="Classmate matches">{rows =>
           <ul className="space-y-2">{rows.map(match => <li key={match.submission_id} className="rounded-lg bg-white p-3">

@@ -1,3 +1,4 @@
+import ValidatedForm, { ValidatedInput } from "../ValidatedForm";
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
@@ -318,7 +319,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
               LOGIN FORM
           ═══════════════════════════════════════════════════ */}
           {mode === "login" ? (
-            <form onSubmit={handleLogin} className="mt-6 space-y-4" noValidate>
+            <ValidatedForm onSubmit={handleLogin} className="mt-6 space-y-4" noValidate>
               <div>
                 <label
                   htmlFor="modal-login-email"
@@ -330,7 +331,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#5f6368]">
                     <MailIcon className="h-4 w-4" />
                   </div>
-                  <input
+                  <ValidatedInput
                     id="modal-login-email"
                     type="email"
                     autoComplete="email"
@@ -363,7 +364,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#5f6368]">
                     <LockIcon className="h-4 w-4" />
                   </div>
-                  <input
+                  <ValidatedInput
                     id="modal-login-password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
@@ -422,12 +423,12 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                   Create an account
                 </button>
               </div>
-            </form>
+            </ValidatedForm>
           ) : (
             /* ═══════════════════════════════════════════════════
                REGISTER FORM
             ═══════════════════════════════════════════════════ */
-            <form onSubmit={handleRegister} className="mt-5 space-y-3.5" noValidate>
+            <ValidatedForm onSubmit={handleRegister} className="mt-5 space-y-3.5" noValidate>
               {/* Role Selection Cards */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-2">
@@ -498,7 +499,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#5f6368]">
                     <UserIcon className="h-4 w-4" />
                   </div>
-                  <input
+                  <ValidatedInput
                     id="modal-register-fullname"
                     type="text"
                     autoComplete="name"
@@ -523,7 +524,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#5f6368]">
                     <MailIcon className="h-4 w-4" />
                   </div>
-                  <input
+                  <ValidatedInput
                     id="modal-register-email"
                     type="email"
                     autoComplete="email"
@@ -550,7 +551,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     Password
                   </label>
                   <div className="relative">
-                    <input
+                    <ValidatedInput
                       id="modal-register-password"
                       type={showPassword ? "text" : "password"}
                       autoComplete="new-password"
@@ -579,7 +580,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     Confirm password
                   </label>
                   <div className="relative">
-                    <input
+                    <ValidatedInput
                       id="modal-register-confirm"
                       type={showConfirmPassword ? "text" : "password"}
                       autoComplete="new-password"
@@ -624,7 +625,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
 
               <button
                 type="submit"
-                disabled={isLoading || !registrationComplete || !validRegistrationEmail}
+                disabled={isLoading}
                 className="mt-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#137333] px-6 text-sm font-semibold text-white shadow-md shadow-[#137333]/25 transition hover:bg-[#0f5b28] hover:shadow-lg hover:shadow-[#137333]/30 focus:outline-none focus:ring-4 focus:ring-[#e6f4ea] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {isLoading ? (
@@ -650,7 +651,7 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                   Sign in
                 </button>
               </div>
-            </form>
+            </ValidatedForm>
           )}
 
         </div>

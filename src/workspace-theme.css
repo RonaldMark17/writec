@@ -266,3 +266,38 @@ body { background-color: var(--workspace-bg); color: var(--workspace-text); }
 .essay-match-peer { background: var(--panel-soft, #f1f3f4); text-decoration-style: dotted; outline: 1px dotted var(--accent, #137333); }
 
 .essay-match[role="button"]:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+
+/* Review evidence keeps text in the current theme; underline patterns identify overlap. */
+:root { --review-match-bg: #fef3cd; --review-match-line: #947020; }
+:root[data-theme="dark"] { --review-match-bg: #493e23; --review-match-line: #d6b968; }
+.review-workspace .essay-match { background: var(--review-match-bg); color: var(--workspace-text); text-decoration-color: var(--review-match-line); }
+.review-workspace .essay-match-peer { background: var(--accent-soft); text-decoration-color: var(--accent); }
+.review-workspace .essay-match-combined { background: var(--review-match-bg); text-decoration-style: double; outline: 1px dotted var(--accent); }
+
+/* Restored report layout and explicit evidence colors. */
+:root { --report-peer-bg: #fce0eb; --report-peer-line: #a94369; }
+:root[data-theme="dark"] { --report-peer-bg: #512f40; --report-peer-line: #ef9cbc; }
+.plagiarism-highlights { padding: 1.25rem; border: 1px solid var(--workspace-border); border-radius: 1rem; background: var(--workspace-surface); color: var(--workspace-text); min-width: 0; }
+.report-source-count { background: var(--review-match-bg); border-radius: 999px; padding: .25rem .65rem; font-size: .75rem; }
+.plagiarism-highlights .similarity-chip[aria-pressed="true"] { background: #137333; color: #fff; }
+.report-instruction { margin: 1rem 0; padding: .65rem; background: var(--workspace-bg); font-size: .8rem; }
+.report-transcription { margin-top: 1rem; max-height: 420px; overflow-y: auto; overflow-x: hidden; overflow-wrap: anywhere; background: var(--workspace-bg); white-space: pre-wrap; }
+.review-workspace .essay-match { background: var(--review-match-bg); color: var(--workspace-text); text-decoration: none; }
+.review-workspace .essay-match-peer { background: var(--report-peer-bg); outline: none; }
+.review-workspace .essay-match-combined { background: linear-gradient(var(--review-match-bg) 60%, var(--report-peer-bg) 60%); outline: none; }
+.review-workspace .essay-keyword { text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.report-legend { display: flex; flex-wrap: wrap; gap: .65rem 1.25rem; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--workspace-border); font-size: .75rem; }
+.report-legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+.report-swatch { display: inline-block; width: 1rem; height: .75rem; border: 1px solid var(--review-match-line); border-radius: .2rem; background: var(--review-match-bg); }
+.report-swatch-peer { background: var(--report-peer-bg); border-color: var(--report-peer-line); }
+.plagiarism-highlights aside { background: var(--workspace-surface); overflow-wrap: anywhere; }
+
+.field-error { display: block; margin-top: .35rem; padding: .4rem .6rem; border-radius: .35rem; font-size: .8rem; }
+.field-invalid[aria-invalid="true"] { border-color: var(--danger-text, #a61c18) !important; outline-color: var(--danger-text, #a61c18); }
+
+.classroom-icon { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 2rem; min-height: 2rem; border-radius: .5rem; color: inherit; }
+.classroom-icon:hover { background: var(--accent-soft, #e6f4ea); color: var(--accent, #137333); }
+.classroom-icon:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+.classroom-code { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .5rem .75rem; border: 1px solid var(--workspace-border); border-radius: .5rem; background: var(--workspace-surface); color: var(--workspace-text); font-size: .8125rem; min-width: 0; }
+.classroom-info-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgb(0 0 0 / .5); }
+.classroom-info-dialog { width: 100%; max-width: 28rem; max-height: 90dvh; overflow-y: auto; padding: 1.5rem; border-radius: 1rem; border: 1px solid var(--workspace-border); background: var(--workspace-surface); color: var(--workspace-text); }

@@ -1,0 +1,95 @@
+{
+  "ok": true,
+  "theme": "light",
+  "scans": 0,
+  "outcomes": [
+    {
+      "submission_id": "628eb0b7-0045-5426-a26a-1af8c048fd47",
+      "score": 75.2,
+      "sources": 1,
+      "collected_ranges": 25,
+      "rendered_marks": 25,
+      "characters": 1620
+    },
+    {
+      "submission_id": "3f0c68af-a7d7-5ba6-9757-25b04d3bbfc9",
+      "score": 42.5,
+      "sources": 2,
+      "collected_ranges": 26,
+      "rendered_marks": 13,
+      "characters": 1624
+    },
+    {
+      "submission_id": "9ecf8be3-8946-53f3-9816-af8aa5bbe77e",
+      "score": 75.2,
+      "sources": 1,
+      "collected_ranges": 25,
+      "rendered_marks": 25,
+      "characters": 1620
+    },
+    {
+      "submission_id": "3c1eb914-85e0-5c17-bb59-744daa96fc0d",
+      "score": 77.2,
+      "sources": 1,
+      "collected_ranges": 24,
+      "rendered_marks": 24,
+      "characters": 1619
+    },
+    {
+      "submission_id": "190df050-284b-5f02-952e-34788f11f0b0",
+      "score": 47.7,
+      "sources": 1,
+      "collected_ranges": 1,
+      "rendered_marks": 1,
+      "characters": 314
+    },
+    {
+      "submission_id": "25bbf679-c6f7-5999-92ff-033156e32114",
+      "score": 100,
+      "sources": 9,
+      "collected_ranges": 25,
+      "rendered_marks": 8,
+      "characters": 296
+    },
+    {
+      "submission_id": "f53f7182-8a09-5023-8e63-23c9ddcc6b06",
+      "score": 100,
+      "sources": 1,
+      "collected_ranges": 7,
+      "rendered_marks": 7,
+      "characters": 803
+    },
+    {
+      "submission_id": "a3e73427-0de5-5c4a-8eb9-c939125654cd",
+      "score": 75.2,
+      "sources": 1,
+      "collected_ranges": 25,
+      "rendered_marks": 25,
+      "characters": 1620
+    },
+    {
+      "submission_id": "58c7b606-acc2-57cd-8d28-80315d65f027",
+      "score": 100,
+      "sources": 6,
+      "collected_ranges": 11,
+      "rendered_marks": 8,
+      "characters": 146
+    },
+    {
+      "submission_id": "98bb6120-c0f3-548a-b7a5-cc98d0f1fe65",
+      "score": 100,
+      "sources": 10,
+      "collected_ranges": 27,
+      "rendered_marks": 19,
+      "characters": 683
+    },
+    {
+      "submission_id": "8e7f495d-4c0b-59c7-adb3-a148e0825990",
+      "score": 100,
+      "sources": 30,
+      "collected_ranges": 181,
+      "rendered_marks": 55,
+      "characters": 772
+    }
+  ]
+}

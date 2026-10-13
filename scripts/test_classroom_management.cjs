@@ -56,6 +56,38 @@ const { PGlite } = require(process.argv[2] || '@electric-sql/pglite');
   await as('other');
   await rejects(`SELECT public.export_classroom_grades('A')`);
   await as('t');
+  // Rename uses the existing classroom UPDATE policies and changes one column only.
+  await db.exec('RESET ROLE');
+  await db.exec(`ALTER TABLE "classroomTable" ADD COLUMN classroom_code text DEFAULT 'ABC123';
+    ALTER TABLE "classroomTable" ADD COLUMN is_archived boolean DEFAULT false;
+    ALTER TABLE "classroomTable" ENABLE ROW LEVEL SECURITY;
+    GRANT SELECT, UPDATE ON "classroomTable" TO authenticated;
+    CREATE POLICY classroom_read ON "classroomTable" FOR SELECT TO authenticated USING(true);`);
+  await db.exec(security.slice(security.indexOf('DROP POLICY IF EXISTS classroom_teacher_update'), security.indexOf('DROP POLICY IF EXISTS membership_create_scope')));
+  await db.exec(fs.readFileSync('classroom_required_fields.sql','utf8'));
+  const snapshot = async () => (await db.query(`SELECT
+    (SELECT jsonb_agg(c) FROM "classroomMembers" c) AS members,
+    (SELECT jsonb_agg(a) FROM "assignmentTable" a) AS assignments,
+    (SELECT jsonb_agg(s) FROM "submissionTable" s) AS submissions`)).rows;
+  const beforeRelations = await snapshot();
+  const beforeClass = (await db.query(`SELECT * FROM "classroomTable" WHERE id='A'`)).rows[0];
+  await as('t');
+  for (const name of [null, '', ' \t\n ']) {
+    await assert.rejects(db.query(`UPDATE "classroomTable" SET classroom_name=$1 WHERE id='A'`, [name]), /Classroom name is required/);
+    await assert.rejects(db.query(`UPDATE "assignmentTable" SET title=$1 WHERE id='a'`, [name]), /Assignment title is required/);
+  }
+  await db.query(`UPDATE "classroomTable" SET classroom_name='CSST 106 – Pattern Recognition' WHERE id='A'`);
+  for (const identity of ['other', 's', 'admin']) {
+    await as(identity);
+    assert.equal((await db.query(`UPDATE "classroomTable" SET classroom_name='Unauthorized' WHERE id='A' RETURNING id`)).rows.length, 0);
+  }
+  await as('s');
+  assert.equal((await db.query(`SELECT classroom_name FROM "classroomTable" WHERE id='A'`)).rows[0].classroom_name, 'CSST 106 – Pattern Recognition');
+  await db.exec('RESET ROLE');
+  assert.deepEqual(await snapshot(), beforeRelations);
+  assert.deepEqual((await db.query(`SELECT * FROM "classroomTable" WHERE id='A'`)).rows[0], { ...beforeClass, classroom_name:'CSST 106 – Pattern Recognition' });
+  console.log('PASS: required fields, owner rename, student visibility, unauthorized updates, ID/code/archive/owner and all related records preserved.');
+  await as('t');
   await db.query(`SELECT public.remove_classroom_student('A','s')`);
   await db.exec('RESET ROLE');
   assert.equal((await db.query(`SELECT * FROM "userTable" WHERE id='s'`)).rows.length,1);

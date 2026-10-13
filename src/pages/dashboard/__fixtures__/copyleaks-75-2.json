@@ -1,0 +1,332 @@
+{
+  "description": "Actual Copyleaks 75.2% Turnitin example, with account/student identifiers and external full text omitted.",
+  "text": "Review Article\nTurnitin: is it a text-matching plugin in a plagiarism detection tool?\nARTRAC\nThe institutional integrity constitutes the buses of scientific activity. The frequent\nincidences of similarity, plagiarism, and retraction cares created the space\nfor frequent use of similarity and program detecting tools-jutlitin\nis software that identifies the method material by checking\nthe electronically submitted arguments against a database of\nacademic publications, internet, and previously submitted documents.\nTurnitin provided a \"similarity index, \" which does not mean plagiarism.\nthe prevalence of program can add not reduce tremendously in\nthe presence of many paid and unified players. affecting\ntools because of the commitment of records such as poor\nresearch and citation study, language problems, unidentified\nacademic skills, etc, This paper may provide an overall\nfeedback to the students, researchers, and friendly members is\nunderstanding the difference between similarly index and\nplucization.\nIntroduction\nthe mechanism of broadcasting the scientific knowledge has\nexperienced paradigm shift. Research publications have become\nan essential component of an academic promotion, research\ngiants, innovative ideas, motivational growth, and eventually the\neconomic and country development. Because of the lack\nof knowledge of similarity and platform and for achieving\nan additional professional target scientific misconduct has\nbeen Shining in the academic Institutes. The research\nmiscard List defined as \"fabrication, satisfaction or plagiarism in\nswiring, reducing, or in reporting the research results.",
+  "score": 75.2,
+  "source": {
+    "id": "1c7886b81f",
+    "title": "Turnitin: Is it a text matching or plagiarism detection tool? - PMC",
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6398291/",
+    "matchedWords": 167
+  },
+  "comparison": {
+    "identical": {
+      "source": {
+        "chars": {
+          "starts": [
+            167,
+            239,
+            364,
+            424,
+            434,
+            515,
+            533,
+            556,
+            588,
+            622,
+            749,
+            823,
+            845,
+            879,
+            1012,
+            1025,
+            1483,
+            1583
+          ],
+          "lengths": [
+            65,
+            52,
+            49,
+            7,
+            80,
+            8,
+            20,
+            31,
+            17,
+            56,
+            34,
+            21,
+            25,
+            42,
+            12,
+            86,
+            12,
+            28
+          ]
+        }
+      },
+      "suspected": {
+        "chars": {
+          "starts": [
+            4722,
+            4794,
+            4924,
+            4984,
+            4996,
+            5077,
+            5095,
+            5117,
+            5149,
+            5184,
+            5313,
+            5390,
+            5413,
+            5448,
+            5630,
+            5643,
+            6105,
+            6205
+          ],
+          "lengths": [
+            65,
+            52,
+            49,
+            7,
+            80,
+            8,
+            21,
+            31,
+            17,
+            56,
+            34,
+            22,
+            25,
+            42,
+            12,
+            86,
+            12,
+            28
+          ]
+        }
+      }
+    },
+    "minorChanges": {
+      "source": {
+        "chars": {
+          "starts": [
+            93,
+            414,
+            524,
+            1112,
+            1304,
+            1612
+          ],
+          "lengths": [
+            73,
+            9,
+            8,
+            191,
+            178,
+            8
+          ]
+        }
+      },
+      "suspected": {
+        "chars": {
+          "starts": [
+            4648,
+            4974,
+            5086,
+            5730,
+            5923,
+            6234
+          ],
+          "lengths": [
+            73,
+            9,
+            8,
+            192,
+            181,
+            12
+          ]
+        }
+      }
+    },
+    "relatedMeaning": {
+      "source": {
+        "chars": {
+          "starts": [
+            15
+          ],
+          "lengths": [
+            70
+          ]
+        }
+      },
+      "suspected": {
+        "chars": {
+          "starts": [
+            10556
+          ],
+          "lengths": [
+            104
+          ]
+        }
+      }
+    }
+  },
+  "report": {
+    "score": 75.2,
+    "transcribedText": "Review Article\nTurnitin: is it a text-matching plugin in a plagiarism detection tool?\nARTRAC\nThe institutional integrity constitutes the buses of scientific activity. The frequent\nincidences of similarity, plagiarism, and retraction cares created the space\nfor frequent use of similarity and program detecting tools-jutlitin\nis software that identifies the method material by checking\nthe electronically submitted arguments against a database of\nacademic publications, internet, and previously submitted documents.\nTurnitin provided a \"similarity index, \" which does not mean plagiarism.\nthe prevalence of program can add not reduce tremendously in\nthe presence of many paid and unified players. affecting\ntools because of the commitment of records such as poor\nresearch and citation study, language problems, unidentified\nacademic skills, etc, This paper may provide an overall\nfeedback to the students, researchers, and friendly members is\nunderstanding the difference between similarly index and\nplucization.\nIntroduction\nthe mechanism of broadcasting the scientific knowledge has\nexperienced paradigm shift. Research publications have become\nan essential component of an academic promotion, research\ngiants, innovative ideas, motivational growth, and eventually the\neconomic and country development. Because of the lack\nof knowledge of similarity and platform and for achieving\nan additional professional target scientific misconduct has\nbeen Shining in the academic Institutes. The research\nmiscard List defined as \"fabrication, satisfaction or plagiarism in\nswiring, reducing, or in reporting the research results.",
+    "matchedSources": [
+      {
+        "id": "1c7886b81f",
+        "title": "Turnitin: Is it a text matching or plagiarism detection tool? - PMC",
+        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6398291/",
+        "matched_words": 167,
+        "matching_fragments": [
+          {
+            "matched_text": "The frequent\nincidences of similarity, plagiarism, and retraction",
+            "match_kind": "identical",
+            "start": 167,
+            "end": 232
+          },
+          {
+            "matched_text": "created the space\nfor frequent use of similarity and",
+            "match_kind": "identical",
+            "start": 239,
+            "end": 291
+          },
+          {
+            "matched_text": "material by checking\nthe electronically submitted",
+            "match_kind": "identical",
+            "start": 364,
+            "end": 413
+          },
+          {
+            "matched_text": "against",
+            "match_kind": "identical",
+            "start": 424,
+            "end": 431
+          },
+          {
+            "matched_text": "database of\nacademic publications, internet, and previously submitted documents.",
+            "match_kind": "identical",
+            "start": 434,
+            "end": 514
+          },
+          {
+            "matched_text": "Turnitin",
+            "match_kind": "identical",
+            "start": 515,
+            "end": 523
+          },
+          {
+            "matched_text": "a \"similarity index,",
+            "match_kind": "identical",
+            "start": 533,
+            "end": 553
+          },
+          {
+            "matched_text": "which does not mean plagiarism.",
+            "match_kind": "identical",
+            "start": 556,
+            "end": 587
+          },
+          {
+            "matched_text": "the prevalence of",
+            "match_kind": "identical",
+            "start": 588,
+            "end": 605
+          },
+          {
+            "matched_text": "not reduce tremendously in\nthe presence of many paid and",
+            "match_kind": "identical",
+            "start": 622,
+            "end": 678
+          },
+          {
+            "matched_text": "such as poor\nresearch and citation",
+            "match_kind": "identical",
+            "start": 749,
+            "end": 783
+          },
+          {
+            "matched_text": "academic skills, etc,",
+            "match_kind": "identical",
+            "start": 823,
+            "end": 844
+          },
+          {
+            "matched_text": "This paper may provide an",
+            "match_kind": "identical",
+            "start": 845,
+            "end": 870
+          },
+          {
+            "matched_text": "feedback to the students, researchers, and",
+            "match_kind": "identical",
+            "start": 879,
+            "end": 921
+          },
+          {
+            "matched_text": "Introduction",
+            "match_kind": "identical",
+            "start": 1012,
+            "end": 1024
+          },
+          {
+            "matched_text": "the mechanism of broadcasting the scientific knowledge has\nexperienced paradigm shift.",
+            "match_kind": "identical",
+            "start": 1025,
+            "end": 1111
+          },
+          {
+            "matched_text": "The research",
+            "match_kind": "identical",
+            "start": 1483,
+            "end": 1495
+          },
+          {
+            "matched_text": "or in reporting the research",
+            "match_kind": "identical",
+            "start": 1583,
+            "end": 1611
+          },
+          {
+            "matched_text": "The institutional integrity constitutes the buses of scientific activity.",
+            "match_kind": "minorChanges",
+            "start": 93,
+            "end": 166
+          },
+          {
+            "matched_text": "arguments",
+            "match_kind": "minorChanges",
+            "start": 414,
+            "end": 423
+          },
+          {
+            "matched_text": "provided",
+            "match_kind": "minorChanges",
+            "start": 524,
+            "end": 532
+          },
+          {
+            "matched_text": "Research publications have become\nan essential component of an academic promotion, research\ngiants, innovative ideas, motivational growth, and eventually the\neconomic and country development.",
+            "match_kind": "minorChanges",
+            "start": 1112,
+            "end": 1303
+          },
+          {
+            "matched_text": "Because of the lack\nof knowledge of similarity and platform and for achieving\nan additional professional target scientific misconduct has\nbeen Shining in the academic Institutes.",
+            "match_kind": "minorChanges",
+            "start": 1304,
+            "end": 1482
+          },
+          {
+            "matched_text": "results.",
+            "match_kind": "minorChanges",
+            "start": 1612,
+            "end": 1620
+          },
+          {
+            "matched_text": "Turnitin: is it a text-matching plugin in a plagiarism detection tool?",
+            "match_kind": "relatedMeaning",
+            "start": 15,
+            "end": 85
+          }
+        ]
+      }
+    ],
+    "evidenceStatus": "ready"
+  }
+}

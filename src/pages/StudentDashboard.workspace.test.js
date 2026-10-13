@@ -5,7 +5,7 @@ import StudentDashboard from "./StudentDashboard";
 import { useSubmissionProgress } from "./dashboard/submissionProgress";
 import { supabase } from "../supabaseClient";
 
-jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.fn() } }));
+jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.fn(), channel: jest.fn(), removeChannel: jest.fn() } }));
 jest.mock("./dashboard/submissionProgress", () => ({ ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: jest.fn(() => "") }));
 jest.mock("./dashboard/SubmissionFilePreview", () => ({ fileUrl }) => <div>Saved file: {fileUrl}</div>);
 jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shared"), Header: ({ onPageChange }) => <>
@@ -30,7 +30,7 @@ function setup({ archived = false, results = [saved], multipleClasses = false } 
   });
   supabase.rpc.mockImplementation(name => Promise.resolve({ data: name === "list_submission_results" ? results : [] }));
 }
-beforeEach(() => { jest.clearAllMocks(); apiFetch.mockResolvedValue({ok:true,json:async()=>({state:"ready",score:24,sources:[],peers:[],passages:[]})}); sessionStorage.clear(); window.history.replaceState({}, "", "/"); });
+beforeEach(() => { jest.clearAllMocks(); const channel = { on: () => channel, subscribe: () => channel }; supabase.channel.mockReturnValue(channel); apiFetch.mockResolvedValue({ok:true,json:async()=>({state:"ready",score:24,sources:[],peers:[],passages:[]})}); sessionStorage.clear(); window.history.replaceState({}, "", "/"); });
 
 test("subject context follows the student into To-do and manual section changes persist", async () => {
   setup({ multipleClasses: true });
@@ -247,4 +247,41 @@ test("restored assignment membership wins over stale classroom context", async (
   expect(await screen.findByLabelText("Current classroom")).not.toHaveTextContent("Section B");
   fireEvent.click(screen.getByRole("button", {name:/Back to English/}));
   expect(screen.getByRole("region", {name:"Classroom homework"})).toHaveTextContent("Essay A");
+});
+
+
+test("student receives renamed classroom in the open assignment without reloading", async () => {
+  setup();
+  let receive;
+  const channel = { on: (_, __, callback) => { receive = callback; return channel; }, subscribe: () => channel };
+  supabase.channel.mockReturnValue(channel);
+  render(<StudentDashboard profile={profile} />);
+  fireEvent.click(await screen.findByRole("button", { name: "English" }));
+  expect(screen.queryByRole("button", { name: "Edit Classroom Name" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("Assignments tab"));
+  fireEvent.click(screen.getByRole("button", { name: /Essay A.*Turned In/ }));
+  await screen.findAllByText("No comments yet.");
+  act(() => receive({ new: { id: "A", classroom_name: "Renamed English" } }));
+  expect(screen.getByLabelText("Current classroom")).toHaveTextContent("Renamed English");
+});
+
+
+test("student classroom information and header show each stored code without management controls", async () => {
+  setup({multipleClasses:true});
+  render(<StudentDashboard profile={profile} />);
+  const icons = await screen.findAllByRole("button", {name:"Classroom information: English"});
+  expect(icons).toHaveLength(2);
+  fireEvent.click(icons[1]);
+  expect(within(screen.getByRole("dialog")).getByText("ENGB")).toBeInTheDocument();
+  expect(screen.queryByRole("button", {name:/Back to classes/})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:"Close classroom information"}));
+  fireEvent.click(screen.getAllByRole("button", {name:"English"})[0]);
+  expect(screen.getByText("ENG")).toBeInTheDocument();
+  expect(screen.queryByText("ENGB")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", {name:"Edit Classroom Name"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", {name:"Archive classroom"})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:/Back to classes/}));
+  fireEvent.click(screen.getAllByRole("button", {name:"English"})[1]);
+  expect(screen.getByText("ENGB")).toBeInTheDocument();
+  expect(screen.queryByText("ENG")).not.toBeInTheDocument();
 });

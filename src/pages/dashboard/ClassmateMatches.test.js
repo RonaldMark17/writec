@@ -49,3 +49,12 @@ test("failed checks show an error rather than a fabricated zero similarity", asy
   fireEvent.click(screen.getByText("Retry matches"));
   expect(await screen.findByText(/comparison is disabled/)).toBeInTheDocument();
 });
+
+
+test("saved zero peers uses the restored empty classroom state", () => {
+  render(<ClassmateMatches compact submission={{...submission, scanResult:{peerSimilarity:{total_peers_compared:0}}}} storedMatches={[]}/>);
+  expect(screen.getByRole("heading",{name:"Classroom Peer Similarity"})).toBeVisible();
+  expect(screen.getByText(/No other classmate submissions for this assignment yet/)).toBeVisible();
+  expect(screen.getByText("Only Submission (No Peers)")).toBeVisible();
+  expect(checkPeerSimilarityViaBackend).not.toHaveBeenCalled();
+});

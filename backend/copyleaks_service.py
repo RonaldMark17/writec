@@ -6,7 +6,7 @@ import re
 import threading
 import time
 import uuid
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -36,6 +36,16 @@ _load_env_file()
 
 COPYLEAKS_AUTH_URL = "https://id.copyleaks.com/v3/account/login/api"
 COPYLEAKS_API_BASE = "https://api.copyleaks.com/v3"
+
+
+def public_callback_base(value=None):
+    value = (value if value is not None else
+             os.getenv('COPYLEAKS_WEBHOOK_BASE_URL') or os.getenv('COPYLEAKS_WEBHOOK_URL') or '').rstrip('/')
+    parsed = urlparse(value)
+    if (parsed.scheme != 'https' or not parsed.hostname or parsed.hostname in ('localhost', '127.0.0.1', '::1')
+            or parsed.username or parsed.password or parsed.query or parsed.fragment):
+        raise ValueError('Set COPYLEAKS_WEBHOOK_BASE_URL to a publicly reachable HTTPS backend or development tunnel.')
+    return value
 
 
 class CopyleaksService:
@@ -100,7 +110,7 @@ class CopyleaksService:
     @property
     def webhook_base_url(self) -> str:
         _load_env_file()
-        return os.getenv("COPYLEAKS_WEBHOOK_URL", "http://localhost:8000").rstrip("/")
+        return public_callback_base()
 
     def get_access_token(self, force_refresh: bool = False) -> str:
         """
@@ -281,9 +291,7 @@ class CopyleaksService:
 
     def export_match_evidence(self, scan_id, sources, webhook_base):
         """Export an existing scan; never submits/rechecks a document."""
-        if not webhook_base.startswith('https://'):
-            raise ValueError('Evidence export requires a public HTTPS webhook URL.')
-        base = webhook_base.rstrip('/') + '/api/plagiarism/evidence/' + quote(scan_id, safe='')
+        base = public_callback_base(webhook_base) + '/api/plagiarism/evidence/' + quote(scan_id, safe='')
         def target(artifact):
             return {'endpoint': base + '/' + quote(artifact, safe=''), 'verb': 'POST',
                     'headers': [['x-writecheck-evidence', self.webhook_token(f'evidence:{scan_id}:{artifact}')]]}
@@ -292,7 +300,9 @@ class CopyleaksService:
         payload = {'completionWebhook': completion['endpoint'] + '?token=' + completion['headers'][0][1],
                    'crawledVersion': target('crawled'), 'maxRetries': 3,
                    'results': [{'id': key, **target(key)} for key in dict.fromkeys(str(s['id']) for s in sources if s.get('id'))]}
-        response = requests.post(f'{COPYLEAKS_API_BASE}/downloads/{quote(scan_id, safe="")}/export/evidence',
+        # The provider requires a new export ID, not a shared literal across scans.
+        export_id = uuid.uuid4().hex
+        response = requests.post(f'{COPYLEAKS_API_BASE}/downloads/{quote(scan_id, safe="")}/export/{export_id}',
                                  headers={'Authorization': f'Bearer {self.get_access_token()}'}, json=payload, timeout=20)
         response.raise_for_status()
 
