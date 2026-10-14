@@ -8,7 +8,7 @@ import RevisionHistory from "./dashboard/RevisionHistory";
 import { filterTodoAssignments } from "./dashboard/todoFilters";
 import AssignmentComments from "./dashboard/AssignmentComments";
 import { useClassroomArchiveSync } from "./dashboard/useClassroomArchiveSync";
-import { useCallback, useEffect, useMemo, useRef, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NotificationBell, NotificationsPage, useNotifications } from "./dashboard/Notifications";
 import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
 import useSubmissionTranscription from "./dashboard/useSubmissionTranscription";
