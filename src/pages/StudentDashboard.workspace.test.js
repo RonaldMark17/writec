@@ -8,29 +8,53 @@ import { supabase } from "../supabaseClient";
 jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.fn(), channel: jest.fn(), removeChannel: jest.fn() } }));
 jest.mock("./dashboard/submissionProgress", () => ({ ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: jest.fn(() => "") }));
 jest.mock("./dashboard/SubmissionFilePreview", () => ({ fileUrl }) => <div>Saved file: {fileUrl}</div>);
-jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shared"), Header: ({ onPageChange }) => <>
+jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shared"), Header: ({ onPageChange, notifications }) => <>{notifications}
   <button onClick={() => onPageChange("calendar")}>Calendar tab</button><button onClick={() => onPageChange("classrooms")}>Classes tab</button><button onClick={() => onPageChange("assignments")}>Assignments tab</button></> }));
 configure({ asyncUtilTimeout: 10000 });
 const profile = { id: "s", role: "student", full_name: "Alex" };
 const saved = { id: "work", assignment_id: "a", classroom_id: "A", student_id: "s", essay_title: "My saved essay",
   file_url: "s/a/original.pdf", created_at: "2026-01-02T10:00:00Z", returned_at: "2026-01-03T10:00:00Z", grade: "90", feedback: "Well done", transcribed_text: "My original essay", status: "graded" };
-function setup({ archived = false, results = [saved], multipleClasses = false } = {}) {
+function setup({ archived = false, results = [saved], multipleClasses = false, notices = [] } = {}) {
   supabase.from.mockImplementation((table) => {
     const data = table === "classroomMembers" ? [{ classroom_id: "A", student_id: "s" }]
       : table === "classroomTable" ? [{ id: "A", classroom_name: "English", classroom_code: "ENG", is_archived: archived }]
-      : table === "assignmentTable" ? [{ id: "a", classroom_id: "A", title: "Essay A", due_date: "2025-01-01" }] : [];
+      : table === "assignmentTable" ? [{ id: "a", classroom_id: "A", title: "Essay A", due_date: "2025-01-01" }] : table === "notifications" ? notices : [];
     if (multipleClasses) {
       if (table === "classroomMembers") data.push({ classroom_id: "B", student_id: "s" });
       if (table === "classroomTable") data.push({ id: "B", classroom_name: "English", section: "B", classroom_code: "ENGB" });
       if (table === "assignmentTable") data.push({ id: "b", classroom_id: "B", title: "Essay B", due_date: "2025-01-01" });
     }
-    const query = { then: resolve => Promise.resolve({ data }).then(resolve) };
-    ["select", "eq", "in", "order"].forEach(name => { query[name] = () => query; });
+    const query = { then: resolve => Promise.resolve({ data, count: data.length }).then(resolve) };
+    ["select", "eq", "in", "order", "range"].forEach(name => { query[name] = () => query; });
     return query;
   });
   supabase.rpc.mockImplementation(name => Promise.resolve({ data: name === "list_submission_results" ? results : [] }));
 }
 beforeEach(() => { jest.clearAllMocks(); const channel = { on: () => channel, subscribe: () => channel }; supabase.channel.mockReturnValue(channel); apiFetch.mockResolvedValue({ok:true,json:async()=>({state:"ready",score:24,sources:[],peers:[],passages:[]})}); sessionStorage.clear(); window.history.replaceState({}, "", "/"); });
+
+test("notification opens the exact assignment and current revision note across classrooms", async () => {
+  const revision = { id: "revision", message: "Upload a clearer image.", requested_at: "2026-10-14" };
+  setup({ multipleClasses: true, results: [{ ...saved, returned_at: null, revision_request: revision }], notices: [{
+    id: "notice", title: "Resubmission requested", message: "Revise Essay A", type: "resubmission_requested",
+    classroom_id: "A", assignment_id: "a", submission_id: "work", is_read: false, created_at: "2026-10-14", metadata: {},
+  }] });
+  render(<StudentDashboard profile={profile} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Notifications, 1 unread" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Resubmission requested Revise Essay A/ }));
+  await screen.findByText("Upload a clearer image.");
+  expect(supabase.rpc).toHaveBeenCalledWith("mark_notifications_read", { notification_key: "notice" });
+  expect(screen.queryByRole("button", { name: /Essay B.*Not Turned In/ })).not.toBeInTheDocument();
+});
+
+test("grade notification opens the specific student's submission detail", async () => {
+  setup({ notices: [{ id: "grade-notice", title: "Grade posted", message: "Grade for Essay A", type: "grade_posted",
+    classroom_id: "A", assignment_id: "a", submission_id: "work", is_read: false, created_at: "2026-10-14", metadata: {} }] });
+  render(<StudentDashboard profile={profile} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Notifications, 1 unread" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Grade posted Grade for Essay A/ }));
+  await screen.findByRole("heading", { name: "My saved essay" });
+  expect(await screen.findByText("Well done")).toBeInTheDocument();
+});
 
 test("subject context follows the student into To-do and manual section changes persist", async () => {
   setup({ multipleClasses: true });

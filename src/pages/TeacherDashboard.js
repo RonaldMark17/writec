@@ -1,4 +1,5 @@
 import { CloseIcon } from "./dashboard/shared";
+import { NotificationBell, NotificationsPage, useNotifications } from "./dashboard/Notifications";
 import ClassroomInformation, { ClassCode } from "./dashboard/ClassroomInformation";
 import ValidatedForm, { ValidatedInput, ValidatedTextarea, ValidatedSelect } from "../ValidatedForm";
 import { compareStudentsByLastName } from "./dashboard/rosterSort";
@@ -120,6 +121,7 @@ function getTeacherActivePage(profileId) {
 }
 
 export default function TeacherDashboard({ profile, onProfileUpdated }) {
+  const notifications = useNotifications(profile?.id);
   const uploadLimits = useUploadLimits();
   const [openedClassroomId, setOpenedClassroomId] = useState(null);
 
@@ -1067,7 +1069,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }));
     teacherDataLoadedOnce.current = true;
     setIsLoading(false);
-    return true;
+    return { assignments: nextAssignments, submissions: nextSubmissions };
   }, [profile?.id]);
 
   useEffect(() => {
@@ -2583,12 +2585,29 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     );
   };
 
+  const openNotification = async (notification) => {
+    const fresh = await loadTeacherData(true);
+    if (!fresh) throw new Error("Could not refresh this submission. Please retry.");
+    const assignment = fresh.assignments.find(a => String(a.id) === notification.assignment_id && String(a.classroomId) === notification.classroom_id);
+    const submission = fresh.submissions.find(s => String(s.id) === notification.submission_id && String(s.assignmentId) === notification.assignment_id && String(s.classroomId) === notification.classroom_id);
+    if (!assignment || !submission) throw new Error("This submission is no longer available to you.");
+    return () => {
+      setOpenedClassroomId(assignment.classroomId);
+      setAssignmentFilterClassroomId(assignment.classroomId);
+      setSelectedSubmissionsClassroomId(assignment.classroomId);
+      setSelectedAssignmentId(assignment.id);
+      setActivePage("assignments");
+      handleOpenReview(submission);
+    };
+  };
+
   return (
     <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
       <Header
         profile={profile}
         onProfileUpdated={onProfileUpdated}
         workspace="Teacher workspace"
+        notifications={<NotificationBell model={notifications} onOpen={openNotification} onViewAll={() => setActivePage("notifications")} />}
         pages={teacherPages}
         activePage={activePage}
         onPageChange={(page) => {
@@ -2611,6 +2630,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
       />
 
       <main className="mx-auto max-w-[1280px] px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+        {activePage === "notifications" && <NotificationsPage model={notifications} onOpen={openNotification} />}
         <div className="mb-4 sm:mb-6">
           <StatusMessage
             error={errorMessage || submissionSyncError}

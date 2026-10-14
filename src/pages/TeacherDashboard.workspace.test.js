@@ -13,10 +13,11 @@ jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.f
 jest.mock("./dashboard/ocrService", () => ({ getOcrEngineInfo: async () => null, extractTextFromImages: jest.fn() }));
 jest.mock("./dashboard/submissionProgress", () => ({ ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: () => "",
   loadTeacherSubmissionStatus: jest.fn(async () => ({ results: [], progress: {} })) }));
-jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shared"), Header: ({ onPageChange }) => <>
+jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shared"), Header: ({ onPageChange, notifications }) => <>{notifications}
   <button onClick={() => onPageChange("upload")}>Scan tab</button><button onClick={() => onPageChange("classrooms")}>Classes tab</button><button onClick={() => onPageChange("assignments")}>Classwork tab</button><button onClick={() => onPageChange("submissions")}>Grades tab</button></> }));
 let archived = false;
 let extraAssignments = [];
+let notificationRows = [];
 let onArchiveUpdate;
 
 test("create classroom identifies blank name and section without writing", async () => {
@@ -56,15 +57,16 @@ beforeEach(() => {
   checkPeerSimilarityViaBackend.mockResolvedValue({ total_peers_compared: 0, all_matches: [] });
   archived = false;
   extraAssignments = [];
+  notificationRows = [];
   loadTeacherSubmissionStatus.mockResolvedValue({ results: [], progress: {} });
   supabase.channel.mockImplementation(() => { const channel = { on: (type, filter, callback) => { onArchiveUpdate = callback; return channel; }, subscribe: () => channel }; return channel; });
   sessionStorage.clear(); window.history.replaceState({}, "", "/");
   supabase.rpc.mockResolvedValue({ data: [] });
   supabase.from.mockImplementation((table) => {
     const data = table === "classroomTable" ? ["A", "B"].map(id => ({ id, teacher_id: "t", teacher_name: "Teacher", classroom_name: `Class ${id}`, classroom_code: id, is_archived: archived && id === "B" }))
-      : table === "assignmentTable" ? ["A", "B"].map(id => ({ id: `essay${id}`, classroom_id: id, teacher_id: "t", title: `Essay ${id}` })).concat(extraAssignments) : [];
-    const query = { then: resolve => Promise.resolve({ data }).then(resolve) };
-    ["select", "eq", "in", "order", "update"].forEach(name => { query[name] = () => query; });
+      : table === "assignmentTable" ? ["A", "B"].map(id => ({ id: `essay${id}`, classroom_id: id, teacher_id: "t", title: `Essay ${id}` })).concat(extraAssignments) : table === "notifications" ? notificationRows : [];
+    const query = { then: resolve => Promise.resolve({ data, count: data.length }).then(resolve) };
+    ["select", "eq", "in", "order", "update", "range"].forEach(name => { query[name] = () => query; });
     return query;
   });
 });
@@ -229,6 +231,24 @@ test("teacher requests a revision with instructions from the review dialog", asy
   fireEvent.click(screen.getByRole("button", { name: "Request revision" }));
   await screen.findByText(/Revision requested. The student can submit updated work/);
   expect(supabase.rpc).toHaveBeenCalledWith("request_submission_revision", { submission_key: "work", instructions: "Add evidence to your conclusion." });
+});
+
+test("resubmission notification refreshes and opens the exact teacher review", async () => {
+  const savedWork = { id: "workB", assignment_id: "essayB", classroom_id: "B", student_id: "s", essay_title: "Revised B", status: "submitted", transcribed_text: "New writing for B" };
+  notificationRows = [{ id: "noticeB", type: "submission_resubmitted", title: "Assignment resubmitted", message: "Review revised B",
+    classroom_id: "B", assignment_id: "essayB", submission_id: "workB", metadata: {}, is_read: false, created_at: "2026-10-14" }];
+  render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
+  await screen.findByRole("button", { name: "Class A" });
+  // Work arrives after the dashboard's original load.
+  loadTeacherSubmissionStatus.mockResolvedValue({ results: [savedWork], progress: { workB: { state: "ready" } } });
+  fireEvent.click(await screen.findByRole("button", { name: "Notifications, 1 unread" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Assignment resubmitted Review revised B/ }));
+  await screen.findByPlaceholderText("Leave remarks or suggestions for the student...");
+  expect(screen.getAllByText("Revised B").length).toBeGreaterThan(0);
+  expect(supabase.rpc).toHaveBeenCalledWith("mark_notifications_read", { notification_key: "noticeB" });
+  fireEvent.change(screen.getByPlaceholderText("Leave remarks or suggestions for the student..."), { target: { value: "Improve B" } });
+  fireEvent.click(screen.getByRole("button", { name: "Request revision" }));
+  await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith("request_submission_revision", { submission_key: "workB", instructions: "Improve B" }));
 });
 
 

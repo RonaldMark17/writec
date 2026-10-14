@@ -982,7 +982,7 @@ export function isCustomAvatarUrl(url) {
   return true;
 }
 
-export function Header({ workspace, pages, activePage, onPageChange, profile, onProfileUpdated }) {
+export function Header({ workspace, pages, activePage, onPageChange, profile, onProfileUpdated, notifications }) {
   const [editingProfile, setEditingProfile] = useState(false);
   const [headerImgError, setHeaderImgError] = useState(false);
   const [localPrefs, setLocalPrefs] = useState(() => {
@@ -1077,6 +1077,7 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
 
           {/* Right Actions */}
           <div className="flex items-center gap-2 sm:gap-2.5 py-1.5 shrink-0">
+            {notifications}
             {profile && (
               <button
                 type="button"

@@ -49,6 +49,14 @@ async function main() {
       GRANT USAGE ON SCHEMA public, auth TO authenticated, service_role;
       GRANT EXECUTE ON FUNCTION public.can_access_submission(TEXT,BOOLEAN), public.can_use_assignment(TEXT,BOOLEAN) TO authenticated;
     `);
+    await db.exec(`
+      ALTER TABLE public."userTable" ADD COLUMN full_name TEXT DEFAULT 'Student';
+      ALTER TABLE public."classroomTable" ADD COLUMN classroom_name TEXT DEFAULT 'English';
+      ALTER TABLE public."assignmentTable" ADD COLUMN title TEXT DEFAULT 'Essay';
+      ALTER TABLE public."assignmentTable" ADD COLUMN instructions TEXT;
+    `);
+    await db.exec(read('in_app_notifications.sql'));
+    await db.exec(read('in_app_notifications.sql')); // Repeatable without duplicate triggers.
     const login = async (who, role = 'authenticated') => {
       await db.exec(`RESET ROLE; SET test.uid = '${id(who)}'; SET test.role = '${role}'; SET ROLE ${role};`);
     };
@@ -144,6 +152,79 @@ async function main() {
     await login(2);
     assert.equal((await query('SELECT public.can_access_essay_file($1,true) AS allowed', [`${id(2)}/${id(20)}/old.txt`]))[0].allowed, false);
     console.log('PASS: revision authorization, snapshots, privacy, archived classes, deadline reopening, duplicate requests/retries, history files, and processing reset.');
+
+    // The real revision RPCs above were retried; exactly one event per transition.
+    const notices = async () => query('SELECT * FROM public.notifications ORDER BY created_at,id');
+    await login(1);
+    let rows = await notices();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].type, 'submission_resubmitted');
+    assert.equal(rows[0].submission_id, id(30));
+    await login(2);
+    rows = await notices();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].type, 'resubmission_requested');
+    assert.equal(rows[0].metadata.revision_request_id, revision);
+    assert.equal(JSON.stringify(rows).includes('Earlier essay'), false);
+    await login(4);
+    assert.equal((await notices()).length, 0);
+    await query('SELECT public.mark_notifications_read($1)', [rows[0].id]);
+    await login(2);
+    assert.equal((await notices())[0].is_read, false);
+    await assert.rejects(query('UPDATE public.notifications SET recipient_user_id = $1', [id(4)]), /permission denied/);
+    await assert.rejects(query("UPDATE public.notifications SET title = 'Fake'"), /permission denied/);
+    await assert.rejects(query('INSERT INTO public.notifications DEFAULT VALUES'), /permission denied/);
+    await assert.rejects(query('DELETE FROM public.notifications'), /permission denied/);
+    await query('SELECT public.mark_notifications_read($1)', [rows[0].id]);
+    assert.equal((await notices())[0].is_read, true);
+    assert.ok((await notices())[0].read_at);
+
+    await db.exec(`RESET ROLE; SET test.role = 'service_role';
+      INSERT INTO public."classroomTable"(id,teacher_id) VALUES ('${id(11)}','${id(3)}');
+      INSERT INTO public."assignmentTable"(id,classroom_id,teacher_id,title) VALUES
+        ('${id(21)}','${id(10)}','${id(1)}','New essay'), ('${id(22)}','${id(11)}','${id(3)}','Other class essay');
+      UPDATE public."assignmentTable" SET title = title;
+      UPDATE public."assignmentTable" SET title = 'Updated essay' WHERE id = '${id(21)}';
+      UPDATE public."assignmentTable" SET title = 'Updated essay' WHERE id = '${id(21)}';
+      INSERT INTO public."submissionTable"(id,assignment_id,classroom_id,student_id,essay_title)
+        VALUES ('${id(31)}','${id(21)}','${id(10)}','${id(2)}','New work');
+      UPDATE public.submission_jobs SET state = 'ready', checkpoint = '{"mode":"classroom"}' WHERE submission_id = '${id(31)}';
+      UPDATE public."submissionTable" SET grade = '90', feedback = 'Private draft', scan_result = '{"mode":"classroom"}' WHERE id = '${id(31)}';
+    `);
+    await login(2);
+    rows = await notices();
+    assert.equal(rows.filter(n => n.type === 'assignment_created').length, 1);
+    assert.equal(rows.filter(n => n.type === 'assignment_updated').length, 1);
+    assert.equal(rows.filter(n => n.type === 'grade_posted').length, 0);
+    assert.ok(rows.every(n => n.assignment_id !== id(22)));
+    await login(1);
+    rows = await notices();
+    assert.equal(rows.filter(n => n.type === 'submission_created').length, 1);
+    assert.equal(rows.filter(n => n.type === 'assignment_created').length, 0);
+    await query('SELECT public.return_submission($1)', [id(31)]);
+    await query('SELECT public.return_submission($1)', [id(31)]);
+    await login(2);
+    rows = await notices();
+    assert.equal(rows.filter(n => n.type === 'grade_posted').length, 1);
+    assert.equal(rows.find(n => n.type === 'grade_posted').title, 'Grade and feedback available');
+    assert.equal(JSON.stringify(rows).includes('Private draft'), false);
+    await query('SELECT public.mark_notifications_read()');
+    assert.ok((await notices()).every(n => n.is_read));
+    assert.equal((await notices()).length, rows.length);
+    await login(1);
+    assert.ok((await notices()).every(n => !n.is_read));
+    // Updated feedback stays private until explicitly returned again.
+    await db.exec(`RESET ROLE; SET test.role = 'service_role'; UPDATE public."submissionTable" SET feedback = 'New feedback' WHERE id = '${id(31)}';`);
+    await login(1);
+    await query('SELECT public.return_submission($1)', [id(31)]);
+    await login(2);
+    assert.equal((await notices()).filter(n => n.type === 'grade_posted').length, 2);
+    await db.exec(`RESET ROLE; DELETE FROM public."classroomMembers" WHERE student_id = '${id(2)}';`);
+    await login(2);
+    assert.equal((await notices()).length, 0, 'Leaving a classroom revokes notification access');
+    await db.exec('RESET ROLE; SET ROLE anon;');
+    await assert.rejects(notices(), /permission denied/);
+    console.log('PASS: notification events, real revision retries, grade release, feedback return, RLS, read status, self-notification exclusion, enrollment, and idempotent migration.');
   } finally { await db.close(); }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });
