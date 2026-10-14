@@ -25,7 +25,14 @@ export function useClassroomArchiveSync(classrooms, setClassrooms) {
         if (!error && Array.isArray(data)) apply(data);
       } finally { pending = false; }
     }
-    const reconcile = () => { refresh().catch(() => {}); };
+    let lastReconcile = 0;
+    const reconcile = () => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (process.env.NODE_ENV !== "test" && now - lastReconcile < 15000) return;
+      lastReconcile = now;
+      refresh().catch(() => {});
+    };
     const channel = supabase.channel?.(`classroom-archive-${classroomIds.join("-")}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "classroomTable" }, ({ new: row }) => {
         if (classroomIds.includes(row.id)) apply([row]);

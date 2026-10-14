@@ -133,6 +133,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const [classrooms, setClassrooms] =
     useState([]);
+  const studentDataLoadedOnce = useRef(false);
 
   const [classroomTab, setClassroomTabState] = useState(() => {
     if (typeof window !== "undefined") {
@@ -331,13 +332,15 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const submissionSyncError = useSubmissionProgress(profile?.id, setSubmissions, false, { assignments: loadedAssignments });
 
-  const loadStudentData = useCallback(async () => {
+  const loadStudentData = useCallback(async (silent = false) => {
     const studentId = profile?.id;
     if (!studentId) return;
 
-    setIsLoading(true);
-    setStudentDataReady(false);
-    setErrorMessage("");
+    if (!silent && !studentDataLoadedOnce.current) {
+      setIsLoading(true);
+      setStudentDataReady(false);
+      setErrorMessage("");
+    }
 
     const { data: membershipRows, error: membershipError } =
       await supabase
@@ -655,6 +658,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           : "",
     }));
     setStudentDataReady(true);
+    studentDataLoadedOnce.current = true;
     setIsLoading(false);
   }, [profile?.id, resetSubmissionDraft]);
 
@@ -685,16 +689,14 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     const {
       data: { subscription } = {},
     } = supabase.auth.onAuthStateChange((event, session) => {
-      // Do not refetch on TOKEN_REFRESHED (which fires on tab switch / window focus)
-      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
-        if (session?.user?.id) {
-          loadStudentData();
-        }
+      // Do not refetch on TOKEN_REFRESHED or redundant SIGNED_IN events when switching browser tabs
+      if (event === "USER_UPDATED" || (event === "SIGNED_IN" && session?.user?.id && session.user.id !== profile?.id)) {
+        loadStudentData(true);
       }
     });
 
     return () => subscription?.unsubscribe?.();
-  }, [loadStudentData]);
+  }, [loadStudentData, profile?.id]);
 
 
   useEffect(() => {

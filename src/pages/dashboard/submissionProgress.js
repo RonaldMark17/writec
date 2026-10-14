@@ -95,14 +95,22 @@ export function useSubmissionProgress(userId, setSubmissions, teacher = false, c
       } finally { pending = false; }
     }
     refresh();
-    const timer = setInterval(refresh, 5000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
+    const timer = setInterval(refresh, 10000);
+    let lastFocusRefresh = Date.now();
+    const throttledFocusRefresh = () => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastFocusRefresh < 10000) return;
+      lastFocusRefresh = now;
+      refresh();
+    };
+    window.addEventListener("focus", throttledFocusRefresh);
+    document.addEventListener("visibilitychange", throttledFocusRefresh);
     return () => {
       stopped = true;
       clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", throttledFocusRefresh);
+      document.removeEventListener("visibilitychange", throttledFocusRefresh);
     };
   }, [userId, setSubmissions, teacher]);
   return syncError;

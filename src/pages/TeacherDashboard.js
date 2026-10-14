@@ -200,6 +200,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [assignmentDetailTab, setAssignmentDetailTab] = useState("roster");
   const teacherDataRequestRef = useRef(0);
+  const teacherDataLoadedOnce = useRef(false);
 
   const [classroomMembers, setClassroomMembers] = useState([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(null);
@@ -727,7 +728,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
     const requestId = teacherDataRequestRef.current + 1;
     teacherDataRequestRef.current = requestId;
-    if (!silent) {
+    if (!silent && !teacherDataLoadedOnce.current) {
       setIsLoading(true);
       setErrorMessage("");
     }
@@ -1064,6 +1065,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           ? currentForm.classroomId
           : "",
     }));
+    teacherDataLoadedOnce.current = true;
     setIsLoading(false);
     return true;
   }, [profile?.id]);
@@ -1079,16 +1081,14 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     const {
       data: { subscription } = {},
     } = supabase.auth.onAuthStateChange((event, session) => {
-      // Do not refetch on TOKEN_REFRESHED (which fires on tab switch / window focus)
-      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
-        if (session?.user?.id) {
-          loadTeacherData();
-        }
+      // Do not refetch on TOKEN_REFRESHED or redundant SIGNED_IN events when switching browser tabs
+      if (event === "USER_UPDATED" || (event === "SIGNED_IN" && session?.user?.id && session.user.id !== profile?.id)) {
+        loadTeacherData(true);
       }
     });
 
     return () => subscription?.unsubscribe?.();
-  }, [loadTeacherData]);
+  }, [loadTeacherData, profile?.id]);
 
 
   useEffect(() => {
