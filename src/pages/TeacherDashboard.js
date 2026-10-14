@@ -2956,8 +2956,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   >
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
-                        <ClassroomInformation classroom={classroom} teacherView />
-                        <div className="min-w-0 pr-14">
+                        <div className="min-w-0 flex-1 pr-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3>
                               <button type="button" onClick={() => selectGradeClassroom(classroom.id)}
@@ -2977,6 +2976,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             Section {classroom.section} {classroom.subject && classroom.subject !== classroom.name ? `• ${classroom.subject}` : ""}
                           </p>
                         </div>
+                        <ClassroomInformation classroom={classroom} teacherView />
                       </div>
 
                       <div
