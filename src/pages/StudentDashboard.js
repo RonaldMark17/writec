@@ -8,7 +8,7 @@ import RevisionHistory from "./dashboard/RevisionHistory";
 import { filterTodoAssignments } from "./dashboard/todoFilters";
 import AssignmentComments from "./dashboard/AssignmentComments";
 import { useClassroomArchiveSync } from "./dashboard/useClassroomArchiveSync";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import SubmissionFilePreview from "./dashboard/SubmissionFilePreview";
 import useSubmissionTranscription from "./dashboard/useSubmissionTranscription";
 import SubmissionTranscription from "./dashboard/SubmissionTranscription";
@@ -64,7 +64,7 @@ function resolveBackendUrl() {
     try {
       const u = getBackendUrl();
       if (u) return u;
-    } catch {}
+    } catch { }
   }
   return process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
 }
@@ -142,7 +142,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       try {
         const saved = sessionStorage.getItem(`writecheck-student-classroom-tab-${profile?.id || "student"}`);
         if (saved === "active" || saved === "archived") return saved;
-      } catch {}
+      } catch { }
     }
     return "active";
   });
@@ -155,7 +155,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         const url = new URL(window.location.href);
         url.searchParams.set("tab", tab);
         window.history.replaceState({}, "", url.toString());
-      } catch {}
+      } catch { }
       window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     }
   }, [profile?.id]);
@@ -189,7 +189,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const [loadedSubmissions, setSubmissions] =
     useState([]);
-  const submissions = useMemo(() => loadedSubmissions.map(submission => ({ ...submission,
+  const submissions = useMemo(() => loadedSubmissions.map(submission => ({
+    ...submission,
     classroomName: classrooms.find(c => c.id === submission.classroomId)?.name || submission.classroomName,
   })), [loadedSubmissions, classrooms]);
 
@@ -197,8 +198,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
     const submission = submissions.filter((row) => row.studentId === profile?.id &&
       row.assignmentId === assignment.id && row.classroomId === assignment.classroomId)
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
-    return { ...assignment, classroomName: classrooms.find(c => c.id === assignment.classroomId)?.name || assignment.classroomName, isArchived: Boolean(classrooms.find((c) => c.id === assignment.classroomId)?.isArchived),
-      submitted: Boolean(submission) && !submission?.revisionRequest, revisionRequest: submission?.revisionRequest, submission: submission || null };
+    return {
+      ...assignment, classroomName: classrooms.find(c => c.id === assignment.classroomId)?.name || assignment.classroomName, isArchived: Boolean(classrooms.find((c) => c.id === assignment.classroomId)?.isArchived),
+      submitted: Boolean(submission) && !submission?.revisionRequest, revisionRequest: submission?.revisionRequest, submission: submission || null
+    };
   }), [loadedAssignments, submissions, classrooms, profile?.id]);
   const [studentDataReady, setStudentDataReady] = useState(false);
 
@@ -453,7 +456,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
             .in("id", teacherIds);
 
         teacherRows = teachers ?? [];
-      } catch {}
+      } catch { }
     }
 
     const teachersById =
@@ -472,7 +475,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         try {
           const s = localStorage.getItem(`writecheck_teacher_${c.teacher_id}`) || localStorage.getItem(`writecheck_profile_prefs_${c.teacher_id}`);
           if (s) cached = JSON.parse(s);
-        } catch {}
+        } catch { }
       }
       const finalName = (existing?.name && existing.name !== "Teacher")
         ? existing.name
@@ -518,7 +521,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         if (Array.isArray(stored)) {
           stored.forEach((id) => cachedArchivedSet.add(String(id)));
         }
-      } catch {}
+      } catch { }
     });
 
     // Query backend for archived classrooms (account-scoped database check)
@@ -584,7 +587,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           `writecheck_archived_classes_${studentId}`,
           JSON.stringify(Array.from(cachedArchivedSet))
         );
-      } catch {}
+      } catch { }
     }
 
     const classroomsById =
@@ -899,7 +902,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           if (!rpcErr && rpcRes === true) {
             left = true;
           }
-        } catch (rpcEx) {}
+        } catch (rpcEx) { }
       }
 
       // 3. Fallback: Direct table DELETE
@@ -913,7 +916,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           if (!delErr) {
             left = true;
           }
-        } catch (delEx) {}
+        } catch (delEx) { }
       }
 
       if (!left) {
@@ -945,8 +948,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
   const handleOpenSubmissionDraft = (assignment, classroomId = assignment.classroomId) => {
     const contextId = classroomId === assignment.classroomId ? classroomId : assignment.classroomId;
-    setAssignmentOrigin({ page: activePage, classroomId: activePage === "classrooms" ? contextId : openedClassroomId,
-      selectedClassroomId });
+    setAssignmentOrigin({
+      page: activePage, classroomId: activePage === "classrooms" ? contextId : openedClassroomId,
+      selectedClassroomId
+    });
     setSelectedClassroomId(contextId || "");
     setActivePage("assignments");
     setErrorMessage("");
@@ -965,7 +970,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       ? { ...assignmentOrigin, classroomId: selectedAssignment.classroomId } : assignmentOrigin;
     setAssignmentOrigin(null);
     if (origin?.page === "classrooms" &&
-        classrooms.some(classroom => classroom.id === origin.classroomId)) {
+      classrooms.some(classroom => classroom.id === origin.classroomId)) {
       setOpenedClassroomId(origin.classroomId);
       setSelectedClassroomId(origin.classroomId);
       setActivePage("classrooms");
@@ -1090,48 +1095,48 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "The essay pages could not be uploaded. Retry before submitting.");
         uploadedFileUrl = result.file_url;
       } else {
-      const { error: uploadError } =
-        await supabase
-          .storage
-          .from(ESSAY_BUCKET)
-          .upload(filePath, uploadFile, {
-            contentType: uploadFile.type || "application/octet-stream",
-          });
+        const { error: uploadError } =
+          await supabase
+            .storage
+            .from(ESSAY_BUCKET)
+            .upload(filePath, uploadFile, {
+              contentType: uploadFile.type || "application/octet-stream",
+            });
 
-      if (uploadError) {
-        console.warn("Supabase storage upload failed, falling back to local backend:", uploadError);
-        try {
-          const formData = new FormData();
-          formData.append("file", uploadFile);
-          formData.append("assignment_id", selectedAssignment.id);
+        if (uploadError) {
+          console.warn("Supabase storage upload failed, falling back to local backend:", uploadError);
+          try {
+            const formData = new FormData();
+            formData.append("file", uploadFile);
+            formData.append("assignment_id", selectedAssignment.id);
 
-          const backendUrl = resolveBackendUrl();
-          const res = await apiFetch(`${backendUrl}/api/submissions/upload`, {
-            method: "POST",
-            body: formData,
-          });
+            const backendUrl = resolveBackendUrl();
+            const res = await apiFetch(`${backendUrl}/api/submissions/upload`, {
+              method: "POST",
+              body: formData,
+            });
 
-          if (!res.ok) {
-            throw new Error(`Fallback upload failed with status ${res.status}`);
+            if (!res.ok) {
+              throw new Error(`Fallback upload failed with status ${res.status}`);
+            }
+
+            const resData = await res.json();
+            uploadedFileUrl = resData.file_url;
+          } catch (fallbackError) {
+            console.error("Local fallback upload also failed:", fallbackError);
+            const isBucketMissing =
+              uploadError.message?.toLowerCase().includes("bucket not found") ||
+              uploadError.statusCode === "404" ||
+              uploadError.status === 400;
+
+            setErrorMessage(
+              isBucketMissing
+                ? `Supabase Storage bucket "${ESSAY_BUCKET}" was not found. Please create the "${ESSAY_BUCKET}" bucket in your Supabase project (Storage -> New bucket), or ensure your backend server is running on port 8000.`
+                : uploadError.message || "Failed to upload essay image."
+            );
+            return;
           }
-
-          const resData = await res.json();
-          uploadedFileUrl = resData.file_url;
-        } catch (fallbackError) {
-          console.error("Local fallback upload also failed:", fallbackError);
-          const isBucketMissing =
-            uploadError.message?.toLowerCase().includes("bucket not found") ||
-            uploadError.statusCode === "404" ||
-            uploadError.status === 400;
-
-          setErrorMessage(
-            isBucketMissing
-              ? `Supabase Storage bucket "${ESSAY_BUCKET}" was not found. Please create the "${ESSAY_BUCKET}" bucket in your Supabase project (Storage -> New bucket), or ensure your backend server is running on port 8000.`
-              : uploadError.message || "Failed to upload essay image."
-          );
-          return;
         }
-      }
 
       }
 
@@ -1139,10 +1144,12 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       try {
         const response = await apiFetch(`${resolveBackendUrl()}/api/submissions/submit`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ assignment_id: String(selectedAssignment.id), title: essayTitle,
+          body: JSON.stringify({
+            assignment_id: String(selectedAssignment.id), title: essayTitle,
             file_url: uploadedFileUrl, text: reviewedText.trim(),
             ...(selectedAssignment.revisionRequest ? { revision_request_id: selectedAssignment.revisionRequest.id } : {}),
-            ...(submissionDraft.retryJobId ? { retry_job_id: submissionDraft.retryJobId } : {}) }),
+            ...(submissionDraft.retryJobId ? { retry_job_id: submissionDraft.retryJobId } : {})
+          }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not save the submission.");
@@ -1171,8 +1178,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       const savedMessage = selectedAssignment.revisionRequest ? "Revision submitted. Your previous work remains in revision history." : submissionDraft.retrySubmissionId
         ? "Work resubmitted. Processing has been queued again."
         : savedSubmission?.already_submitted
-        ? "This assignment was already saved. Your existing submission is available below."
-        : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for similarity. Confirmation status will update below.";
+          ? "This assignment was already saved. Your existing submission is available below."
+          : "Work uploaded successfully! Your handwritten work is being transcribed and automatically checked for similarity. Confirmation status will update below.";
       setSuccessMessage(savedMessage);
       resetSubmissionDraft();
       setActivePage("submissions");
@@ -1267,10 +1274,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#dadce0]">
                   <button
                     type="button"
-                  disabled={isJoiningClassroom}
+                    disabled={isJoiningClassroom}
                     onClick={() => {
                       setIsJoinModalOpen(false);
-                    setJoinError("");
+                      setJoinError("");
                       setJoinCode("");
                     }}
                     className="rounded-full px-4 py-2 text-sm font-medium text-[#5f6368] hover:bg-[#f1f3f4]"
@@ -1393,42 +1400,39 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
               <button
                 type="button"
                 onClick={() => setClassroomTab("active")}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${
-                  classroomTab === "active"
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${classroomTab === "active"
                     ? "border-[#137333] text-[#137333] font-semibold"
                     : "border-transparent text-[#5f6368] hover:text-[#202124]"
-                }`}
+                  }`}
               >
                 <span>Active classes</span>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    classroomTab === "active"
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${classroomTab === "active"
                       ? "bg-[#e6f4ea] text-[#137333]"
                       : "bg-[#f1f3f4] text-[#5f6368]"
-                  }`}
+                    }`}
                 >
                   {activeClassrooms.length}
                 </span>
               </button>
 
               {archivedClassrooms.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setClassroomTab("archived")}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${
-                  classroomTab === "archived"
-                    ? "border-amber-600 text-amber-800 font-semibold"
-                    : "border-transparent text-[#5f6368] hover:text-[#202124]"
-                }`}
-              >
-                <ArchiveIcon className="h-4 w-4" />
-                <span>Archived classes</span>
-                {archivedClassrooms.length > 0 && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                    {archivedClassrooms.length}
-                  </span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setClassroomTab("archived")}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px ${classroomTab === "archived"
+                      ? "border-amber-600 text-amber-800 font-semibold"
+                      : "border-transparent text-[#5f6368] hover:text-[#202124]"
+                    }`}
+                >
+                  <ArchiveIcon className="h-4 w-4" />
+                  <span>Archived classes</span>
+                  {archivedClassrooms.length > 0 && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                      {archivedClassrooms.length}
+                    </span>
+                  )}
+                </button>
               )}
             </div>
 
@@ -1454,7 +1458,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                   onClick={() => {
                     setJoinCode("");
                     setJoinError("");
-                  setIsJoinModalOpen(true);
+                    setIsJoinModalOpen(true);
                   }}
                   className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#137333] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#0f5b28]"
                 >
@@ -1477,9 +1481,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 {visibleClassrooms.map((classroom) => (
                   <article
                     key={classroom.id}
-                    className={`group flex flex-col rounded-xl border bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200 ${
-                      classroom.isArchived ? "border-amber-300 ring-1 ring-amber-200" : "border-[#dadce0]"
-                    }`}
+                    className={`group flex flex-col rounded-xl border bg-white overflow-hidden shadow-2xs hover:shadow-md transition-shadow duration-200 ${classroom.isArchived ? "border-amber-300 ring-1 ring-amber-200" : "border-[#dadce0]"
+                      }`}
                   >
                     <div className={`relative h-32 p-4 text-white flex flex-col justify-between ${classroom.accent}`}>
                       <div className="flex items-start justify-between gap-2">
@@ -1588,467 +1591,467 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
         {activePage === "assignments" && (
           isLoading ? <p role="status">Loading submission...</p> :
-          !studentDataReady ? <div role="alert">Unable to load assignments and submissions. <button type="button" onClick={loadStudentData}>Retry</button></div> :
-          <div className={selectedAssignment ? "mx-auto w-full max-w-3xl" : ""}>
-            {selectedAssignment && (
-              <button
-                type="button"
-                onClick={handleBackFromAssignment}
-                disabled={isSubmittingEssay}
-                className="mb-5 rounded-lg px-3 py-2 text-sm font-medium text-[#137333] hover:bg-[#e6f4ea] focus:outline-none focus:ring-2 focus:ring-[#137333] disabled:opacity-50"
-              >
-                ← Back to {assignmentOrigin?.page === "classrooms" ? (assignmentClassroom?.name || "classroom") :
-                  assignmentOrigin?.page === "calendar" ? "Calendar" :
-                  assignmentOrigin?.page === "submissions" ? "Results" : "To do"}
-              </button>
-            )}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-[#dadce0] pb-5">
-              <div>
-                {selectedAssignment && <p aria-label="Current classroom" className="mb-1 text-sm font-medium text-[#5f6368]">{assignmentClassroom?.name || selectedAssignment.classroomName || "Classroom unavailable"}{assignmentClassroom?.section ? ` - Section ${assignmentClassroom.section}` : ""}</p>}
-                <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
-                  {selectedAssignment ? selectedAssignment.title : "To-do"}
-                </h2>
-                <p className="mt-1 text-sm text-[#5f6368]">
-                  {selectedAssignment ? (selectedAssignment.submitted ? "Your previously submitted work is shown below." : "Review the instructions below and add your work.") : "Work assigned to you across your enrolled classes."}
-                </p>
-                {selectedClassroom && !selectedAssignment && (
-                  <p className="mt-1 text-xs text-[#137333] font-medium">
-                    Filtering: {selectedClassroom.name} — Section {selectedClassroom.section}
-                  </p>
-                )}
-              </div>
-
-              {classrooms.length > 1 && !selectedAssignment && (
-                <label className="block w-full sm:w-[280px]">
-                  <span className="text-xs font-medium text-[#3c4043]">
-                    Classroom filter
-                  </span>
-                  <ValidatedSelect
-                    value={selectedClassroomId}
-                    onChange={(event) => {
-                      setSelectedClassroomId(event.target.value);
-                      setOpenedClassroomId(event.target.value || null);
-                      resetSubmissionDraft();
-                    }}
-                  className="mt-1.5 h-10 w-full rounded-md border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+            !studentDataReady ? <div role="alert">Unable to load assignments and submissions. <button type="button" onClick={loadStudentData}>Retry</button></div> :
+              <div className={selectedAssignment ? "mx-auto w-full max-w-3xl" : ""}>
+                {selectedAssignment && (
+                  <button
+                    type="button"
+                    onClick={handleBackFromAssignment}
+                    disabled={isSubmittingEssay}
+                    className="mb-5 rounded-lg px-3 py-2 text-sm font-medium text-[#137333] hover:bg-[#e6f4ea] focus:outline-none focus:ring-2 focus:ring-[#137333] disabled:opacity-50"
                   >
-                    <option value="">All classes</option>
-                    {classrooms.map((classroom) => (
-                      <option
-                        key={classroom.id}
-                        value={classroom.id}
-                      >
-                        {classroom.name}{classroom.section ? ` — Section ${classroom.section}` : ""}
-                      </option>
-                    ))}
-                  </ValidatedSelect>
-                </label>
-              )}
-            </div>
-
-            {!selectedAssignment && <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4">
-              <label className="flex-1 text-sm">Search assignments
-                <ValidatedInput type="search" value={todoSearch} onChange={e => setTodoSearch(e.target.value)} placeholder="Title, subject, or section" className="mt-1 block w-full rounded border p-2" />
-              </label>
-              <label className="text-sm">Assignment status
-                <ValidatedSelect value={todoStatus} onChange={e => setTodoStatus(e.target.value)} className="mt-1 block rounded border p-2">
-                  <option value="all">All statuses</option><option value="pending">To do</option><option value="submitted">Turned In</option><option value="revision">Revision requested</option>
-                </ValidatedSelect>
-              </label>
-              <label className="text-sm">Deadline
-                <ValidatedSelect value={todoDeadline} onChange={e => setTodoDeadline(e.target.value)} className="mt-1 block rounded border p-2">
-                  <option value="all">All deadlines</option><option value="overdue">Overdue</option><option value="soon">Due soon</option><option value="undated">No due date</option>
-                </ValidatedSelect>
-              </label>
-              <button type="button" className="rounded border px-3 py-2 text-sm" onClick={() => { setTodoSearch(""); setTodoStatus("all"); setTodoDeadline("all"); }}>Clear search and filters</button>
-              <p role="status" className="w-full text-xs text-gray-600">{assignmentGroups.allCount} matching assignment{assignmentGroups.allCount === 1 ? "" : "s"}</p>
-            </div>}
-
-            {!selectedAssignment && <section className="mt-6">
-              <div className="mb-3 flex items-center gap-2">
-                <ClockIcon className="h-5 w-5 text-[#b06000]" />
-                <h3 className="text-lg font-medium text-[#202124]">Due soon</h3>
-                <span className="rounded-full bg-[#fef7e0] px-2 py-0.5 text-xs font-medium text-[#b06000]">
-                  {dueSoonAssignments.length}
-                </span>
-              </div>
-              {dueSoonAssignments.length === 0 ? (
-                <p className="rounded-lg border border-[#dadce0] bg-white px-4 py-3 text-sm text-[#5f6368]">
-                  Nothing is due in the next 7 days.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  <PaginatedList items={dueSoonAssignments} resetKey={[selectedClassroomId, todoSearch, todoStatus, todoDeadline]} label="Due soon assignments">{pageItems => pageItems.map((assignment) => (
-                    <button
-                      key={assignment.id}
-                      type="button"
-                      onClick={() => handleOpenSubmissionDraft(assignment)}
-                      className="group flex w-full flex-col gap-3 rounded-xl border border-[#dadce0] bg-white p-4 text-left shadow-2xs transition hover:border-[#137333] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#137333] sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fef7e0] text-[#b06000]">
-                          <CalendarIcon className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <span className="block truncate text-sm font-medium text-[#202124] group-hover:text-[#137333]">
-                            {assignment.title}
-                          </span>
-                          <p className="mt-1 truncate text-xs text-[#5f6368]">
-                            {assignment.classroomName}{assignment.classroomSubject ? ` · ${assignment.classroomSubject}` : assignment.classroomSection ? ` · ${assignment.classroomSection}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-xs font-medium text-[#b06000] sm:text-right">
-                        Due {formatDateTime(assignment.dueDate)}
-                      </span>
-                    </button>
-                  ))}</PaginatedList>
-                </div>
-              )}
-            </section>}
-
-            {!selectedAssignment && assignmentGroups.completedList.length > 0 && <section className="mt-6 space-y-3" aria-label="Turned In assignments">
-              <h3 className="text-lg font-medium">Turned In</h3>
-              <PaginatedList items={assignmentGroups.completedList} resetKey={[selectedClassroomId, todoSearch, todoStatus, todoDeadline]} label="Turned In assignments">{pageItems => pageItems.map((assignment) => <button key={assignment.id} type="button"
-                onClick={() => handleOpenSubmissionDraft(assignment)}
-                className="block w-full rounded-xl border border-[#dadce0] bg-white p-4 text-left hover:border-[#137333]">
-                <span className="font-medium">{assignment.title}</span>
-                <span className="ml-3 text-sm text-[#137333]">Turned In</span>
-              </button>)}</PaginatedList>
-            </section>}
-
-            <section className="mt-8">
-              {!selectedAssignment && <div className="mb-3 flex items-center gap-2">
-                <ClipboardIcon className="h-5 w-5 text-[#137333]" />
-                <h3 className="text-lg font-medium text-[#202124]">To do</h3>
-                <span className="rounded-full bg-[#e6f4ea] px-2 py-0.5 text-xs font-medium text-[#137333]">
-                  {todoAssignments.length}
-                </span>
-              </div>}
-              <div className="mt-6 space-y-4">
-                {todoAssignments.length === 0 && assignmentGroups.completedList.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
-                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
-                      <ClipboardIcon className="h-7 w-7" />
-                    </div>
-                    <h3 className="mt-4 text-lg font-medium text-[#202124]">{todoSearch || todoStatus !== "all" || todoDeadline !== "all" ? "No matching assignments" : "No work due"}</h3>
-                    <p className="mt-1 text-sm text-[#5f6368]">
-                      {todoSearch || todoStatus !== "all" || todoDeadline !== "all" ? "Try another search or clear your filters." : "You're all caught up! When teachers assign new work, it will appear here."}
-                    </p>
-                  </div>
+                    ← Back to {assignmentOrigin?.page === "classrooms" ? (assignmentClassroom?.name || "classroom") :
+                      assignmentOrigin?.page === "calendar" ? "Calendar" :
+                        assignmentOrigin?.page === "submissions" ? "Results" : "To do"}
+                  </button>
                 )}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-[#dadce0] pb-5">
+                  <div>
+                    {selectedAssignment && <p aria-label="Current classroom" className="mb-1 text-sm font-medium text-[#5f6368]">{assignmentClassroom?.name || selectedAssignment.classroomName || "Classroom unavailable"}{assignmentClassroom?.section ? ` - Section ${assignmentClassroom.section}` : ""}</p>}
+                    <h2 className="text-2xl font-medium tracking-tight text-[#202124]">
+                      {selectedAssignment ? selectedAssignment.title : "To-do"}
+                    </h2>
+                    <p className="mt-1 text-sm text-[#5f6368]">
+                      {selectedAssignment ? (selectedAssignment.submitted ? "Your previously submitted work is shown below." : "Review the instructions below and add your work.") : "Work assigned to you across your enrolled classes."}
+                    </p>
+                    {selectedClassroom && !selectedAssignment && (
+                      <p className="mt-1 text-xs text-[#137333] font-medium">
+                        Filtering: {selectedClassroom.name} — Section {selectedClassroom.section}
+                      </p>
+                    )}
+                  </div>
 
-                <PaginatedList items={todoAssignments.filter((assignment) => !selectedAssignment || assignment.id === selectedAssignment.id)} resetKey={[selectedClassroomId, selectedAssignment?.id, todoSearch, todoStatus, todoDeadline]} label="Assignments">{pageItems => pageItems.map((assignment) => {
-                  const isDraftOpen =
-                    submissionDraft.assignmentId === assignment.id;
-
-                  const submissionBlockMessage =
-                    isDraftOpen
-                      ? getSubmissionBlockMessage(submissionDraft, submissionFile)
-                      : "";
-
-                  return (
-                    <article
-                      key={assignment.id}
-                      className="rounded-xl border border-[#dadce0] bg-white p-5 shadow-2xs hover:shadow-xs transition duration-150"
-                    >
-                      <button
-                        type="button"
-                        aria-expanded={isDraftOpen}
-                        aria-controls={`assignment-draft-${assignment.id}`}
-                        onClick={() => {
-                          if (!isDraftOpen) handleOpenSubmissionDraft(assignment);
+                  {classrooms.length > 1 && !selectedAssignment && (
+                    <label className="block w-full sm:w-[280px]">
+                      <span className="text-xs font-medium text-[#3c4043]">
+                        Classroom filter
+                      </span>
+                      <ValidatedSelect
+                        value={selectedClassroomId}
+                        onChange={(event) => {
+                          setSelectedClassroomId(event.target.value);
+                          setOpenedClassroomId(event.target.value || null);
+                          resetSubmissionDraft();
                         }}
-                        className="flex w-full flex-col gap-3 rounded-lg text-left transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-[#137333] sm:flex-row sm:items-start sm:justify-between"
+                        className="mt-1.5 h-10 w-full rounded-md border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
                       >
-                        <div className="flex items-start gap-3.5 min-w-0">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
-                            <ClipboardIcon className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <h3 className="text-base font-medium text-[#202124]">
-                              {assignment.title}
-                            </h3>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#5f6368]">
-                              <span className="font-medium text-[#202124]">{assignment.classroomName}</span>
-                              <span>•</span>
-                              <span>{assignment.classroomSubject || assignment.classroomSection}</span>
-                              <span>•</span>
-                              <span className={assignment.dueInfo.isOverdue ? "font-medium text-[#c5221f]" : ""}>
-                                Due {formatDateTime(assignment.dueDate)}
+                        <option value="">All classes</option>
+                        {classrooms.map((classroom) => (
+                          <option
+                            key={classroom.id}
+                            value={classroom.id}
+                          >
+                            {classroom.name}{classroom.section ? ` — Section ${classroom.section}` : ""}
+                          </option>
+                        ))}
+                      </ValidatedSelect>
+                    </label>
+                  )}
+                </div>
+
+                {!selectedAssignment && <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4">
+                  <label className="flex-1 text-sm">Search assignments
+                    <ValidatedInput type="search" value={todoSearch} onChange={e => setTodoSearch(e.target.value)} placeholder="Title, subject, or section" className="mt-1 block w-full rounded border p-2" />
+                  </label>
+                  <label className="text-sm">Assignment status
+                    <ValidatedSelect value={todoStatus} onChange={e => setTodoStatus(e.target.value)} className="mt-1 block rounded border p-2">
+                      <option value="all">All statuses</option><option value="pending">To do</option><option value="submitted">Turned In</option><option value="revision">Revision requested</option>
+                    </ValidatedSelect>
+                  </label>
+                  <label className="text-sm">Deadline
+                    <ValidatedSelect value={todoDeadline} onChange={e => setTodoDeadline(e.target.value)} className="mt-1 block rounded border p-2">
+                      <option value="all">All deadlines</option><option value="overdue">Overdue</option><option value="soon">Due soon</option><option value="undated">No due date</option>
+                    </ValidatedSelect>
+                  </label>
+                  <button type="button" className="rounded border px-3 py-2 text-sm" onClick={() => { setTodoSearch(""); setTodoStatus("all"); setTodoDeadline("all"); }}>Clear search and filters</button>
+                  <p role="status" className="w-full text-xs text-gray-600">{assignmentGroups.allCount} matching assignment{assignmentGroups.allCount === 1 ? "" : "s"}</p>
+                </div>}
+
+                {!selectedAssignment && <section className="mt-6">
+                  <div className="mb-3 flex items-center gap-2">
+                    <ClockIcon className="h-5 w-5 text-[#b06000]" />
+                    <h3 className="text-lg font-medium text-[#202124]">Due soon</h3>
+                    <span className="rounded-full bg-[#fef7e0] px-2 py-0.5 text-xs font-medium text-[#b06000]">
+                      {dueSoonAssignments.length}
+                    </span>
+                  </div>
+                  {dueSoonAssignments.length === 0 ? (
+                    <p className="rounded-lg border border-[#dadce0] bg-white px-4 py-3 text-sm text-[#5f6368]">
+                      Nothing is due in the next 7 days.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      <PaginatedList items={dueSoonAssignments} resetKey={[selectedClassroomId, todoSearch, todoStatus, todoDeadline]} label="Due soon assignments">{pageItems => pageItems.map((assignment) => (
+                        <button
+                          key={assignment.id}
+                          type="button"
+                          onClick={() => handleOpenSubmissionDraft(assignment)}
+                          className="group flex w-full flex-col gap-3 rounded-xl border border-[#dadce0] bg-white p-4 text-left shadow-2xs transition hover:border-[#137333] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#137333] sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fef7e0] text-[#b06000]">
+                              <CalendarIcon className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="block truncate text-sm font-medium text-[#202124] group-hover:text-[#137333]">
+                                {assignment.title}
                               </span>
+                              <p className="mt-1 truncate text-xs text-[#5f6368]">
+                                {assignment.classroomName}{assignment.classroomSubject ? ` · ${assignment.classroomSubject}` : assignment.classroomSection ? ` · ${assignment.classroomSection}` : ""}
+                              </p>
                             </div>
                           </div>
+                          <span className="shrink-0 text-xs font-medium text-[#b06000] sm:text-right">
+                            Due {formatDateTime(assignment.dueDate)}
+                          </span>
+                        </button>
+                      ))}</PaginatedList>
+                    </div>
+                  )}
+                </section>}
+
+                {!selectedAssignment && assignmentGroups.completedList.length > 0 && <section className="mt-6 space-y-3" aria-label="Turned In assignments">
+                  <h3 className="text-lg font-medium">Turned In</h3>
+                  <PaginatedList items={assignmentGroups.completedList} resetKey={[selectedClassroomId, todoSearch, todoStatus, todoDeadline]} label="Turned In assignments">{pageItems => pageItems.map((assignment) => <button key={assignment.id} type="button"
+                    onClick={() => handleOpenSubmissionDraft(assignment)}
+                    className="block w-full rounded-xl border border-[#dadce0] bg-white p-4 text-left hover:border-[#137333]">
+                    <span className="font-medium">{assignment.title}</span>
+                    <span className="ml-3 text-sm text-[#137333]">Turned In</span>
+                  </button>)}</PaginatedList>
+                </section>}
+
+                <section className="mt-8">
+                  {!selectedAssignment && <div className="mb-3 flex items-center gap-2">
+                    <ClipboardIcon className="h-5 w-5 text-[#137333]" />
+                    <h3 className="text-lg font-medium text-[#202124]">To do</h3>
+                    <span className="rounded-full bg-[#e6f4ea] px-2 py-0.5 text-xs font-medium text-[#137333]">
+                      {todoAssignments.length}
+                    </span>
+                  </div>}
+                  <div className="mt-6 space-y-4">
+                    {todoAssignments.length === 0 && assignmentGroups.completedList.length === 0 && (
+                      <div className="rounded-xl border border-dashed border-[#dadce0] bg-white p-12 text-center max-w-md mx-auto my-8">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                          <ClipboardIcon className="h-7 w-7" />
                         </div>
-
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${assignment.dueInfo.badgeColor}`}
-                        >
-                          {assignment.dueInfo.isOverdue && <AlertCircleIcon className="h-3.5 w-3.5" />}
-                          {assignment.revisionRequest ? "Revision requested" : assignment.dueInfo.label}
-                        </span>
-                      </button>
-
-                      {assignment.instructions && (
-                        <p className="mt-2.5 sm:mt-3 text-xs text-[#5f6368] leading-relaxed pl-0 sm:pl-14">
-                          {assignment.instructions}
+                        <h3 className="mt-4 text-lg font-medium text-[#202124]">{todoSearch || todoStatus !== "all" || todoDeadline !== "all" ? "No matching assignments" : "No work due"}</h3>
+                        <p className="mt-1 text-sm text-[#5f6368]">
+                          {todoSearch || todoStatus !== "all" || todoDeadline !== "all" ? "Try another search or clear your filters." : "You're all caught up! When teachers assign new work, it will appear here."}
                         </p>
-                      )}
-
-                      {!isDraftOpen && <div className="mt-3.5 sm:mt-4 flex flex-wrap gap-2.5 sm:gap-3 pl-0 sm:pl-14">
-                        {assignment.submitted && !submissionDraft.retrySubmissionId ? (
-                          <button
-                            type="button"
-                            disabled={isSubmittingEssay}
-                            onClick={() =>
-                              openSubmissionFile(
-                                assignment.submission?.file_url || assignment.submission?.fileUrl,
-                                setErrorMessage
-                              )
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-4 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333]"
-                          >
-                            <FileIcon className="h-3.5 w-3.5 text-[#5f6368]" />
-                            <span>View submission</span>
-                          </button>
-                        ) : classrooms.find((c) => c.id === assignment.classroomId)?.isArchived ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3.5 py-1.5 text-xs font-semibold text-amber-800">
-                            <ArchiveIcon className="h-3.5 w-3.5" />
-                            <span>Class is archived (Submissions closed)</span>
-                          </span>
-                        ) : !assignment.revisionRequest && assignment.dueInfo.isOverdue && assignment.acceptLateSubmissions === false ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-xs font-semibold text-red-700">
-                            <AlertCircleIcon className="h-3.5 w-3.5" />
-                            <span>Submissions closed (Late submissions disabled)</span>
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              isDraftOpen
-                                ? resetSubmissionDraft()
-                                : handleOpenSubmissionDraft(assignment)
-                            }
-                            className={
-                              isDraftOpen
-                                ? "inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-4 py-1.5 text-xs font-medium text-[#c5221f] hover:bg-red-50"
-                                : "inline-flex items-center gap-1.5 rounded-full bg-[#137333] px-4 py-1.5 text-xs font-medium text-white hover:bg-[#0f5b28]"
-                            }
-                          >
-                            {isDraftOpen ? "Cancel" : "Add or create"}
-                          </button>
-                        )}
-                      </div>}
-
-                    {assignment.revisionRequest && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
-                      <h4 className="font-semibold">Revision requested</h4><p className="whitespace-pre-wrap">{assignment.revisionRequest.message}</p>
-                      <p className="mt-2 text-sm">Submit updated work below. Your earlier submission will be preserved. This request allows submission after the original deadline.</p>
-                    </div>}
-                    {isDraftOpen && <RevisionHistory history={assignment.submission?.revisionHistory} />}
-                    {isDraftOpen && assignment.submitted && !submissionDraft.retrySubmissionId && (
-                      <section aria-label="Submitted work" className="mt-5 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                        <h4 className="font-semibold text-[#137333]">Turned In</h4>
-                        <p>{assignment.submission.essayTitle}</p>
-                        <p className="text-sm text-gray-600">Submitted {formatDateTime(assignment.submission.createdAt)}</p>
-                        <SubmissionFilePreview fileUrl={assignment.submission.fileUrl} transcript={assignment.submission.transcribedText} />
-                        {assignment.submission.transcribedText && <pre className="whitespace-pre-wrap font-sans text-sm">{assignment.submission.transcribedText}</pre>}
-                        <StudentSimilarity key={assignment.submission.id} submission={assignment.submission} />
-                        {String(assignment.submission.grade ?? "").trim() !== "" && <p>Grade: {assignment.submission.grade}</p>}
-                        {assignment.submission.feedback && <p>Teacher feedback: {assignment.submission.feedback}</p>}
-                        <button type="button" onClick={() => setViewingSubmission(assignment.submission)} className="text-sm font-medium text-[#137333] underline">View submission details</button>
-                      </section>
+                      </div>
                     )}
 
-                    {isDraftOpen && (!assignment.submitted || submissionDraft.retrySubmissionId) && (
-                      <ValidatedForm
-                        id={`assignment-draft-${assignment.id}`}
-                        onSubmit={handleSubmitAssignment}
-                        className="mt-5 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:p-5"
-                      >
-                        <label className="block">
-                          <span className="text-sm font-extrabold text-gray-800">
-                            Essay title
-                          </span>
-                          <ValidatedInput
-                            type="text"
-                            value={submissionDraft.essayTitle}
-                            disabled={isSubmittingEssay}
-                            onChange={(event) =>
-                              setSubmissionDraft((currentDraft) => ({
-                                ...currentDraft,
-                                essayTitle: event.target.value,
-                              }))
-                            }
-                            className="mt-2 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
-                            required
-                          />
-                        </label>
+                    <PaginatedList items={todoAssignments.filter((assignment) => !selectedAssignment || assignment.id === selectedAssignment.id)} resetKey={[selectedClassroomId, selectedAssignment?.id, todoSearch, todoStatus, todoDeadline]} label="Assignments">{pageItems => pageItems.map((assignment) => {
+                      const isDraftOpen =
+                        submissionDraft.assignmentId === assignment.id;
 
-                        <div className="mt-5 grid gap-3 md:grid-cols-3">
-                          {submissionModes.map(({ id, label, icon: Icon }) => {
-                            const isActive =
-                              submissionDraft.mode === id;
+                      const submissionBlockMessage =
+                        isDraftOpen
+                          ? getSubmissionBlockMessage(submissionDraft, submissionFile)
+                          : "";
 
-                            return (
-                              <button
-                                key={id}
-                                type="button"
-                                disabled={isSubmittingEssay}
-                                onClick={() => handleSubmissionModeChange(id)}
-                                className={
-                                  isActive
-                                    ? "flex min-h-[104px] flex-col items-center justify-center gap-3 rounded-lg border-2 border-emerald-700 bg-white px-4 text-sm font-extrabold text-emerald-800 shadow-sm"
-                                    : "flex min-h-[104px] flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white px-4 text-sm font-extrabold text-gray-500 transition hover:border-emerald-300 hover:text-gray-950"
-                                }
-                              >
-                                <span className={isActive ? "grid h-11 w-11 place-items-center rounded-lg bg-emerald-100 text-emerald-700" : "grid h-11 w-11 place-items-center rounded-lg bg-gray-100 text-gray-500"}>
-                                  <Icon className="h-5 w-5" />
-                                </span>
-                                {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <div className="mt-5">
-                          {!submissionDraft.mode && (
-                            <div className="grid min-h-[260px] place-items-center rounded-lg border-2 border-dashed border-gray-300 bg-white px-6 text-center">
-                              <div>
-                                <span className="mx-auto grid h-16 w-16 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
-                                  <UploadIcon className="h-8 w-8" />
-                                </span>
-                                <h3 className="mt-5 text-xl font-black text-gray-950">
-                                  Choose a submission type first
+                      return (
+                        <article
+                          key={assignment.id}
+                          className="rounded-xl border border-[#dadce0] bg-white p-5 shadow-2xs hover:shadow-xs transition duration-150"
+                        >
+                          <button
+                            type="button"
+                            aria-expanded={isDraftOpen}
+                            aria-controls={`assignment-draft-${assignment.id}`}
+                            onClick={() => {
+                              if (!isDraftOpen) handleOpenSubmissionDraft(assignment);
+                            }}
+                            className="flex w-full flex-col gap-3 rounded-lg text-left transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-[#137333] sm:flex-row sm:items-start sm:justify-between"
+                          >
+                            <div className="flex items-start gap-3.5 min-w-0">
+                              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
+                                <ClipboardIcon className="h-5 w-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <h3 className="text-base font-medium text-[#202124]">
+                                  {assignment.title}
                                 </h3>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#5f6368]">
+                                  <span className="font-medium text-[#202124]">{assignment.classroomName}</span>
+                                  <span>•</span>
+                                  <span>{assignment.classroomSubject || assignment.classroomSection}</span>
+                                  <span>•</span>
+                                  <span className={assignment.dueInfo.isOverdue ? "font-medium text-[#c5221f]" : ""}>
+                                    Due {formatDateTime(assignment.dueDate)}
+                                  </span>
+                                </div>
                               </div>
                             </div>
+
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${assignment.dueInfo.badgeColor}`}
+                            >
+                              {assignment.dueInfo.isOverdue && <AlertCircleIcon className="h-3.5 w-3.5" />}
+                              {assignment.revisionRequest ? "Revision requested" : assignment.dueInfo.label}
+                            </span>
+                          </button>
+
+                          {assignment.instructions && (
+                            <p className="mt-2.5 sm:mt-3 text-xs text-[#5f6368] leading-relaxed pl-0 sm:pl-14">
+                              {assignment.instructions}
+                            </p>
                           )}
 
-                          {(submissionDraft.mode === "picture" || submissionDraft.mode === "file") && (
-                            <>
-                              <label className="flex min-h-[300px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white px-6 text-center transition hover:border-emerald-600 hover:bg-emerald-50">
-                                {filePreview ? (
-                                  <img
-                                    src={filePreview}
-                                    alt="Selected submission preview"
-                                    className="max-h-[260px] w-full rounded-lg object-contain"
-                                  />
-                                ) : (
-                                  <>
-                                    <span className="grid h-20 w-20 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
-                                      {submissionDraft.mode === "picture" ? (
-                                        <ImageIcon className="h-10 w-10" />
-                                      ) : (
-                                        <UploadIcon className="h-10 w-10" />
-                                      )}
-                                    </span>
-                                    <span className="mt-6 text-2xl font-black text-gray-950">
-                                      {submissionDraft.mode === "picture" ? "Upload a picture" : "Upload a file"}
-                                    </span>
-                                  </>
-                                )}
+                          {!isDraftOpen && <div className="mt-3.5 sm:mt-4 flex flex-wrap gap-2.5 sm:gap-3 pl-0 sm:pl-14">
+                            {assignment.submitted && !submissionDraft.retrySubmissionId ? (
+                              <button
+                                type="button"
+                                disabled={isSubmittingEssay}
+                                onClick={() =>
+                                  openSubmissionFile(
+                                    assignment.submission?.file_url || assignment.submission?.fileUrl,
+                                    setErrorMessage
+                                  )
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-4 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333]"
+                              >
+                                <FileIcon className="h-3.5 w-3.5 text-[#5f6368]" />
+                                <span>View submission</span>
+                              </button>
+                            ) : classrooms.find((c) => c.id === assignment.classroomId)?.isArchived ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3.5 py-1.5 text-xs font-semibold text-amber-800">
+                                <ArchiveIcon className="h-3.5 w-3.5" />
+                                <span>Class is archived (Submissions closed)</span>
+                              </span>
+                            ) : !assignment.revisionRequest && assignment.dueInfo.isOverdue && assignment.acceptLateSubmissions === false ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-xs font-semibold text-red-700">
+                                <AlertCircleIcon className="h-3.5 w-3.5" />
+                                <span>Submissions closed (Late submissions disabled)</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  isDraftOpen
+                                    ? resetSubmissionDraft()
+                                    : handleOpenSubmissionDraft(assignment)
+                                }
+                                className={
+                                  isDraftOpen
+                                    ? "inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-4 py-1.5 text-xs font-medium text-[#c5221f] hover:bg-red-50"
+                                    : "inline-flex items-center gap-1.5 rounded-full bg-[#137333] px-4 py-1.5 text-xs font-medium text-white hover:bg-[#0f5b28]"
+                                }
+                              >
+                                {isDraftOpen ? "Cancel" : "Add or create"}
+                              </button>
+                            )}
+                          </div>}
+
+                          {assignment.revisionRequest && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                            <h4 className="font-semibold">Revision requested</h4><p className="whitespace-pre-wrap">{assignment.revisionRequest.message}</p>
+                            <p className="mt-2 text-sm">Submit updated work below. Your earlier submission will be preserved. This request allows submission after the original deadline.</p>
+                          </div>}
+                          {isDraftOpen && <RevisionHistory history={assignment.submission?.revisionHistory} />}
+                          {isDraftOpen && assignment.submitted && !submissionDraft.retrySubmissionId && (
+                            <section aria-label="Submitted work" className="mt-5 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                              <h4 className="font-semibold text-[#137333]">Turned In</h4>
+                              <p>{assignment.submission.essayTitle}</p>
+                              <p className="text-sm text-gray-600">Submitted {formatDateTime(assignment.submission.createdAt)}</p>
+                              <SubmissionFilePreview fileUrl={assignment.submission.fileUrl} transcript={assignment.submission.transcribedText} />
+                              {assignment.submission.transcribedText && <pre className="whitespace-pre-wrap font-sans text-sm">{assignment.submission.transcribedText}</pre>}
+                              <StudentSimilarity key={assignment.submission.id} submission={assignment.submission} />
+                              {String(assignment.submission.grade ?? "").trim() !== "" && <p>Grade: {assignment.submission.grade}</p>}
+                              {assignment.submission.feedback && <p>Teacher feedback: {assignment.submission.feedback}</p>}
+                              <button type="button" onClick={() => setViewingSubmission(assignment.submission)} className="text-sm font-medium text-[#137333] underline">View submission details</button>
+                            </section>
+                          )}
+
+                          {isDraftOpen && (!assignment.submitted || submissionDraft.retrySubmissionId) && (
+                            <ValidatedForm
+                              id={`assignment-draft-${assignment.id}`}
+                              onSubmit={handleSubmitAssignment}
+                              className="mt-5 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:p-5"
+                            >
+                              <label className="block">
+                                <span className="text-sm font-extrabold text-gray-800">
+                                  Essay title
+                                </span>
                                 <ValidatedInput
-                                  type="file"
-                                  multiple
+                                  type="text"
+                                  value={submissionDraft.essayTitle}
                                   disabled={isSubmittingEssay}
-                                  accept={
-                                    submissionDraft.mode === "picture"
-                                      ? "image/png,image/jpeg,image/jpg,image/webp"
-                                      : ".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.docx,.txt,.md,.csv,.json"
+                                  onChange={(event) =>
+                                    setSubmissionDraft((currentDraft) => ({
+                                      ...currentDraft,
+                                      essayTitle: event.target.value,
+                                    }))
                                   }
-                                  onChange={(event) => {
-                                    const files = Array.from(event.target.files || []);
-                                    try {
-                                      if (files.length > 1 || submissionDraft.mode === "picture") { validateEssayPages(files, uploadLimits); changeSubmissionPages(files); }
-                                      else setSubmissionFile(files[0] || null);
-                                      setErrorMessage("");
-                                    } catch (error) { setErrorMessage(error.message); }
-                                    event.target.value = "";
-                                  }}
-                                  className="sr-only"
+                                  className="mt-2 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                                  required
                                 />
                               </label>
 
-                              {previewPages.length > 0 && <EssayPagePicker files={previewPages} onChange={changeSubmissionPages} onError={setErrorMessage} disabled={isSubmittingEssay} />}
+                              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                                {submissionModes.map(({ id, label, icon: Icon }) => {
+                                  const isActive =
+                                    submissionDraft.mode === id;
 
-                              {submissionFile && submissionDraft.mode === "file" && <SubmissionFilePreview file={submissionFile} />}
-                              {submissionFile && <SubmissionTranscription transcription={transcription} disabled={isSubmittingEssay} />}
-                              {submissionFile && (
-                                <div className="mt-5 rounded-lg border border-gray-200 bg-white">
-                                  <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
-                                    <span>File</span>
-                                    <span>Type</span>
-                                    <span>Size</span>
-                                  </div>
+                                  return (
+                                    <button
+                                      key={id}
+                                      type="button"
+                                      disabled={isSubmittingEssay}
+                                      onClick={() => handleSubmissionModeChange(id)}
+                                      className={
+                                        isActive
+                                          ? "flex min-h-[104px] flex-col items-center justify-center gap-3 rounded-lg border-2 border-emerald-700 bg-white px-4 text-sm font-extrabold text-emerald-800 shadow-sm"
+                                          : "flex min-h-[104px] flex-col items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white px-4 text-sm font-extrabold text-gray-500 transition hover:border-emerald-300 hover:text-gray-950"
+                                      }
+                                    >
+                                      <span className={isActive ? "grid h-11 w-11 place-items-center rounded-lg bg-emerald-100 text-emerald-700" : "grid h-11 w-11 place-items-center rounded-lg bg-gray-100 text-gray-500"}>
+                                        <Icon className="h-5 w-5" />
+                                      </span>
+                                      {label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
 
-                                  <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-3 text-sm">
-                                    <span className="min-w-0 truncate font-extrabold text-gray-950">
-                                      {submissionFile.name}
-                                    </span>
-                                    <span className="font-bold text-gray-500">
-                                      {getFileKind(submissionFile)}
-                                    </span>
-                                    <span className="font-bold text-gray-500">
-                                      {formatFileSize(submissionFile.size)}
-                                    </span>
+                              <div className="mt-5">
+                                {!submissionDraft.mode && (
+                                  <div className="grid min-h-[260px] place-items-center rounded-lg border-2 border-dashed border-gray-300 bg-white px-6 text-center">
+                                    <div>
+                                      <span className="mx-auto grid h-16 w-16 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
+                                        <UploadIcon className="h-8 w-8" />
+                                      </span>
+                                      <h3 className="mt-5 text-xl font-black text-gray-950">
+                                        Choose a submission type first
+                                      </h3>
+                                    </div>
                                   </div>
+                                )}
+
+                                {(submissionDraft.mode === "picture" || submissionDraft.mode === "file") && (
+                                  <>
+                                    <label className="flex min-h-[300px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white px-6 text-center transition hover:border-emerald-600 hover:bg-emerald-50">
+                                      {filePreview ? (
+                                        <img
+                                          src={filePreview}
+                                          alt="Selected submission preview"
+                                          className="max-h-[260px] w-full rounded-lg object-contain"
+                                        />
+                                      ) : (
+                                        <>
+                                          <span className="grid h-20 w-20 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
+                                            {submissionDraft.mode === "picture" ? (
+                                              <ImageIcon className="h-10 w-10" />
+                                            ) : (
+                                              <UploadIcon className="h-10 w-10" />
+                                            )}
+                                          </span>
+                                          <span className="mt-6 text-2xl font-black text-gray-950">
+                                            {submissionDraft.mode === "picture" ? "Upload a picture" : "Upload a file"}
+                                          </span>
+                                        </>
+                                      )}
+                                      <ValidatedInput
+                                        type="file"
+                                        multiple
+                                        disabled={isSubmittingEssay}
+                                        accept={
+                                          submissionDraft.mode === "picture"
+                                            ? "image/png,image/jpeg,image/jpg,image/webp"
+                                            : ".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.docx,.txt,.md,.csv,.json"
+                                        }
+                                        onChange={(event) => {
+                                          const files = Array.from(event.target.files || []);
+                                          try {
+                                            if (files.length > 1 || submissionDraft.mode === "picture") { validateEssayPages(files, uploadLimits); changeSubmissionPages(files); }
+                                            else setSubmissionFile(files[0] || null);
+                                            setErrorMessage("");
+                                          } catch (error) { setErrorMessage(error.message); }
+                                          event.target.value = "";
+                                        }}
+                                        className="sr-only"
+                                      />
+                                    </label>
+
+                                    {previewPages.length > 0 && <EssayPagePicker files={previewPages} onChange={changeSubmissionPages} onError={setErrorMessage} disabled={isSubmittingEssay} />}
+
+                                    {submissionFile && submissionDraft.mode === "file" && <SubmissionFilePreview file={submissionFile} />}
+                                    {submissionFile && <SubmissionTranscription transcription={transcription} disabled={isSubmittingEssay} />}
+                                    {submissionFile && (
+                                      <div className="mt-5 rounded-lg border border-gray-200 bg-white">
+                                        <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
+                                          <span>File</span>
+                                          <span>Type</span>
+                                          <span>Size</span>
+                                        </div>
+
+                                        <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-3 text-sm">
+                                          <span className="min-w-0 truncate font-extrabold text-gray-950">
+                                            {submissionFile.name}
+                                          </span>
+                                          <span className="font-bold text-gray-500">
+                                            {getFileKind(submissionFile)}
+                                          </span>
+                                          <span className="font-bold text-gray-500">
+                                            {formatFileSize(submissionFile.size)}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+
+                                {submissionDraft.mode === "text" && (
+                                  <label className="block">
+                                    <span className="text-sm font-extrabold text-gray-800">
+                                      Paste text
+                                    </span>
+                                    <ValidatedTextarea
+                                      value={submissionDraft.text}
+                                      disabled={isSubmittingEssay}
+                                      onChange={(event) =>
+                                        setSubmissionDraft((currentDraft) => ({
+                                          ...currentDraft,
+                                          text: event.target.value,
+                                        }))
+                                      }
+                                      className="mt-2 min-h-[300px] w-full rounded-lg border border-gray-300 bg-white px-4 py-4 text-sm font-semibold leading-6 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+                                    />
+                                  </label>
+                                )}
+                              </div>
+
+                              {(errorMessage || successMessage) && (
+                                <div className="mt-5">
+                                  <StatusMessage
+                                    error={errorMessage || submissionSyncError}
+                                    message={successMessage}
+                                  />
                                 </div>
                               )}
-                            </>
+
+                              {submissionBlockMessage && (
+                                <p className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                                  {submissionBlockMessage}
+                                </p>
+                              )}
+
+                              <button
+                                type="submit"
+                                disabled={isSubmittingEssay || !canSubmitText}
+                                className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-base font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                              >
+                                <UploadIcon className="h-5 w-5" />
+                                {isSubmittingEssay ? "Saving your work..." : transcription.status === "processing" && submissionDraft.mode !== "text" ? "Transcribing…" : submissionDraft.retrySubmissionId ? "Resubmit assignment" : "Submit assignment"}
+                              </button>
+                            </ValidatedForm>
                           )}
-
-                          {submissionDraft.mode === "text" && (
-                            <label className="block">
-                              <span className="text-sm font-extrabold text-gray-800">
-                                Paste text
-                              </span>
-                              <ValidatedTextarea
-                                value={submissionDraft.text}
-                                disabled={isSubmittingEssay}
-                                onChange={(event) =>
-                                  setSubmissionDraft((currentDraft) => ({
-                                    ...currentDraft,
-                                    text: event.target.value,
-                                  }))
-                                }
-                                className="mt-2 min-h-[300px] w-full rounded-lg border border-gray-300 bg-white px-4 py-4 text-sm font-semibold leading-6 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
-                              />
-                            </label>
-                          )}
-                        </div>
-
-                        {(errorMessage || successMessage) && (
-                          <div className="mt-5">
-                            <StatusMessage
-                              error={errorMessage || submissionSyncError}
-                              message={successMessage}
-                            />
-                          </div>
-                        )}
-
-                        {submissionBlockMessage && (
-                          <p className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-                            {submissionBlockMessage}
-                          </p>
-                        )}
-
-                        <button
-                          type="submit"
-                          disabled={isSubmittingEssay || !canSubmitText}
-                          className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-base font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                        >
-                          <UploadIcon className="h-5 w-5" />
-                          {isSubmittingEssay ? "Saving your work..." : transcription.status === "processing" && submissionDraft.mode !== "text" ? "Transcribing…" : submissionDraft.retrySubmissionId ? "Resubmit assignment" : "Submit assignment"}
-                        </button>
-                      </ValidatedForm>
-                    )}
-                    {isDraftOpen && <AssignmentComments key={`${assignment.classroomId}:${assignment.id}`} assignmentId={assignment.id} classroomId={assignment.classroomId} profile={profile} />}
-                  </article>
-                );
-              })}</PaginatedList>
-            </div>
-            </section>
-          </div>
+                          {isDraftOpen && <AssignmentComments key={`${assignment.classroomId}:${assignment.id}`} assignmentId={assignment.id} classroomId={assignment.classroomId} profile={profile} />}
+                        </article>
+                      );
+                    })}</PaginatedList>
+                  </div>
+                </section>
+              </div>
         )}
 
         {activePage === "submissions" && (
@@ -2140,11 +2143,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       key={tab.id}
                       type="button"
                       onClick={() => setSubmissionStatusFilter(tab.id)}
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                        submissionStatusFilter === tab.id
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${submissionStatusFilter === tab.id
                           ? "bg-[#137333] text-white shadow-2xs"
                           : "bg-[#f1f3f4] text-[#5f6368] hover:bg-[#e8eaed] hover:text-[#202124]"
-                      }`}
+                        }`}
                     >
                       {tab.label} ({tab.count})
                     </button>
@@ -2271,7 +2273,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                             ) : submission.status === "graded" ? (
                               <span className="inline-flex items-center gap-1 text-xs text-[#5f6368] italic">
                                 <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                 </svg>
                                 Grade not released yet
                               </span>
@@ -2285,23 +2287,21 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           {/* Status & Similarity */}
                           <div className="space-y-1">
                             <div>
-                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                submission.returnedAt ? "bg-[#e6f4ea] text-[#137333] border border-[#ceead6]" :
-                                submission.processingState && submission.processingState !== "ready" ? "bg-[#fef7e0] text-[#b06000] border border-[#fdd663] animate-pulse" :
-                                submission.status === "graded" ? "bg-[#e6f4ea] text-[#137333]" :
-                                "bg-[#e8f0fe] text-[#1967d2] border border-[#c2e7ff]"
-                              }`}>
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${submission.returnedAt ? "bg-[#e6f4ea] text-[#137333] border border-[#ceead6]" :
+                                  submission.processingState && submission.processingState !== "ready" ? "bg-[#fef7e0] text-[#b06000] border border-[#fdd663] animate-pulse" :
+                                    submission.status === "graded" ? "bg-[#e6f4ea] text-[#137333]" :
+                                      "bg-[#e8f0fe] text-[#1967d2] border border-[#c2e7ff]"
+                                }`}>
                                 {submission.revisionRequest ? "Revision requested" : submission.returnedAt ? "Returned" : submission.processingState && submission.processingState !== "ready" ? `Turned In - ${processingLabel(submission.processingState)}` : submission.status === "graded" ? "Graded" : "Turned In"}
                               </span>
                             </div>
                             <div>
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                submission.processingState === "ready" || submission.hasPlagiarismChecked || submission.returnedAt || submission.status === "graded"
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${submission.processingState === "ready" || submission.hasPlagiarismChecked || submission.returnedAt || submission.status === "graded"
                                   ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                   : submission.processingState === "failed"
                                     ? "bg-red-50 text-red-700 border border-red-200"
                                     : "bg-amber-50 text-amber-700 border border-amber-200"
-                              }`}>
+                                }`}>
                                 {submission.processingState === "ready" || submission.hasPlagiarismChecked || submission.returnedAt || submission.status === "graded"
                                   ? "Similarity Checked"
                                   : submission.processingState === "failed"
@@ -2313,25 +2313,27 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
                           {/* Action Button */}
                           <div className="text-right">
-                          {submission.revisionRequest && <button type="button" className="mr-2 rounded-full border border-amber-500 px-3 py-2 text-sm font-semibold text-amber-900"
-                            onClick={() => {
-                              const assignment = assignments.find(a => a.id === submission.assignmentId);
-                              if (assignment) { handleViewClassroomAssignments(assignment.classroomId); handleOpenSubmissionDraft(assignment); }
-                            }}>Revise assignment</button>}
-                          {canResubmit(submission) && (
-                            <button type="button" className="rounded-full border border-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-700"
+                            {submission.revisionRequest && <button type="button" className="mr-2 rounded-full border border-amber-500 px-3 py-2 text-sm font-semibold text-amber-900"
                               onClick={() => {
-                                setAssignmentOrigin({ page: activePage, classroomId: openedClassroomId, selectedClassroomId });
-                                setSubmissionFile(null);
-                                setErrorMessage("");
-                                setSuccessMessage("");
-                                setSubmissionDraft({ ...emptySubmissionDraft, assignmentId: submission.assignmentId,
-                                  essayTitle: submission.essayTitle || "", retrySubmissionId: submission.id,
-                                  retryJobId: submission.processingJobId });
-                                setSelectedClassroomId(submission.classroomId);
-                                setActivePage("assignments");
-                              }}>Resubmit failed work</button>
-                          )}
+                                const assignment = assignments.find(a => a.id === submission.assignmentId);
+                                if (assignment) { handleViewClassroomAssignments(assignment.classroomId); handleOpenSubmissionDraft(assignment); }
+                              }}>Revise assignment</button>}
+                            {canResubmit(submission) && (
+                              <button type="button" className="rounded-full border border-emerald-600 px-3 py-2 text-sm font-semibold text-emerald-700"
+                                onClick={() => {
+                                  setAssignmentOrigin({ page: activePage, classroomId: openedClassroomId, selectedClassroomId });
+                                  setSubmissionFile(null);
+                                  setErrorMessage("");
+                                  setSuccessMessage("");
+                                  setSubmissionDraft({
+                                    ...emptySubmissionDraft, assignmentId: submission.assignmentId,
+                                    essayTitle: submission.essayTitle || "", retrySubmissionId: submission.id,
+                                    retryJobId: submission.processingJobId
+                                  });
+                                  setSelectedClassroomId(submission.classroomId);
+                                  setActivePage("assignments");
+                                }}>Resubmit failed work</button>
+                            )}
 
                             <button
                               type="button"
@@ -2463,10 +2465,9 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     </div>
                     <div className="flex-1">
                       <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Status</p>
-                      <p className={`mt-1 text-lg font-extrabold capitalize ${
-                        viewingSubmission.status === "graded" ? "text-emerald-700" :
-                        viewingSubmission.status === "submitted" ? "text-blue-600" : "text-gray-500"
-                      }`}>{viewingSubmission.revisionRequest ? "Revision requested" : viewingSubmission.returnedAt ? "Returned" : viewingSubmission.processingState && viewingSubmission.processingState !== "ready" ? `Turned In - ${processingLabel(viewingSubmission.processingState)}` : viewingSubmission.status === "graded" ? "Graded" : "Turned In"}</p>
+                      <p className={`mt-1 text-lg font-extrabold capitalize ${viewingSubmission.status === "graded" ? "text-emerald-700" :
+                          viewingSubmission.status === "submitted" ? "text-blue-600" : "text-gray-500"
+                        }`}>{viewingSubmission.revisionRequest ? "Revision requested" : viewingSubmission.returnedAt ? "Returned" : viewingSubmission.processingState && viewingSubmission.processingState !== "ready" ? `Turned In - ${processingLabel(viewingSubmission.processingState)}` : viewingSubmission.status === "graded" ? "Graded" : "Turned In"}</p>
                     </div>
                     <button
                       type="button"
@@ -2525,11 +2526,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     {/* Step 2: OCR */}
                     <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
                       <div
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black text-xs ${
-                          viewingSubmission.hasTranscribed || viewingSubmission.transcribedText
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black text-xs ${viewingSubmission.hasTranscribed || viewingSubmission.transcribedText
                             ? "bg-emerald-100 text-emerald-700"
                             : "bg-amber-100 text-amber-700"
-                        }`}
+                          }`}
                       >
                         {viewingSubmission.hasTranscribed || viewingSubmission.transcribedText ? "✓" : "⏳"}
                       </div>
@@ -2546,11 +2546,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                     {/* Step 3: Integrity Check */}
                     <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
                       <div
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black text-xs ${
-                          viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready"
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black text-xs ${viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready"
                             ? "bg-emerald-100 text-emerald-700"
                             : "bg-amber-100 text-amber-700"
-                        }`}
+                          }`}
                       >
                         {viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready" ? "✓" : "⏳"}
                       </div>
