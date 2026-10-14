@@ -2440,7 +2440,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             </div>
           )}
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xs">
-            <div className="grid grid-cols-[1.3fr_1fr_1.2fr_1.1fr_0.9fr] gap-4 border-b border-gray-200 bg-gray-50/75 px-5 py-3.5 text-xs font-extrabold uppercase tracking-wider text-gray-500">
+            <div className="wc-data-heading grid grid-cols-[1.3fr_1fr_1.2fr_1.1fr_0.9fr] gap-4 border-b border-gray-200 bg-gray-50/75 px-5 py-3.5 text-xs font-extrabold uppercase tracking-wider text-gray-500">
               <span>Student</span>
               <span>Status</span>
               <span>Submitted File</span>
@@ -2461,9 +2461,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 <PaginatedList items={filteredAssignmentRoster} resetKey={[selectedAssignmentId, submissionRosterFilter, submissionRosterSearch]} label="Assignment submissions">{pageItems => pageItems.map((item) => (
                   <div
                     key={item.studentId}
-                    className="grid grid-cols-[1.3fr_1fr_1.2fr_1.1fr_0.9fr] items-center gap-4 px-5 py-4 text-sm transition hover:bg-gray-50/50"
+                    className="wc-data-row grid grid-cols-[1.3fr_1fr_1.2fr_1.1fr_0.9fr] items-center gap-4 px-5 py-4 text-sm transition hover:bg-gray-50/50"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div data-label="Student" className="flex items-center gap-3 min-w-0">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-800">
                         {item.studentName.slice(0, 2).toUpperCase()}
                       </div>
@@ -2479,7 +2479,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       </div>
                     </div>
 
-                    <div>
+                    <div data-label="Status">
                       {item.status === "revision" && <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">Revision requested</span>}
                       {item.status === "graded" && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-800">
@@ -2504,7 +2504,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       )}
                     </div>
 
-                    <div className="min-w-0">
+                    <div data-label="Submitted file" className="min-w-0">
                       {item.submission && <SimilarityPreview submission={item.submission} submissions={submissions} onReview={handleOpenReview} />}
                       {item.fileUrl ? (
                         <div className="flex items-center gap-2">
@@ -2534,7 +2534,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       )}
                     </div>
 
-                    <div className="min-w-0">
+                    <div data-label="Grade & feedback" className="min-w-0">
                       {item.grade ? (
                         <div>
                           <span className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-900">
@@ -2555,7 +2555,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       )}
                     </div>
 
-                    <div className="text-right">
+                    <div data-label="Action" className="text-right">
                       {item.submission ? (
                         <><button
                           type="button"
@@ -2647,9 +2647,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
         {/* Create Classroom Modal Dialog */}
         {isCreatingClassroom && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className="w-full max-w-lg rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
-              <div className="flex items-start justify-between pb-4 border-b border-[#dadce0]">
+          <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="wc-modal-panel w-full max-w-lg rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="wc-modal-heading flex items-start justify-between pb-4 border-b border-[#dadce0]">
                 <div>
                   <h3 className="text-xl font-medium text-[#202124]">Create class</h3>
                   <p className="mt-0.5 text-xs text-[#5f6368]">Enter details for your new classroom section.</p>
@@ -2717,9 +2717,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
         {/* Create Assignment Modal Dialog */}
         {isCreatingAssignment && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
-              <div className="flex items-start justify-between pb-4 border-b border-[#dadce0]">
+          <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="wc-modal-panel w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="wc-modal-heading flex items-start justify-between pb-4 border-b border-[#dadce0]">
                 <div>
                   <h3 className="text-xl font-medium text-[#202124]">Create assignment</h3>
                   <p className="mt-0.5 text-xs text-[#5f6368]">Post instructions and due date for your classroom section.</p>
@@ -2920,7 +2920,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             </div>
 
             {isLoading ? (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="wc-classroom-grid grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {[1, 2, 3].map((n) => (
                   <div key={n} className="h-64 rounded-xl border border-[#dadce0] bg-white animate-pulse" />
                 ))}
@@ -2959,7 +2959,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="wc-classroom-grid grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {visibleClassrooms.map((classroom) => {
                   const creatorName = profile?.full_name || classroom.teacherName || "Teacher";
                   const creatorInitials = getInitials(creatorName, "T");
@@ -4025,7 +4025,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
                         {manualCheckFiles.length > 0 && uploadMode !== "file" && (
                           <div className="mt-5 rounded-lg border border-gray-200 bg-white">
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
+                            <div className="wc-file-heading grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
                               <span>File</span>
                               <span>Type</span>
                               <span>Size</span>
@@ -4034,15 +4034,15 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             {manualCheckFiles.map((file) => (
                               <div
                                 key={`${file.name}-${file.size}-${file.lastModified}`}
-                                className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-sm last:border-b-0"
+                                className="wc-file-row grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-sm last:border-b-0"
                               >
-                                <span className="min-w-0 truncate font-extrabold text-gray-950">
+                                <span data-label="File" className="min-w-0 truncate font-extrabold text-gray-950">
                                   {file.name}
                                 </span>
-                                <span className="font-bold text-gray-500">
+                                <span data-label="Type" className="font-bold text-gray-500">
                                   {getFileKind(file)}
                                 </span>
-                                <span className="font-bold text-gray-500">
+                                <span data-label="Size" className="font-bold text-gray-500">
                                   {formatFileSize(file.size)}
                                 </span>
                               </div>
@@ -4777,9 +4777,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
           {/* Edit Assignment Modal Dialog */}
           {editingAssignment && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm animate-in fade-in duration-150">
-              <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
-                <div className="sticky -top-6 z-10 flex items-start justify-between gap-4 border-b border-gray-100 bg-white py-4">
+            <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+              <div className="wc-modal-panel relative max-h-[92vh] w-full max-w-lg overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+                <div className="wc-modal-heading sticky -top-6 z-10 flex items-start justify-between gap-4 border-b border-gray-100 bg-white py-4">
                   <div>
                     <span className="inline-block rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
                       Edit Assignment
@@ -4998,10 +4998,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           {/* Lightbox for Upload station manual check image */}
           {isManualImageExpanded && manualCheckImageUrl && (
             <div
-              className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+              className="wc-modal-backdrop fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm animate-in fade-in duration-150"
               onClick={() => setIsManualImageExpanded(false)}
             >
-              <div className="relative max-h-[95vh] max-w-[95vw]">
+              <div className="wc-modal-panel relative max-h-[95vh] max-w-[95vw]">
                 <button
                   type="button"
                   onClick={() => setIsManualImageExpanded(false)}
@@ -5024,8 +5024,8 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           )}
         {/* Archive / Restore Confirmation Modal Dialog */}
         {archivingClassroom && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+          <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="wc-modal-panel w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
               <div className="flex items-center gap-3">
                 <div
                   className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
@@ -5101,9 +5101,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
 
         {/* Copy Class Modal (Google Classroom Clone Feature) */}
         {copyingClassroom && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
-              <div className="flex items-center justify-between pb-3 border-b border-[#dadce0]">
+          <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="wc-modal-panel w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+              <div className="wc-modal-heading flex items-center justify-between pb-3 border-b border-[#dadce0]">
                 <div className="flex items-center gap-2.5">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
                     <CopyIcon className="h-5 w-5" />

@@ -1,6 +1,7 @@
+import ResponsiveNavigation from "./dashboard/ResponsiveNavigation";
 import ValidatedForm, { ValidatedInput, ValidatedSelect } from "../ValidatedForm";
 import { ShieldIcon, ClockIcon, CheckIcon, CloseIcon, RefreshIcon, EditIcon, LeaveIcon, DownloadIcon, SearchIcon } from "./dashboard/shared";
-import { useEffect, useRef, useState } from "react";
+import { Children, cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import { Navigate, NavLink, useLocation } from "react-router-dom";
 import { adminRequest } from "../apiFetch";
 import { signOutAndExpireToken } from "../supabaseClient";
@@ -28,9 +29,13 @@ const dateLabel = (value) => value ? new Date(value).toLocaleString() : "Not ava
 const Status = ({ value }) => <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${value === "active" ? "bg-emerald-50 text-emerald-800" : "bg-gray-100 text-gray-600"}`}>{value || "Not tracked"}</span>;
 
 function Table({ headings, children }) {
-  return <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-600"><tr>{headings.map((h, index) => <th key={index} className="whitespace-nowrap px-4 py-3 font-semibold">{h}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">{children}</tbody></table></div>;
+  const rows = Children.map(children, row => isValidElement(row) ? cloneElement(row, {},
+    Children.toArray(row.props.children).filter(isValidElement).map((cell, index) => cloneElement(cell, {
+      label: typeof headings[index] === "string" ? headings[index] : "Select user",
+    }))) : row);
+  return <div className="wc-table-wrap rounded-xl border border-gray-200 bg-white"><table className="wc-card-table w-full text-left text-sm"><thead className="bg-gray-50 text-gray-600"><tr>{headings.map((heading, index) => <th key={index} scope="col" className={typeof heading === "string" ? "px-4 py-3 font-semibold" : "wc-select-all px-4 py-3"}>{heading}</th>)}</tr></thead><tbody className="divide-y divide-gray-100">{rows}</tbody></table></div>;
 }
-function Cell({ children }) { return <td className="px-4 py-3 align-top">{children}</td>; }
+function Cell({ children, label }) { return <td data-label={label} className="px-4 py-3 align-top">{children}</td>; }
 function Logs({ items }) {
   return <Table headings={["Date and time", "User", "Role", "Action", "Related record"]}>{items.map((row) => <tr key={row.id}><Cell>{dateLabel(row.created_at)}</Cell><Cell>{row.actor_name || "Unknown user"}</Cell><Cell>{row.actor_role || "Not available"}</Cell><Cell>{row.action}</Cell><Cell>{row.target_name || row.target_id || "—"}</Cell></tr>)}</Table>;
 }
@@ -152,16 +157,16 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
   const rows = data?.items || [];
   return (
     <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
-      <header className="sticky top-0 z-20 flex min-h-[56px] sm:min-h-[64px] lg:min-h-[72px] items-center justify-between gap-4 border-b border-[#dadce0] bg-white px-4 sm:px-8">
+      <header className="wc-admin-header sticky top-0 z-20 flex min-h-[56px] sm:min-h-[64px] lg:min-h-[72px] items-center justify-between gap-4 border-b border-[#dadce0] bg-white px-4 sm:px-8">
         <div><span className="text-xl sm:text-2xl font-bold">WriteCheck</span><span className="ml-3 hidden text-sm text-emerald-700 sm:inline">Admin workspace</span></div>
-        <div className="flex items-center gap-2 sm:gap-3"><ThemeToggle inline /><button className={action} aria-label="Open admin profile" onClick={() => setEditing(true)}>{profile?.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-6 w-6 rounded-full object-cover" /> : <ShieldIcon className="h-5 w-5" />}</button><button className={action} onClick={() => signOutAndExpireToken("/login")}><LeaveIcon />Logout</button></div>
+        <div className="flex items-center gap-2 sm:gap-3"><ThemeToggle inline /><button className={action} aria-label="Open admin profile" onClick={() => setEditing(true)}>{profile?.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-6 w-6 rounded-full object-cover" /> : <ShieldIcon className="h-5 w-5" />}</button><button className={action} aria-label="Logout" onClick={() => signOutAndExpireToken("/login")}><LeaveIcon /><span className="hidden sm:inline">Logout</span></button></div>
       </header>
       <div className="mx-auto flex max-w-[1440px] flex-col gap-6 p-4 sm:p-6 lg:flex-row lg:p-8">
-        <aside className="shrink-0 lg:w-52"><nav aria-label="Admin navigation" className="flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-3 lg:flex-col">
+        <aside className="shrink-0 lg:w-52"><ResponsiveNavigation label="Admin menu" current={navigation.find(([key]) => key === page)?.[1]}><nav aria-label="Admin navigation" className="flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-3 lg:flex-col">
           {navigation.map(([key, label]) => <NavLink key={key} to={`/admin/${key}`} onClick={(event) => { if (saving) { event.preventDefault(); return; } resetFilters(); setDetail(null); setNotice(""); }} className={({ isActive }) => `flex items-center gap-3 rounded-lg px-4 py-3 text-base font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-gray-600 hover:bg-gray-50"}`}><AdminIcon name={key} /><span>{label}</span></NavLink>)}
-        </nav></aside>
+        </nav></ResponsiveNavigation></aside>
         <main className="min-w-0 flex-1 space-y-6">
-          <div className="flex items-center justify-between"><div><p className="text-sm font-semibold text-emerald-700">System administration</p><h1 className="mt-1 text-3xl font-semibold">{navigation.find(([key]) => key === page)?.[1]}</h1></div><button className={action} disabled={loading || saving} onClick={() => setReload(reload + 1)}><RefreshIcon />Refresh</button></div>
+          <div className="wc-mobile-stack flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-emerald-700">System administration</p><h1 className="mt-1 text-3xl font-semibold">{navigation.find(([key]) => key === page)?.[1]}</h1></div><button className={action} disabled={loading || saving} onClick={() => setReload(reload + 1)}><RefreshIcon />Refresh</button></div>
           {["dashboard", "users", "approvals"].includes(page) && <div className="flex flex-wrap gap-3">
             <button className={action} onClick={() => { setCreating(true); setError(""); }}>Create account</button>
             {page === "dashboard" && <NavLink to="/admin/approvals" disabled={saving} onClick={resetFilters} className={action}>Pending Approvals{data?.pending != null ? ` (${data.pending})` : ""}</NavLink>}
@@ -186,7 +191,7 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
               <section className="space-y-3"><h2 className="text-xl font-semibold">Recent Registrations</h2>{data.recent_users.length ? <Table headings={["Name", "Email", "Role", "Date registered", "Status"]}>{data.recent_users.map((u) => <tr key={u.id}><Cell>{u.full_name}</Cell><Cell>{u.email}</Cell><Cell>{u.role}</Cell><Cell>{dateLabel(u.registered_at)}</Cell><Cell><Status value={u.account_status} /></Cell></tr>)}</Table> : <p className="text-sm text-gray-500">No registration dates available.</p>}</section>
               <section className="space-y-3"><h2 className="text-xl font-semibold">Recent System Activity</h2>{data.recent_activity.length ? <Logs items={data.recent_activity} /> : <p className="text-sm text-gray-500">No activity recorded yet.</p>}</section>
             </>}
-            {page === "approvals" && selected.length > 0 && <div role="region" aria-label="Bulk account actions" className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            {page === "approvals" && selected.length > 0 && <div role="region" aria-label="Bulk account actions" className="wc-bulk-actions flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
               <span>{selected.length} user{selected.length === 1 ? "" : "s"} selected</span>
               <button className={action} disabled={saving} onClick={() => setBatchConfirmation("active")}><CheckIcon className="h-4 w-4" />Approve Selected</button>
               <button className={action} disabled={saving} onClick={() => setBatchConfirmation("rejected")}><CloseIcon />Reject Selected</button>
@@ -197,7 +202,7 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
               "Name", "Email", "Role", "Date registered", "Status", "Actions"]}>{rows.map(u => <tr key={u.id} className={selected.includes(u.id) ? "bg-emerald-50" : ""}>
               {page === "approvals" && <Cell><ValidatedInput type="checkbox" aria-label={`Select ${u.full_name}`} checked={selected.includes(u.id)} disabled={saving || !eligible.some(user => user.id === u.id)} onChange={() => toggleSelection(u.id)} /></Cell>}
               <Cell>{u.full_name}{batchFailures[u.id] && <p role="alert" className="mt-1 text-sm text-red-700">{batchFailures[u.id]}</p>}</Cell><Cell>{u.email}</Cell><Cell>{u.role}</Cell><Cell>{dateLabel(u.registered_at)}</Cell><Cell><Status value={u.account_status}/></Cell>
-              <Cell><div className="flex gap-2"><button disabled={saving || detailLoading} className={action} onClick={() => view(u)}>View</button>
+              <Cell><div className="flex flex-wrap gap-2"><button disabled={saving || detailLoading} className={action} onClick={() => view(u)}>View</button>
               <button disabled={saving} className={action} onClick={() => setConfirmation({...u,nextStatus:u.account_status === "active" ? "inactive" : "active"})}>{u.account_status === "active" ? <CloseIcon /> : <CheckIcon className="h-4 w-4" />}{u.account_status === "active" ? "Disable" : ["pending","rejected"].includes(u.account_status) ? "Approve" : "Reactivate"}</button>
               {u.account_status === "pending" && <button disabled={saving} className={action} onClick={() => setConfirmation({...u,nextStatus:"rejected"})}><CloseIcon />Reject</button>}</div></Cell>
             </tr>)}</Table>}
@@ -254,5 +259,5 @@ function AdminModal({ title, children, onClose }) {
     if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"><section ref={dialog} tabIndex={-1} onKeyDown={keys} role="dialog" aria-modal="true" aria-label={title} className="max-h-[85vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl outline-none"><div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">{title}</h2><button className={action} onClick={onClose}>Close</button></div>{children}</section></div>;
+  return <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"><section ref={dialog} tabIndex={-1} onKeyDown={keys} role="dialog" aria-modal="true" aria-label={title} className="wc-modal-panel max-h-[85vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl outline-none"><div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">{title}</h2><button className={action} onClick={onClose}>Close</button></div>{children}</section></div>;
 }

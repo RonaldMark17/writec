@@ -343,7 +343,7 @@ async function openSavedReview() {
   await screen.findByRole("option", {name:/^Essay A/});
   fireEvent.change(screen.getByLabelText("Assignment:"), {target:{value:"essayA"}});
   fireEvent.click(await screen.findByRole("button", {name:/^Review(?: & Grade)?$/}));
-  await screen.findByText(/Peer similarity has not been checked/);
+  await screen.findByText("Not checked");
   return screen.getByRole("dialog");
 }
 

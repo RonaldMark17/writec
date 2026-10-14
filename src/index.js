@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import './workspace-theme.css';
+import './responsive.css';
 import { applyTheme } from './theme';
 
 import reportWebVitals from './reportWebVitals';

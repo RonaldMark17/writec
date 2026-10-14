@@ -89,7 +89,7 @@ test("dashboard polling discovers a submission then refreshes its finished repor
   await act(async () => {});
   expect(result.current[0]).toMatchObject({ id: "new", fileUrl: "essay.txt", processingState: "processing", scanResult: null });
   ready = true;
-  await act(async () => { jest.advanceTimersByTime(5000); });
+  await act(async () => { jest.advanceTimersByTime(10000); });
   expect(result.current[0]).toMatchObject({ processingState: "ready", scanResult: { score: 25 } });
   unmount();
   jest.useRealTimers();

@@ -352,7 +352,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-in fade-in duration-150"
+      className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-in fade-in duration-150"
     >
       <section
         ref={dialogRef}
@@ -361,7 +361,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-title"
-        className="relative max-h-[92vh] w-full max-w-[540px] overflow-y-auto no-scrollbar rounded-[28px] border border-[#dadce0] bg-white shadow-[0_25px_70px_-15px_rgba(0,0,0,0.35)] outline-none transition-all"
+        className="wc-modal-panel relative max-h-[92vh] w-full max-w-[540px] overflow-y-auto no-scrollbar rounded-[28px] border border-[#dadce0] bg-white shadow-[0_25px_70px_-15px_rgba(0,0,0,0.35)] outline-none transition-all"
       >
         {/* Top Decorative Google Classroom Accent Bar */}
         <div className="h-1.5 w-full bg-gradient-to-r from-[#0d652d] via-[#137333] to-[#34a853]" />

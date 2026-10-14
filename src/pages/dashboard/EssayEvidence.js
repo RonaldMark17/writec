@@ -41,8 +41,7 @@ export default function EssayEvidence({ text, ranges, submission, sources = [], 
       <span><i className="report-swatch report-swatch-peer" /> Classmate / Peer Copy Match</span>
       <span><u>Underlined</u> Key Overlapping Keywords</span>
     </div>
-    {selected && <aside aria-label="Selected match details" className="mt-3 rounded-lg border border-gray-300 p-3 text-sm">
-      <button type="button" className="similarity-chip float-right" onClick={() => setSelection(null)}>Close match details</button>
+    {selected && <SimilarityDialog title="Match details" onClose={() => setSelection(null)}><aside aria-label="Selected match details" className="mt-3 rounded-lg border border-gray-300 p-3 text-sm">
       {selected.passage !== text && <blockquote className="mb-3 whitespace-pre-wrap border-l-2 pl-3">{selected.passage}</blockquote>}
       {[...new Map(selected.matches.map(m => [`${m.type}:${m.id || m.url || m.label}`, m])).values()].map((match, index) => <div key={index} className="mb-2">
         <p className="font-semibold">{match.type === "peer" ? "Peer Match" : "Online Source Match"}</p>
@@ -52,7 +51,7 @@ export default function EssayEvidence({ text, ranges, submission, sources = [], 
         {match.type === "online" && /^https?:\/\//i.test(match.url || "") && <a href={match.url} target="_blank" rel="noopener noreferrer" className="underline">View Source</a>}
         {match.type === "peer" && match.id && <button type="button" className="similarity-chip" onClick={() => setInspecting(match.id)}>Inspect Match</button>}
       </div>)}
-    </aside>}
+    </aside></SimilarityDialog>}
     {inspecting && <SimilarityDialog title="Peer Similarity Review" onClose={() => setInspecting(null)}>
       <PeerComparison submission={submission} matchedSubmissionId={inspecting} />
     </SimilarityDialog>}

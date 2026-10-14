@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import EssayEvidence from "./EssayEvidence";
 import { evidenceRanges } from "./similarityEvidence";
 
@@ -20,7 +20,7 @@ test.each(["light", "dark"])("%s: overlap remains one essay with source and peer
   expect(screen.getByText("Match: 41%")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", {name:"Inspect Match"}));
   expect(screen.getByText("Comparison for peer")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", {name:"Close"}));
+  fireEvent.click(within(screen.getByRole("dialog", {name:"Peer Similarity Review"})).getByRole("button", {name:"Close"}));
   rerender(<EssayEvidence text="Edited text" ranges={[]} submission={{id:"essay"}} />);
   expect(screen.queryByRole("complementary", {name:"Selected match details"})).not.toBeInTheDocument();
   delete document.documentElement.dataset.theme;

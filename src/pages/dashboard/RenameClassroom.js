@@ -30,8 +30,8 @@ export default function RenameClassroom({ classroom, onClose, onRenamed }) {
     } catch { setError("Classroom name could not be updated. Please try again."); }
     finally { setSaving(false); }
   };
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby="rename-class-title" className="w-full max-w-md rounded-2xl border bg-white p-6 shadow-xl"
+  return <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby="rename-class-title" className="wc-modal-panel w-full max-w-md rounded-2xl border bg-white p-6 shadow-xl"
       onKeyDown={event => {
         if (event.key === "Escape" && !saving) onClose();
         if (event.key !== "Tab") return;

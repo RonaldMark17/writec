@@ -36,11 +36,14 @@ export default function AssignmentCalendar({ assignments, classrooms, classroomI
       <button type="button" aria-label="Next month" className="rounded border px-3 py-2" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>→</button>
       <button type="button" className="rounded border px-3 py-2" onClick={() => setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button>
     </div>
-    <div className="overflow-x-auto rounded-lg border bg-white">
-      <div className="grid min-w-[700px] grid-cols-7">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(day => <div key={day} className="border-b p-2 text-center text-sm font-semibold">{day}</div>)}
+    <div className="wc-calendar rounded-lg border bg-white">
+      <div className="wc-calendar-grid grid grid-cols-7">
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(day => <div key={day} className="wc-calendar-weekday border-b p-2 text-center text-sm font-semibold">{day}</div>)}
         {days.map(day => <section key={calendarDateKey(day)} aria-label={day.toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" })}
-          className={`min-h-28 space-y-1 border-b border-r p-2 ${day.getMonth() === month.getMonth() ? "" : "bg-gray-50 text-gray-500"}`}>
+          data-has-work={visible.some(a => calendarDateKey(a.dueDate) === calendarDateKey(day))}
+          data-current-month={day.getMonth() === month.getMonth()}
+          className={`wc-calendar-day min-h-28 space-y-1 border-b border-r p-2 ${day.getMonth() === month.getMonth() ? "" : "bg-gray-50 text-gray-500"}`}>
+          <time className="wc-agenda-date" dateTime={`${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`}>{day.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}</time>
           <span aria-current={calendarDateKey(day) === today ? "date" : undefined} className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm ${calendarDateKey(day) === today ? "bg-emerald-700 text-white" : ""}`}>{day.getDate()}</span>
           {visible.filter(a => calendarDateKey(a.dueDate) === calendarDateKey(day)).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).map(assignmentButton)}
         </section>)}

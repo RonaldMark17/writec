@@ -1,3 +1,4 @@
+import ResponsiveNavigation from "./ResponsiveNavigation";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { useState, useEffect } from "react";
 import ProfileEditor from "./ProfileEditor";
@@ -1034,9 +1035,9 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
     : workspace || (profile?.role ? `${profile.role} workspace` : "Workspace");
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[#dadce0] bg-white/95 backdrop-blur-md shadow-2xs transition-all">
+    <header className="workspace-header sticky top-0 z-40 border-b border-[#dadce0] bg-white/95 backdrop-blur-md shadow-2xs transition-all">
       <div className="mx-auto max-w-[1440px] px-3 sm:px-6">
-        <div className="flex min-h-[56px] sm:min-h-[64px] lg:min-h-[72px] items-center justify-between gap-x-3">
+        <div className="workspace-header-row flex min-h-[56px] sm:min-h-[64px] lg:min-h-[72px] items-center justify-between gap-x-3">
           {/* Brand Left */}
           <div className="flex items-center gap-2.5 sm:gap-3 py-1.5 shrink-0">
             <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-[#137333] text-white shadow-2xs">
@@ -1052,7 +1053,7 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
           </div>
 
           {/* Desktop Center Nav */}
-          <div className="hidden lg:flex flex-1 justify-center px-3">
+          <div className="workspace-desktop-nav hidden lg:flex flex-1 min-w-0 justify-center px-3">
             <PageNav
               pages={pages}
               activePage={activePage}
@@ -1086,7 +1087,7 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
                 aria-expanded={editingProfile}
                 title={`Profile: ${displayName} (${profile.email || ""})`}
                 onClick={() => setEditingProfile(true)}
-                className="group flex items-center gap-2 rounded-full border border-[#dadce0] bg-white p-1 pr-3 text-left transition hover:border-[#137333] hover:bg-[#f8f9fa] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#e6f4ea] shadow-2xs"
+                className="workspace-profile group flex items-center gap-2 rounded-full border border-[#dadce0] bg-white p-1 pr-3 text-left transition hover:border-[#137333] hover:bg-[#f8f9fa] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#e6f4ea] shadow-2xs"
               >
                 <div
                   className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr ${selectedTheme.bg} text-white text-xs sm:text-sm font-bold shadow-xs transition group-hover:scale-105 overflow-hidden ring-1 ring-black/5`}
@@ -1117,6 +1118,7 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
               type="button"
               onClick={handleLogout}
               className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-gray-400"
+              aria-label="Sign out of account"
               title="Sign out of account"
             >
               <LogOutIcon className="h-3.5 w-3.5 text-[#5f6368]" />
@@ -1125,15 +1127,15 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
           </div>
         </div>
 
-        {/* Mobile / Tablet Horizontal Nav Strip */}
-        <div className="lg:hidden border-t border-[#f1f3f4] overflow-x-auto no-scrollbar">
-          <PageNav
-            pages={pages}
-            activePage={activePage}
-            onChange={onPageChange}
-            label={`${workspace} mobile navigation`}
-          />
-        </div>
+        <ResponsiveNavigation className="workspace-mobile-nav" label="Menu" current={pages.find(page => page.id === activePage)?.label || "Workspace"}>
+          <PageNav pages={[...pages].sort((a, b) => Number(["calendar", "upload"].includes(a.id)) - Number(["calendar", "upload"].includes(b.id)))}
+            activePage={activePage} onChange={onPageChange} label={`${workspace} mobile navigation`} />
+          <div className="wc-menu-actions">
+            <button type="button" onClick={() => onPageChange("notifications")}>Notifications</button>
+            <button type="button" onClick={() => setEditingProfile(true)}>Profile</button>
+            <button type="button" onClick={handleLogout}>Sign out</button>
+          </div>
+        </ResponsiveNavigation>
       </div>
     </header>
   );

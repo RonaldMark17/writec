@@ -1249,8 +1249,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
         {/* Join Class Modal Dialog */}
         {isJoinModalOpen && (
-          <div role="dialog" aria-modal="true" aria-labelledby="join-class-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+          <div role="dialog" aria-modal="true" aria-labelledby="join-class-title" className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="wc-modal-panel w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
               <div className="flex items-start justify-between pb-4 border-b border-[#dadce0]">
                 <div>
                   <h3 id="join-class-title" className="text-xl font-medium text-[#202124]">Join class</h3>
@@ -1326,9 +1326,9 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="leave-modal-title"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+            className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150"
           >
-            <div className="w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
+            <div className="wc-modal-panel w-full max-w-md rounded-2xl border border-[#dadce0] bg-white p-6 shadow-xl">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 border border-red-100">
                   <LeaveIcon className="h-5 w-5" />
@@ -1460,7 +1460,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
             </div>
 
             {isLoading ? (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="wc-classroom-grid grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {[1, 2].map((n) => (
                   <div key={n} className="h-64 rounded-xl border border-[#dadce0] bg-white animate-pulse" />
                 ))}
@@ -1500,7 +1500,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="wc-classroom-grid grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {visibleClassrooms.map((classroom) => (
                   <article
                     key={classroom.id}
@@ -2001,20 +2001,20 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                     {submissionFile && <SubmissionTranscription transcription={transcription} disabled={isSubmittingEssay} />}
                                     {submissionFile && (
                                       <div className="mt-5 rounded-lg border border-gray-200 bg-white">
-                                        <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
+                                        <div className="wc-file-heading grid grid-cols-[1fr_auto_auto] gap-3 border-b border-gray-100 px-4 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
                                           <span>File</span>
                                           <span>Type</span>
                                           <span>Size</span>
                                         </div>
 
-                                        <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-3 text-sm">
-                                          <span className="min-w-0 truncate font-extrabold text-gray-950">
+                                        <div className="wc-file-row grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-3 text-sm">
+                                          <span data-label="File" className="min-w-0 truncate font-extrabold text-gray-950">
                                             {submissionFile.name}
                                           </span>
-                                          <span className="font-bold text-gray-500">
+                                          <span data-label="Type" className="font-bold text-gray-500">
                                             {getFileKind(submissionFile)}
                                           </span>
-                                          <span className="font-bold text-gray-500">
+                                          <span data-label="Size" className="font-bold text-gray-500">
                                             {formatFileSize(submissionFile.size)}
                                           </span>
                                         </div>
@@ -2233,9 +2233,9 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 </div>
               ) : (
                 <div className="overflow-x-auto no-scrollbar">
-                  <div className="min-w-[720px]">
+                  <div className="wc-data-list min-w-[720px]">
                     {/* Table Header */}
-                    <div className="grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1.2fr)_minmax(140px,0.9fr)_minmax(130px,0.9fr)_minmax(110px,auto)] gap-4 border-b border-[#dadce0] bg-[#f8f9fa] px-5 py-3.5 text-xs font-semibold text-[#5f6368]">
+                    <div className="wc-data-heading grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1.2fr)_minmax(140px,0.9fr)_minmax(130px,0.9fr)_minmax(110px,auto)] gap-4 border-b border-[#dadce0] bg-[#f8f9fa] px-5 py-3.5 text-xs font-semibold text-[#5f6368]">
                       <span>Assignment & Class</span>
                       <span>Submitted Work</span>
                       <span>Grade</span>
@@ -2248,10 +2248,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       <PaginatedList items={filteredSubmissions} resetKey={[submissionClassroomId, submissionStatusFilter, submissionSearch, submissionSort]} label="Submissions">{pageItems => pageItems.map((submission) => (
                         <div
                           key={submission.id}
-                          className="grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1.2fr)_minmax(140px,0.9fr)_minmax(130px,0.9fr)_minmax(110px,auto)] items-center gap-4 px-5 py-4 text-sm transition hover:bg-[#f8f9fa]/80"
+                          className="wc-data-row grid grid-cols-[minmax(220px,1.4fr)_minmax(180px,1.2fr)_minmax(140px,0.9fr)_minmax(130px,0.9fr)_minmax(110px,auto)] items-center gap-4 px-5 py-4 text-sm transition hover:bg-[#f8f9fa]/80"
                         >
                           {/* Assignment & Classroom */}
-                          <div className="min-w-0">
+                          <div data-label="Assignment & class" className="min-w-0">
                             <p className="font-semibold text-sm text-[#202124] truncate">
                               {submission.assignmentTitle}
                             </p>
@@ -2262,7 +2262,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           </div>
 
                           {/* Submitted Work */}
-                          <div className="min-w-0">
+                          <div data-label="Submitted work" className="min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-[#e8f0fe] text-[#1967d2]">
                                 <FileIcon className="h-3.5 w-3.5" />
@@ -2284,7 +2284,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           </div>
 
                           {/* Grade */}
-                          <div>
+                          <div data-label="Grade">
                             {submission.returnedAt && String(submission.grade ?? "").trim() !== "" ? (
                               <span className="inline-flex items-center rounded-md border border-[#ceead6] bg-[#e6f4ea] px-2.5 py-1 text-xs font-bold text-[#137333] shadow-2xs">
                                 {submission.grade} / 100
@@ -2308,7 +2308,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           </div>
 
                           {/* Status & Similarity */}
-                          <div className="space-y-1">
+                          <div data-label="Status" className="space-y-1">
                             <div>
                               <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${submission.returnedAt ? "bg-[#e6f4ea] text-[#137333] border border-[#ceead6]" :
                                   submission.processingState && submission.processingState !== "ready" ? "bg-[#fef7e0] text-[#b06000] border border-[#fdd663] animate-pulse" :
@@ -2335,7 +2335,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           </div>
 
                           {/* Action Button */}
-                          <div className="text-right">
+                          <div data-label="Action" className="text-right">
                             {submission.revisionRequest && <button type="button" className="mr-2 rounded-full border border-amber-500 px-3 py-2 text-sm font-semibold text-amber-900"
                               onClick={() => {
                                 const assignment = assignments.find(a => a.id === submission.assignmentId);
@@ -2393,10 +2393,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
         {/* Student Submission Detail Modal */}
         {viewingSubmission && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
-            <div className="relative max-h-[92vh] w-full max-w-4xl lg:max-w-5xl overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+          <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
+            <div className="wc-modal-panel relative max-h-[92vh] w-full max-w-4xl lg:max-w-5xl overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
               {/* Header */}
-              <div className="flex items-start justify-between border-b border-gray-100 pb-4">
+              <div className="wc-modal-heading flex items-start justify-between border-b border-gray-100 pb-4">
                 <div>
                   <span className="inline-block rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
                     My Submission
@@ -2453,10 +2453,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                 {/* Lightbox */}
                 {isStudentImageExpanded && studentImagePreviewUrl && (
                   <div
-                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+                    className="wc-modal-backdrop fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
                     onClick={() => setIsStudentImageExpanded(false)}
                   >
-                    <div className="relative max-h-[95vh] max-w-[95vw]">
+                    <div className="wc-modal-panel relative max-h-[95vh] max-w-[95vw]">
                       <button
                         type="button"
                         onClick={() => setIsStudentImageExpanded(false)}

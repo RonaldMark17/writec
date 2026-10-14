@@ -17,8 +17,8 @@ export function SimilarityDialog({ title, onClose, children }) {
     event.stopPropagation();
     if (event.key === "Escape") { event.preventDefault(); onClose(); }
     if (event.key !== "Tab") return;
-    const focusable = [...dialog.current.querySelectorAll('button:not(:disabled), a[href], [tabindex="0"]')]
-      .filter(node => !node.closest('[hidden]'));
+    const focusable = [...dialog.current.querySelectorAll('button:not(:disabled), a[href], summary, [tabindex="0"]')]
+      .filter(node => !node.closest('[hidden]') && ![...node.closest('section').querySelectorAll('details:not([open])')].some(details => details.contains(node) && node !== details.querySelector('summary')));
     const first = focusable[0], last = focusable[focusable.length - 1];
     if (!first) { event.preventDefault(); dialog.current.focus(); }
     else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) {
@@ -27,9 +27,9 @@ export function SimilarityDialog({ title, onClose, children }) {
       event.preventDefault(); first.focus();
     }
   }
-  return createPortal(<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-6">
+  return createPortal(<div className="wc-modal-backdrop fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-6">
     <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={keys}
-      className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-[#dadce0] bg-white p-5 text-[#202124] shadow-xl outline-none">
+      className="wc-modal-panel review-evidence-dialog max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-[#dadce0] bg-white p-5 text-[#202124] shadow-xl outline-none">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 id={titleId} className="text-xl font-semibold">{title}</h2>
         <button type="button" onClick={onClose} className="rounded-lg border border-[#dadce0] px-4 py-2 text-sm">Close</button>

@@ -29,6 +29,7 @@ test("actual 75.2% provider ranges render all categories and survive Sources / P
   let transcription = check();
   fireEvent.click([...transcription.querySelectorAll("mark")].find(mark => mark.textContent.startsWith("Turnitin:")));
   expect(screen.getByRole("link", {name:"View Source"})).toHaveAttribute("href",source.url);
+  fireEvent.keyDown(screen.getByRole("dialog", {name:"Match details"}), {key:"Escape"});
   fireEvent.click(screen.getByRole("button", {name:"Plain"}));
   expect(transcription.querySelector("mark")).toBeNull();
   expect(transcription.textContent).toBe(text);
@@ -46,16 +47,25 @@ function props(extra = {}) {
     result:{score:24,transcribedText:essay,extractedText:essay,matchedSources:[{title:"Source",url:"https://example.com/paper",matched_words:12}]},
     grading:<input aria-label="Feedback" defaultValue=""/>, ...extra };
 }
-test("one read-only essay, prominent score and visible sources preserve grading drafts", () => {
+test("one read-only essay, compact header and source modal preserve grading drafts", () => {
   const actions = props(); render(<SubmissionReview {...actions}/>);
   const dialog = screen.getByRole("dialog", {name:"Alex"});
   expect(within(dialog).getAllByText("Alex", {exact:true})).toHaveLength(1);
   expect(dialog.querySelector("#review-transcription").textContent).toBe(essay);
   expect(screen.queryByRole("textbox", {name:"Edit extracted student work"})).not.toBeInTheDocument();
   expect(dialog.querySelectorAll("pre")).toHaveLength(0);
+  expect(screen.getByTestId("originals")).not.toBeVisible();
+  fireEvent.click(screen.getByRole("button", {name:"Original submission / download"}));
   expect(screen.getByTestId("originals")).toHaveTextContent("Original pages only");
-  expect(screen.getByText("24%")).toHaveClass("text-6xl");
-  expect(screen.getByRole("link", {name:"https://example.com/paper"})).toBeVisible();
+  expect(screen.getByTestId("originals")).toBeVisible();
+  expect(screen.getByText("24%")).toHaveClass("review-score");
+  expect(screen.queryByRole("link", {name:"https://example.com/paper"})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:"View sources"}));
+  const sourcesDialog = screen.getByRole("dialog", {name:"Sources and peer matches"});
+  expect(within(sourcesDialog).getByRole("link", {name:"https://example.com/paper"})).toBeVisible();
+  expect(dialog.querySelector(".review-header")).toContainElement(screen.getByRole("region", {name:"Similarity Analysis"}));
+  expect(screen.queryByText("Similarity overview")).not.toBeInTheDocument();
+  fireEvent.keyDown(sourcesDialog, {key:"Escape"});
   expect(screen.getByRole("region", {name:"Extracted Essay"}).compareDocumentPosition(screen.getByRole("region", {name:"Similarity Analysis"})) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Feedback"), {target:{value:"Keep this draft"}});
   fireEvent.click(screen.getByText("Class and private comments"));
@@ -117,8 +127,10 @@ test("evidence arrives without hiding the essay and a new scan binds to edited t
   const phrase = "paragraph.\n\nContinuation";
   const actions = props({result:{score:24, transcribedText:essay, matchedSources:[{id:"s",title:"Evidence source",url:"https://example.com",matching_fragments:[{matched_text:phrase}]}]}});
   const {container} = render(<SubmissionReview {...actions}/>);
+  fireEvent.click(screen.getByRole("button", {name:"View sources"}));
   fireEvent.click(screen.getByRole("button", {name:"View Match"}));
-  await waitFor(() => expect(document.activeElement).toHaveTextContent("paragraph. Continuation"));
+  await waitFor(() => expect(screen.getByRole("dialog", {name:"Match details"})).toHaveFocus());
+  expect(screen.queryByRole("dialog", {name:"Sources and peer matches"})).not.toBeInTheDocument();
   expect(await screen.findByRole("complementary", {name:"Selected match details"})).toBeVisible();
   expect(screen.getByRole("link", {name:"View Source"})).toHaveAttribute("href", "https://example.com");
   expect(container.querySelector("#review-transcription").textContent).toBe(essay);
@@ -183,7 +195,7 @@ test("restored filters preserve one canonical essay and source identity without 
     ocrEngineInfo:{yolo_model:"/models/detector.pt",trocr_model:"/models/recognizer"}});
   const {container} = render(<SubmissionReview {...actions}/>);
   expect(screen.getByText("4 External Sources")).toBeVisible();
-  expect(screen.getByText("detector.pt + recognizer")).toBeVisible();
+  expect(screen.queryByText("detector.pt + recognizer")).not.toBeInTheDocument();
   const transcript = container.querySelector("#review-transcription");
   expect(transcript.querySelector(".essay-match-peer")).not.toBeNull();
   fireEvent.click(screen.getByRole("button",{name:"Sources (4)"}));
@@ -196,10 +208,12 @@ test("restored filters preserve one canonical essay and source identity without 
   fireEvent.click(screen.getByRole("button",{name:"All (5)"}));
   fireEvent.click(within(transcript).getByRole("button",{name:"Online Source Match: Last evidence."}));
   expect(screen.getByRole("link",{name:"View Source"})).toHaveAttribute("href","https://example.com/two");
+  fireEvent.keyDown(screen.getByRole("dialog", {name:"Match details"}), {key:"Escape"});
   expect(container.querySelectorAll("#review-transcription")).toHaveLength(1);
   expect(transcript.textContent).toBe(text);
   expect(actions.onRecheck).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button",{name:"Plain"}));
+  fireEvent.click(screen.getByRole("button", {name:"View sources"}));
   fireEvent.click(screen.getAllByRole("button",{name:"View Match"})[0]);
   await waitFor(() => expect(screen.getByRole("link",{name:"View Source"})).toHaveAttribute("href","https://example.com/one"));
 });
@@ -231,4 +245,21 @@ test.each([{saving:true}, {scanning:true}])("both close controls respect existin
     expect(button).toBeDisabled(); fireEvent.click(button);
   }
   expect(actions.onClose).not.toHaveBeenCalled();
+});
+
+test("source dialog traps keyboard focus, restores the trigger, and preserves grading drafts", () => {
+  render(<SubmissionReview {...props()}/>);
+  fireEvent.change(screen.getByLabelText("Feedback"), {target:{value:"Keep this feedback"}});
+  const trigger = screen.getByRole("button", {name:"View sources"});
+  trigger.focus(); fireEvent.click(trigger);
+  const dialog = screen.getByRole("dialog", {name:"Sources and peer matches"});
+  expect(dialog).toHaveFocus();
+  fireEvent.keyDown(dialog, {key:"Tab"});
+  expect(within(dialog).getByRole("button", {name:"Close"})).toHaveFocus();
+  fireEvent.keyDown(document.activeElement, {key:"Tab", shiftKey:true});
+  expect(within(dialog).getByRole("link", {name:"https://example.com/paper"})).toHaveFocus();
+  fireEvent.keyDown(dialog, {key:"Escape"});
+  expect(trigger).toHaveFocus();
+  expect(screen.getByLabelText("Feedback")).toHaveValue("Keep this feedback");
+  expect(screen.queryByRole("dialog", {name:"Sources and peer matches"})).not.toBeInTheDocument();
 });

@@ -26,7 +26,7 @@ export default function EssayPagePicker({ files, onChange, disabled = false, onE
       <input aria-label="Add essay pages" type="file" accept={IMAGE_ACCEPT} multiple disabled={disabled}
         onChange={event => { change([...files, ...Array.from(event.target.files || [])]); event.target.value = ""; }} />
     </label>
-    <ol className="grid gap-3 sm:grid-cols-3">{files.map((file, index) => <li key={`${index}:${file.name}`} className="space-y-2 rounded border p-3">
+    <ol className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">{files.map((file, index) => <li key={`${index}:${file.name}`} className="space-y-2 rounded border p-3">
       <p className="font-semibold">Page {index + 1}</p>
       <img src={previews[index]} alt={`Page ${index + 1} preview`} className="h-40 w-full object-contain" />
       <p className="break-all text-xs">{file.name}</p>

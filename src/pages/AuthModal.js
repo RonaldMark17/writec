@@ -235,12 +235,12 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-3 sm:p-5 transition-all duration-200 overflow-y-auto"
+      className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-3 sm:p-5 transition-all duration-200 overflow-y-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget && onClose) onClose();
       }}
     >
-      <div className="relative w-full max-w-[490px] max-h-[92vh] overflow-y-auto no-scrollbar rounded-[28px] border border-[#e8eaed] bg-white shadow-[0_25px_70px_-15px_rgba(0,0,0,0.35)] transition-all">
+      <div className="wc-modal-panel relative w-full max-w-[490px] max-h-[92vh] overflow-y-auto no-scrollbar rounded-[28px] border border-[#e8eaed] bg-white shadow-[0_25px_70px_-15px_rgba(0,0,0,0.35)] transition-all">
         {/* Top Decorative Classroom Accent Bar */}
         <div className="h-1.5 w-full bg-gradient-to-r from-[#0d652d] via-[#137333] to-[#34a853]" />
 
