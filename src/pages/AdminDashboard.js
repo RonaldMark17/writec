@@ -4,7 +4,8 @@ import { ShieldIcon, ClockIcon, CheckIcon, CloseIcon, RefreshIcon, EditIcon, Lea
 import { Children, cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import { Navigate, NavLink, useLocation } from "react-router-dom";
 import { adminRequest } from "../apiFetch";
-import { signOutAndExpireToken } from "../supabaseClient";
+import { useSignOutConfirmation } from "../SignOutConfirmation";
+import { profileName, profileRole } from "../profileIdentity";
 import ProfileEditor from "./dashboard/ProfileEditor";
 import ThemeToggle from "../ThemeToggle";
 import { downloadAdminCsv } from "../adminCsv";
@@ -59,6 +60,7 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false);
+  const {requestSignOut, signOutDialog} = useSignOutConfirmation();
   const [newAccount, setNewAccount] = useState({ full_name: "", email: "", password: "", role: "student" });
   const createInFlight = useRef(false);
   const batchInFlight = useRef(false);
@@ -159,11 +161,11 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
     <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
       <header className="wc-admin-header sticky top-0 z-20 flex min-h-[56px] sm:min-h-[64px] lg:min-h-[72px] items-center justify-between gap-4 border-b border-[#dadce0] bg-white px-4 sm:px-8">
         <div><span className="text-xl sm:text-2xl font-bold">WriteCheck</span><span className="ml-3 hidden text-sm text-emerald-700 sm:inline">Admin workspace</span></div>
-        <div className="flex items-center gap-2 sm:gap-3"><ThemeToggle inline /><button className={action} aria-label="Open admin profile" onClick={() => setEditing(true)}>{profile?.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-6 w-6 rounded-full object-cover" /> : <ShieldIcon className="h-5 w-5" />}</button><button className={action} aria-label="Logout" onClick={() => signOutAndExpireToken("/login")}><LeaveIcon /><span className="hidden sm:inline">Logout</span></button></div>
+        <div className="flex items-center gap-2 sm:gap-3"><ThemeToggle inline /><button className={action} title={profileName(profile)} aria-label="Open admin profile" onClick={() => setEditing(true)}>{profile?.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-6 w-6 rounded-full object-cover" /> : <ShieldIcon className="h-5 w-5" />}</button><button className={action} aria-label="Logout" onClick={requestSignOut}><LeaveIcon /><span className="hidden sm:inline">Logout</span></button></div>
       </header>
       <div className="mx-auto flex max-w-[1440px] flex-col gap-6 p-4 sm:p-6 lg:flex-row lg:p-8">
-        <aside className="shrink-0 lg:w-52"><ResponsiveNavigation label="Admin menu" current={navigation.find(([key]) => key === page)?.[1]}><nav aria-label="Admin navigation" className="flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-3 lg:flex-col">
-          {navigation.map(([key, label]) => <NavLink key={key} to={`/admin/${key}`} onClick={(event) => { if (saving) { event.preventDefault(); return; } resetFilters(); setDetail(null); setNotice(""); }} className={({ isActive }) => `flex items-center gap-3 rounded-lg px-4 py-3 text-base font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-gray-600 hover:bg-gray-50"}`}><AdminIcon name={key} /><span>{label}</span></NavLink>)}
+        <aside className="shrink-0 lg:w-52"><ResponsiveNavigation onSignOut={requestSignOut} profile={profile} navigationBlocked={saving} actions={<><button type="button" onClick={() => setEditing(true)}>Profile</button></>} label="Admin menu" current={navigation.find(([key]) => key === page)?.[1]}><nav aria-label="Admin navigation" className="flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-3 lg:flex-col">
+          {navigation.map(([key, label]) => <NavLink data-drawer-destination key={key} to={`/admin/${key}`} onClick={(event) => { if (saving) { event.preventDefault(); return; } resetFilters(); setDetail(null); setNotice(""); }} className={({ isActive }) => `flex items-center gap-3 rounded-lg px-4 py-3 text-base font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-gray-600 hover:bg-gray-50"}`}><AdminIcon name={key} /><span>{label}</span></NavLink>)}
         </nav></ResponsiveNavigation></aside>
         <main className="min-w-0 flex-1 space-y-6">
           <div className="wc-mobile-stack flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-emerald-700">System administration</p><h1 className="mt-1 text-3xl font-semibold">{navigation.find(([key]) => key === page)?.[1]}</h1></div><button className={action} disabled={loading || saving} onClick={() => setReload(reload + 1)}><RefreshIcon />Refresh</button></div>
@@ -209,10 +211,11 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
             {page === "classes" && rows.length > 0 && <Table headings={["Class", "Code", "Teacher", "Students", "Activities", "Created", "Status", "Actions"]}>{rows.map((c) => <tr key={c.id}><Cell>{c.classroom_name}<p className="text-xs text-gray-500">{c.section}</p></Cell><Cell>{c.classroom_code}</Cell><Cell>{c.teacher_name || "Not available"}</Cell><Cell>{c.students}</Cell><Cell>{c.activities}</Cell><Cell>{dateLabel(c.created_at)}</Cell><Cell><Status value={c.status} /></Cell><Cell><button disabled={detailLoading} className={action} onClick={() => view(c)}>View class</button></Cell></tr>)}</Table>}
             {page === "activity-logs" && rows.length > 0 && <Logs items={rows} />}
             {data?.items && <><p className="text-sm text-gray-500">{data.total} matching records{rows.length === 0 ? ". No records to display." : ""}</p><div className="flex items-center gap-3"><button disabled={saving || pageNumber === 1} className={action} onClick={() => setPageNumber(pageNumber - 1)}>Previous</button><span className="text-sm">Page {pageNumber}</span><button disabled={saving || pageNumber * 25 >= data.total} className={action} onClick={() => setPageNumber(pageNumber + 1)}>Next</button></div></>}
-            {page === "profile" && <section className="max-w-xl space-y-4 rounded-xl border border-gray-200 bg-white p-6">{profile.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-16 w-16 rounded-full object-cover ring-2 ring-emerald-600 shadow-sm" /> : <ShieldIcon className="h-12 w-12 text-emerald-700" />}<h2 className="text-2xl font-semibold">{profile.full_name}</h2><p>{profile.email}</p><p>Role: Admin</p><p className="text-sm text-gray-600">Registered: {dateLabel(profile.registered_at)}</p><button className={action} onClick={() => setEditing(true)}><EditIcon />Edit profile</button></section>}
+            {page === "profile" && <section className="max-w-xl space-y-4 rounded-xl border border-gray-200 bg-white p-6">{profile.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-16 w-16 rounded-full object-cover ring-2 ring-emerald-600 shadow-sm" /> : <ShieldIcon className="h-12 w-12 text-emerald-700" />}<h2 className="text-2xl font-semibold">{profileName(profile)}</h2><p className="text-sm text-gray-500">{profileRole(profile)}</p><p className="break-all">{profile.email}</p><p className="text-sm text-gray-600">Registered: {dateLabel(profile.registered_at)}</p><button className={action} onClick={() => setEditing(true)}><EditIcon />Edit profile</button><div className="profile-account-actions"><p>Appearance</p><ThemeToggle inline /><div className="mt-4 border-t pt-4"><button type="button" className="account-signout" onClick={requestSignOut}>Sign out</button></div></div></section>}
           </>}
         </main>
       </div>
+      {signOutDialog}
       {creating && <AdminModal title="Create account" onClose={() => { if (!saving) { setCreating(false); setNewAccount({ full_name: "", email: "", password: "", role: "student" }); } }}>
         <p className="text-sm text-gray-600">Create an approved student or teacher account. Its email will be marked confirmed; verify the address belongs to the intended person. No email is sent automatically.</p>
         <ValidatedForm onSubmit={createAccount} className="space-y-4">

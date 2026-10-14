@@ -1,4 +1,7 @@
-import ValidatedForm, { ValidatedInput, ValidatedTextarea, ValidatedSelect } from "../../ValidatedForm";
+import { profileName, profileRole } from "../../profileIdentity";
+import { SignOutButton } from "../../SignOutConfirmation";
+import ThemeToggle from "../../ThemeToggle";
+import ValidatedForm, { ValidatedInput, ValidatedSelect } from "../../ValidatedForm";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../supabaseClient";
@@ -95,12 +98,11 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
 
   const [activeTab, setActiveTab] = useState("profile");
   const [name, setName] = useState(profile?.full_name || "");
-  const [academicTitle, setAcademicTitle] = useState(savedPrefs.academicTitle || (profile?.full_name?.startsWith("Prof") ? "Professor" : profile?.full_name?.startsWith("Dr") ? "Doctor" : ""));
+  const [academicTitle, setAcademicTitle] = useState(savedPrefs.academicTitle ?? profile?.salutation ?? "");
   const [gradeLevel, setGradeLevel] = useState(savedPrefs.gradeLevel || "");
   const [courseTrack, setCourseTrack] = useState(savedPrefs.courseTrack || (!isTeacher ? savedPrefs.department || "" : ""));
-  const [institution, setInstitution] = useState(savedPrefs.institution || (isTeacher ? "Department of Academic Integrity" : ""));
-  const [department, setDepartment] = useState(savedPrefs.department || (isTeacher ? "Language Arts & Writing" : ""));
-  const [bio, setBio] = useState(savedPrefs.bio || "");
+  const [institution, setInstitution] = useState(savedPrefs.institution || "");
+  const [department, setDepartment] = useState(savedPrefs.department || "");
   const rawSavedAvatar = savedPrefs.avatarUrl !== undefined ? savedPrefs.avatarUrl : (profile?.avatarUrl || "");
   const [avatarUrl, setAvatarUrl] = useState(() => (isCustomAvatarUrl(rawSavedAvatar) ? rawSavedAvatar : ""));
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
@@ -259,12 +261,11 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
       if (!data?.length) throw new Error("Your profile could not be saved.");
 
       const updatedPrefs = {
-        academicTitle: isTeacher ? academicTitle : "",
+        academicTitle,
         gradeLevel: isStudent ? gradeLevel.trim() : "",
         courseTrack: isStudent ? courseTrack.trim() : "",
         institution: institution.trim(),
         department: isTeacher ? department : courseTrack,
-        bio,
         avatarUrl,
         plagiarismSensitivity,
         studentReportView,
@@ -343,9 +344,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
     .toUpperCase();
 
   const rawFullName = name || profile?.full_name || "Your profile";
-  const displayTitleAndName = isTeacher && academicTitle && !rawFullName.toLowerCase().startsWith(academicTitle.toLowerCase())
-    ? `${academicTitle} ${rawFullName}`
-    : rawFullName;
+  const displayTitleAndName = profileName({ ...profile, full_name: rawFullName, salutation: academicTitle, academicTitle });
 
   return createPortal(
     <div
@@ -403,7 +402,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                 disabled={busy || isProcessingPhoto}
                 title={avatarUrl ? "Click to change photo" : "Click to upload photo"}
                 aria-label={avatarUrl ? "Change profile photo" : "Upload profile photo"}
-                className={`relative flex h-20 w-20 items-center justify-center rounded-full overflow-hidden bg-gradient-to-tr ${selectedTheme.bg} text-white text-2xl font-bold shadow-lg ring-4 ${selectedTheme.ring} transition-all duration-300 hover:ring-[#137333]/50 focus:outline-none focus:ring-4 focus:ring-[#137333] cursor-pointer`}
+                className={`relative flex h-20 w-20 items-center justify-center rounded-full overflow-hidden bg-[#137333] bg-gradient-to-tr ${selectedTheme.bg} text-white text-2xl font-bold shadow-lg ring-4 ${selectedTheme.ring} transition-all duration-300 hover:ring-[#137333]/50 focus:outline-none focus:ring-4 focus:ring-[#137333] cursor-pointer`}
               >
                 {avatarUrl ? (
                   <img
@@ -475,15 +474,12 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
               {displayTitleAndName}
             </h2>
 
+            <p className="mt-1 text-sm text-[#5f6368]">{profileRole(profile)}</p>
             <p className="mt-0.5 text-xs text-[#5f6368] break-all">
               {profile?.email}
             </p>
 
             <div className="mt-2.5 flex items-center gap-2 flex-wrap justify-center">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e6f4ea] px-3 py-0.5 text-xs font-semibold text-[#137333] capitalize">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#137333]" />
-                {profile?.role ? `${profile.role} Workspace` : "Workspace"}
-              </span>
               {isStudent && gradeLevel && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f0fe] px-2.5 py-0.5 text-[11px] font-medium text-[#1a73e8]">
                   {gradeLevel}
@@ -558,7 +554,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr ${selectedTheme.bg} text-white font-bold text-sm overflow-hidden ring-2 ${selectedTheme.ring}`}>
+                    <div className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#137333] bg-gradient-to-tr ${selectedTheme.bg} text-white font-bold text-sm overflow-hidden ring-2 ${selectedTheme.ring}`}>
                       {avatarUrl ? (
                         <img src={avatarUrl} alt="Thumbnail preview" className="h-full w-full object-cover" />
                       ) : (
@@ -599,6 +595,28 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                   </div>
                 </div>
 
+                      <div>
+                        <label htmlFor="academic-title" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
+                          Salutation
+                        </label>
+                        <ValidatedSelect
+                          id="academic-title"
+                          value={academicTitle}
+                          onChange={(e) => setAcademicTitle(e.target.value)}
+                          className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
+                        >
+                          <option value="">None</option>
+                          {academicTitle && !["Professor","Prof.","Doctor","Dr.","Mr.","Ms.","Mrs.","Instructor"].includes(academicTitle) && <option value={academicTitle}>{academicTitle}</option>}
+                          <option value="Professor">Prof.</option>
+                          <option value="Prof.">Prof. (saved abbreviation)</option>
+                          <option value="Doctor">Dr. (saved title)</option>
+                          <option value="Dr.">Dr.</option>
+                          <option value="Mr.">Mr.</option>
+                          <option value="Ms.">Ms.</option>
+                          <option value="Mrs.">Mrs.</option>
+                          <option value="Instructor">Instructor</option>
+                        </ValidatedSelect>
+                      </div>
                 {/* Display Name Input */}
                 <div>
                   <label
@@ -630,25 +648,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                   <>
                     {/* Title & Department Row */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor="academic-title" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                          Academic title / Prefix
-                        </label>
-                        <ValidatedSelect
-                          id="academic-title"
-                          value={academicTitle}
-                          onChange={(e) => setAcademicTitle(e.target.value)}
-                          className="h-10 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3 text-xs sm:text-sm text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                        >
-                          <option value="">None</option>
-                          <option value="Professor">Professor</option>
-                          <option value="Dr.">Dr.</option>
-                          <option value="Mr.">Mr.</option>
-                          <option value="Ms.">Ms.</option>
-                          <option value="Mrs.">Mrs.</option>
-                          <option value="Instructor">Instructor</option>
-                        </ValidatedSelect>
-                      </div>
+
 
                       <div>
                         <label htmlFor="academic-dept" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
@@ -679,20 +679,6 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                       />
                     </div>
 
-                    {/* Bio / Teacher Note */}
-                    <div>
-                      <label htmlFor="bio-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                        Bio / Note to Students
-                      </label>
-                      <ValidatedTextarea
-                        id="bio-input"
-                        rows={2}
-                        value={bio}
-                        onChange={(e) => setBio(e.target.value)}
-                        placeholder="Write a brief intro, office hours, or guidance on writing submissions..."
-                        className="w-full rounded-xl border border-[#dadce0] bg-[#fafafa] p-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                      />
-                    </div>
                   </>
                 ) : (
                   <>
@@ -761,20 +747,6 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                       />
                     </div>
 
-                    {/* Bio / About Me */}
-                    <div>
-                      <label htmlFor="bio-input" className="block text-xs font-semibold uppercase tracking-wider text-[#444746] mb-1.5">
-                        Bio / About Me
-                      </label>
-                      <ValidatedTextarea
-                        id="bio-input"
-                        rows={2}
-                        value={bio}
-                        onChange={(e) => setBio(e.target.value)}
-                        placeholder="Share a brief intro about yourself, academic interests, or writing goals..."
-                        className="w-full rounded-xl border border-[#dadce0] bg-[#fafafa] p-3 text-xs sm:text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] focus:bg-white focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea]"
-                      />
-                    </div>
                   </>
                 )}
               </div>
@@ -1134,6 +1106,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
               </button>
             </div>
           </ValidatedForm>
+          {!setupMode && <div className="profile-account-actions"><p className="text-sm font-semibold">Appearance</p><ThemeToggle inline /><div className="mt-4 border-t pt-4"><SignOutButton className="account-signout" /></div></div>}
         </div>
       </section>
     </div>,

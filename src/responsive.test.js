@@ -1,3 +1,5 @@
+import ProfileEditor from "./pages/dashboard/ProfileEditor";
+import { SignOutButton } from "./SignOutConfirmation";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import StudentDashboard from "./pages/StudentDashboard";
@@ -22,7 +24,15 @@ function capture(name) {
   if (!process.env.WC_CAPTURE_DIR) return;
   const fs = require("fs"), path = require("path");
   fs.mkdirSync(process.env.WC_CAPTURE_DIR, { recursive: true });
-  fs.writeFileSync(path.join(process.env.WC_CAPTURE_DIR, `${name}.body.html`), document.body.innerHTML);
+  const snapshot = document.body.cloneNode(true);
+  const selects = document.body.querySelectorAll("select");
+  snapshot.querySelectorAll("select").forEach((select, index) => {
+    [...select.options].forEach((option, optionIndex) => {
+      if (selects[index].options[optionIndex].selected) option.setAttribute("selected", "");
+      else option.removeAttribute("selected");
+    });
+  });
+  fs.writeFileSync(path.join(process.env.WC_CAPTURE_DIR, `${name}.body.html`), snapshot.innerHTML);
 }
 const teacher = { id: "t", role: "teacher", full_name: "Maria Santos", email: "maria.santos.long.email@school.example.com" };
 const student = { id: "s", role: "student", full_name: "Juan Dela Cruz", email: "juan@school.example.com" };
@@ -70,6 +80,9 @@ test("student destinations retain navigation and submission access", async () =>
 test("teacher destinations retain class creation, scan and grading access", async () => {
   show(<TeacherDashboard profile={teacher} />);
   await screen.findByRole("button", { name: "Class A" }); capture("teacher-classes");
+  fireEvent.click(screen.getByRole("button", {name:"Menu Classes"})); capture("teacher-menu");
+  expect(within(screen.getByRole("dialog", {name:"Menu navigation"})).getByRole("button", {name:/Notifications/})).toHaveTextContent("1");
+  fireEvent.click(screen.getByRole("button", {name:"Close menu"}));
   fireEvent.click(screen.getByRole("button", { name: "Create class" })); capture("create-class");
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   fireEvent.click(screen.getByRole("button", { name: "Class A" })); capture("teacher-classroom");
@@ -93,6 +106,9 @@ test("admin card labels preserve approval selection and bulk actions", async () 
   adminRequest.mockResolvedValue({ items: [{ id: "s", full_name: "Juan Dela Cruz", email: "very.long.student.email.address@school.example.com", role: "student", account_status: "pending", registered_at: "2026-10-14" }], total: 1 });
   show(<AdminDashboard profile={{ ...teacher, role: "admin" }} />, "/admin/approvals");
   await screen.findByText("Juan Dela Cruz"); capture("admin-approvals");
+  fireEvent.click(screen.getByRole("button", {name:/Admin menu/})); capture("admin-menu");
+  expect(screen.getByRole("dialog", {name:"Admin menu navigation"})).toHaveTextContent("Sign out");
+  fireEvent.click(screen.getByRole("button", {name:"Close menu"}));
   expect(document.querySelector('[data-label="Email"]')).toHaveTextContent("school.example.com");
   fireEvent.click(screen.getByRole("checkbox", { name: "Select all pending users on this page" })); capture("admin-bulk");
   fireEvent.click(screen.getByRole("button", { name: "Approve Selected" })); capture("admin-confirmation");
@@ -111,4 +127,22 @@ test("review highlights, source dialogs, uploads and contact remain available", 
   const uploads = render(<main><EssayPagePicker files={[new File(["page"], "long-essay-page-one.png", { type: "image/png" }), new File(["page"], "page-two.png", { type: "image/png" })]} onChange={jest.fn()} /></main>);
   await act(async () => {}); capture("uploads"); uploads.unmount();
   show(<Contact />); capture("contact");
+});
+
+
+test("sign out confirmation is responsive and cancellation keeps the session", async () => {
+  render(<SignOutButton />);
+  fireEvent.click(screen.getByRole("button", {name:"Sign out"}));
+  await screen.findByRole("dialog", {name:"Sign out of WriteCheck?"});
+  capture("signout-confirmation");
+  fireEvent.click(screen.getByRole("button", {name:"Cancel"}));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+
+test("profile identity wraps long names and omits legacy Bio", () => {
+ show(<ProfileEditor profile={{...teacher, academicTitle:"Dr.",full_name:"Maria Christina Dela Cruz-Santos",email:"maria.christina.dela.cruz.santos@school.example.com",bio:"Legacy value"}} onClose={()=>{}} />);
+ expect(screen.getByRole("heading", {name:"Dr. Maria Christina Dela Cruz-Santos"})).toBeInTheDocument();
+ expect(screen.queryByLabelText(/Bio/)).not.toBeInTheDocument();
+ capture("profile-identity");
 });

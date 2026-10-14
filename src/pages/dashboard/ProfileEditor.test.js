@@ -81,3 +81,17 @@ test("student profile hides AI preferences while preserving profile and security
   expect(screen.getByRole("button", { name: /Profile & Info/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Security/i })).toBeInTheDocument();
 });
+
+
+test("salutation precedes the name, Bio is absent, and old Bio is not sent on save", async () => {
+  show({profile:{...profile,full_name:"Juan Dela Cruz",academicTitle:"Prof.",bio:"Legacy bio"}});
+  expect(screen.getByRole("heading",{name:"Prof. Juan Dela Cruz"})).toBeInTheDocument();
+  expect(screen.queryByLabelText(/Bio/)).not.toBeInTheDocument();
+  const title=screen.getByLabelText("Salutation"), name=screen.getByLabelText("Display name");
+  expect(title.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(screen.getByText("Save profile"));
+  await screen.findByText("Profile updated.");
+  const prefs=supabase.auth.updateUser.mock.calls[0][0].data.writecheck_preferences;
+  expect(prefs.academicTitle).toBe("Prof.");
+  expect(prefs).not.toHaveProperty("bio");
+});

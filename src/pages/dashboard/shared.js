@@ -1,8 +1,10 @@
+import { useSignOutConfirmation } from "../../SignOutConfirmation";
+import { profileName, profileRole } from "../../profileIdentity";
 import ResponsiveNavigation from "./ResponsiveNavigation";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { useState, useEffect } from "react";
 import ProfileEditor from "./ProfileEditor";
-import { supabase, signOutAndExpireToken } from "../../supabaseClient";
+import { supabase } from "../../supabaseClient";
 
 export const CLASSROOM_TABLE = "classroomTable";
 export const MEMBER_TABLE = "classroomMembers";
@@ -983,7 +985,7 @@ export function isCustomAvatarUrl(url) {
   return true;
 }
 
-export function Header({ workspace, pages, activePage, onPageChange, profile, onProfileUpdated, notifications }) {
+export function Header({ workspace, pages, activePage, onPageChange, profile, onProfileUpdated, notifications, unreadNotifications = 0 }) {
   const [editingProfile, setEditingProfile] = useState(false);
   const [headerImgError, setHeaderImgError] = useState(false);
   const [localPrefs, setLocalPrefs] = useState(() => {
@@ -1012,27 +1014,20 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
     return () => window.removeEventListener("writecheck:profile_updated", handler);
   }, [profile?.id]);
 
-  const handleLogout = async () => {
-    await signOutAndExpireToken("/login");
-  };
+  const { requestSignOut: handleLogout, signOutDialog } = useSignOutConfirmation();
 
   const rawAvatarUrl = localPrefs.avatarUrl !== undefined ? localPrefs.avatarUrl : (profile?.avatarUrl || "");
   const avatarUrl = isCustomAvatarUrl(rawAvatarUrl) ? rawAvatarUrl : "";
-  const displayName = profile?.full_name || "Teacher";
+  const displayName = profileName({ ...profile, ...localPrefs });
   const selectedTheme = getTeacherAvatarTheme();
 
-  const initials = displayName
+  const initials = (profile?.full_name || "User")
     .split(" ")
     .filter(Boolean)
     .map((n) => n[0])
     .join("")
     .slice(0, 2)
     .toUpperCase() || "T";
-
-  const academicTitle = localPrefs.academicTitle || profile?.academicTitle || "";
-  const subtitle = academicTitle
-    ? `${academicTitle} • ${workspace || "Workspace"}`
-    : workspace || (profile?.role ? `${profile.role} workspace` : "Workspace");
 
   return (
     <header className="workspace-header sticky top-0 z-40 border-b border-[#dadce0] bg-white/95 backdrop-blur-md shadow-2xs transition-all">
@@ -1104,11 +1099,11 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
                   )}
                 </div>
                 <div className="hidden md:flex flex-col min-w-0 pr-1 text-left">
-                  <span className="text-xs font-semibold text-[#202124] group-hover:text-[#137333] truncate max-w-[130px]">
+                  <span title={displayName} className="text-xs font-semibold text-[#202124] group-hover:text-[#137333] truncate max-w-[130px]">
                     {displayName}
                   </span>
                   <span className="text-[10px] font-medium text-[#5f6368] truncate leading-tight">
-                    {subtitle}
+                    {profileRole(profile)}
                   </span>
                 </div>
               </button>
@@ -1127,16 +1122,16 @@ export function Header({ workspace, pages, activePage, onPageChange, profile, on
           </div>
         </div>
 
-        <ResponsiveNavigation className="workspace-mobile-nav" label="Menu" current={pages.find(page => page.id === activePage)?.label || "Workspace"}>
+        <ResponsiveNavigation onSignOut={handleLogout} profile={{ ...profile, ...localPrefs, avatarUrl }} className="workspace-mobile-nav" label="Menu" current={pages.find(page => page.id === activePage)?.label || "Workspace"}>
           <PageNav pages={[...pages].sort((a, b) => Number(["calendar", "upload"].includes(a.id)) - Number(["calendar", "upload"].includes(b.id)))}
             activePage={activePage} onChange={onPageChange} label={`${workspace} mobile navigation`} />
           <div className="wc-menu-actions">
-            <button type="button" onClick={() => onPageChange("notifications")}>Notifications</button>
+            <button type="button" aria-current={activePage === "notifications" ? "page" : undefined} onClick={() => onPageChange("notifications")}>Notifications{unreadNotifications > 0 && <span className="wc-drawer-badge" aria-label={`${unreadNotifications} unread`}>{unreadNotifications}</span>}</button>
             <button type="button" onClick={() => setEditingProfile(true)}>Profile</button>
-            <button type="button" onClick={handleLogout}>Sign out</button>
           </div>
         </ResponsiveNavigation>
       </div>
+      {signOutDialog}
     </header>
   );
 }

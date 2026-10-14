@@ -1222,6 +1222,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         profile={profile}
         onProfileUpdated={onProfileUpdated}
         workspace="Student workspace"
+        unreadNotifications={notifications.unread}
         notifications={<NotificationBell model={notifications} onOpen={openNotification} onViewAll={() => setActivePage("notifications")} />}
         pages={studentPages}
         activePage={activePage}

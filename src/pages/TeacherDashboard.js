@@ -2607,6 +2607,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         profile={profile}
         onProfileUpdated={onProfileUpdated}
         workspace="Teacher workspace"
+        unreadNotifications={notifications.unread}
         notifications={<NotificationBell model={notifications} onOpen={openNotification} onViewAll={() => setActivePage("notifications")} />}
         pages={teacherPages}
         activePage={activePage}

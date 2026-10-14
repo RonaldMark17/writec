@@ -1,9 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AdminDashboard from "./AdminDashboard";
 import Dashboard from "./Dashboard";
 import { adminRequest } from "../apiFetch";
-import { supabase } from "../supabaseClient";
+import { supabase, signOutAndExpireToken } from "../supabaseClient";
 
 jest.mock("../apiFetch", () => ({ adminRequest: jest.fn() }));
 jest.mock("../supabaseClient", () => ({ supabase: { rpc: jest.fn(), auth: { getUser: jest.fn() } }, signOutAndExpireToken: jest.fn() }));
@@ -58,10 +58,10 @@ test("creation failures leave the form open and never claim success", async () =
 test("admin header toggles and persists the workspace theme", () => {
   document.documentElement.dataset.theme = "light";
   show("/admin/profile", <AdminDashboard profile={profile} />);
-  fireEvent.click(screen.getByRole("button", { name: "Switch workspace to dark mode" }));
+  fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Switch workspace to dark mode" }));
   expect(document.documentElement.dataset.theme).toBe("dark");
   expect(localStorage.getItem("writecheck-theme")).toBe("dark");
-  fireEvent.click(screen.getByRole("button", { name: "Switch workspace to light mode" }));
+  fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Switch workspace to light mode" }));
   expect(document.documentElement.dataset.theme).toBe("light");
 });
 
@@ -152,4 +152,19 @@ test("a profile for a different account never authorizes the current session", a
   show("/dashboard", <Dashboard session={{ user: { id: "admin1" } }} />);
   expect(await screen.findByRole("alert")).toBeInTheDocument();
   expect(screen.queryByText("Student workspace")).not.toBeInTheDocument();
+});
+
+
+test("admin logout requires confirmation and Cancel preserves the profile page", async () => {
+ show("/admin/profile", <AdminDashboard profile={{...profile,academicTitle:"Ms."}} />);
+ expect(screen.getByRole("heading", {name:"Ms. Admin Name"})).toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button", {name:"Logout"}));
+ await screen.findByRole("dialog", {name:"Sign out of WriteCheck?"});
+ expect(signOutAndExpireToken).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button", {name:"Cancel"}));
+ expect(screen.getByRole("heading", {name:"Ms. Admin Name"})).toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button", {name:"Logout"}));
+ await screen.findByRole("dialog", {name:"Sign out of WriteCheck?"});
+ fireEvent.click(screen.getByRole("button", {name:"Sign Out"}));
+ await waitFor(()=>expect(signOutAndExpireToken).toHaveBeenCalledWith("/login"));
 });

@@ -41,9 +41,10 @@ let socket;
       await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<1024});
       const {frameTree} = await send('Page.getFrameTree');
       await send('Page.setDocumentContent',{frameId:frameTree.frame.id,html:`<!doctype html><html data-theme="${theme}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${responsive}</style></head><body>${markup}</body></html>`});
+      await sleep(250); // Allow drawer entrance animation to settle before measuring.
       const evaluated = await send('Runtime.evaluate',{expression:`(()=>{
         const visible=e=>e.getClientRects().length && getComputedStyle(e).visibility!=='hidden';
-        const overflowing=[...document.querySelectorAll('main,header,.wc-modal-panel,.wc-classroom-grid,.wc-data-row,.wc-navigation,input,select,textarea,button,.notification-panel')].filter(visible).filter(e=>{const r=e.getBoundingClientRect();return r.left < -1 || r.right > innerWidth+1}).map(e=>({tag:e.tagName,label:(e.getAttribute('aria-label')||e.textContent||'').trim().slice(0,60),class:e.className}));
+        const overflowing=[...document.querySelectorAll('main,header,.wc-modal-panel,.wc-classroom-grid,.wc-data-row,.wc-navigation,input,select,textarea,button,.notification-panel,.wc-drawer')].filter(visible).filter(e=>{const r=e.getBoundingClientRect();return r.left < -1 || r.right > innerWidth+1}).map(e=>({tag:e.tagName,label:(e.getAttribute('aria-label')||e.textContent||'').trim().slice(0,60),class:e.className}));
         const panel=document.querySelector('.wc-modal-panel'); const p=panel?.getBoundingClientRect();
         return {pageOverflow:document.documentElement.scrollWidth>innerWidth,overflowing,modalFits:!p||(p.height<=innerHeight+1&&p.width<=innerWidth+1),cards:document.querySelector('.wc-data-row')?getComputedStyle(document.querySelector('.wc-data-row')).gridTemplateColumns:null,table:document.querySelector('.wc-card-table')?getComputedStyle(document.querySelector('.wc-card-table')).display:null,marks:document.querySelectorAll('mark').length,smallButtons:innerWidth<768?[...document.querySelectorAll('button')].filter(visible).filter(e=>e.getBoundingClientRect().height<40).length:0};
       })()`,returnByValue:true});
@@ -75,6 +76,7 @@ let socket;
   fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({viewports,results,keyboardChecks,keyboardNote:'Reduced viewport checks approximate keyboard space. Hardware/IME not simulated.'},null,2));
   const failed=results.filter(r=>r.pageOverflow||r.overflowing.length||!r.modalFits||r.smallButtons);
   fs.writeFileSync(path.join(output,'issues.json'),JSON.stringify(failed,null,2));
+  if (failed.length || keyboardChecks.some(check => !check.fieldVisible)) process.exitCode=1;
   console.log(`${results.length} layout checks; ${failed.length} needing review. Artifacts: ${output}`);
   await send('Browser.close'); socket.close();
 })().catch(error=>{ console.error(error); socket?.close(); browser.kill(); process.exitCode=1; });

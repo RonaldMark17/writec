@@ -1,0 +1,3 @@
+import {profileName,profileRole} from "./profileIdentity";
+test.each([[{full_name:"Juan Dela Cruz",academicTitle:"Prof."},"Prof. Juan Dela Cruz"],[{full_name:"Juan Dela Cruz"},"Juan Dela Cruz"],[{full_name:"Dr. Pedro Cruz",academicTitle:"Dr."},"Dr. Pedro Cruz"],[{full_name:"Maria Santos",academicTitle:"Professor"},"Prof. Maria Santos"],[{full_name:"Maria Santos",academicTitle:"",salutation:"Ms."},"Maria Santos"]])("formats existing identity without inventing titles",(profile,expected)=>expect(profileName(profile)).toBe(expected));
+test("admin role label",()=>expect(profileRole({role:"admin"})).toBe("Administrator"));

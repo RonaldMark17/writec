@@ -342,3 +342,14 @@ body { background-color: var(--workspace-bg); color: var(--workspace-text); }
   .review-workspace .plagiarism-highlights { padding: .75rem; }
   .review-workspace .report-transcription { padding: .75rem; }
 }
+
+.signout-backdrop { position: fixed; inset: 0; z-index: 150; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgb(0 0 0 / .5); }
+.signout-dialog { width: min(100%, 28rem); max-height: calc(100dvh - 2rem); overflow-y: auto; border: 1px solid var(--workspace-border); border-radius: 1rem; padding: 1.5rem; background: var(--workspace-surface); color: var(--workspace-text); overflow-wrap: anywhere; }
+.signout-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .75rem; margin-top: 1.5rem; }
+.signout-actions button, .account-signout { min-height: 44px; padding: .65rem 1rem; border-radius: .5rem; }
+.account-signout { color: var(--danger-text, #b3261e); background: var(--danger-background, #fce8e6); }
+.account-signout:focus-visible, .signout-dialog button:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+.account-signout:disabled { opacity: .6; }
+.profile-account-actions { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--workspace-border); }
+.profile-account-actions > p { margin-bottom: .5rem; }
+@media (max-width: 380px) { .signout-actions { flex-direction: column; } .signout-actions button { width: 100%; } }

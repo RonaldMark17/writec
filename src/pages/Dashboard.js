@@ -1,6 +1,7 @@
+import { SignOutButton } from "../SignOutConfirmation";
 import { useEffect, useState, useRef } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { supabase, signOutAndExpireToken } from "../supabaseClient";
+import { supabase } from "../supabaseClient";
 import { accountRequest } from "../accountRequest";
 import { profilePreferences } from "../profilePreferences";
 import { apiFetch, getBackendUrl } from "../apiFetch";
@@ -176,13 +177,11 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
                 >
                   Retry Connection
                 </button>
-                <button
-                  type="button"
-                  onClick={() => signOutAndExpireToken("/login")}
+                <SignOutButton
                   className="rounded-md bg-[#137333] px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-[#0d5925]"
                 >
                   Sign Out
-                </button>
+                </SignOutButton>
               </div>
             </div>
           )}
@@ -199,7 +198,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           profile?.account_status === "rejected" ? "Your registration was rejected. Contact an administrator for assistance." :
           "This account is inactive. Contact an administrator to reactivate it.")}</p>
         <button onClick={() => setRetry(retry + 1)} className="m-3 text-emerald-700 underline">Retry</button>
-        <button onClick={() => signOutAndExpireToken("/login")} className="m-3 text-emerald-700 underline">Sign out</button>
+        <SignOutButton className="m-3 text-emerald-700 underline" />
       </div>
     </main>
   );

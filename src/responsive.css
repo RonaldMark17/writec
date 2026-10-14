@@ -137,3 +137,26 @@
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+/* Shared role-aware drawer; the existing desktop navigation is preserved. */
+.wc-drawer-overlay { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / .42); }
+.wc-drawer { width: min(85vw, 320px); height: 100dvh; overflow-y: auto; overscroll-behavior: contain; background: var(--workspace-surface); color: var(--workspace-text); border-right: 1px solid var(--workspace-border); padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); animation: wc-drawer-enter 220ms ease-out; }
+.wc-drawer-header { display: flex; align-items: start; justify-content: space-between; gap: .5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--workspace-border); }
+.wc-drawer-header p { margin-top: .35rem; overflow-wrap: anywhere; font-size: .9375rem; }
+.wc-drawer-header button { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.wc-drawer .wc-navigation-content[data-open="true"] { max-height: none; padding: .75rem 0; overflow: visible; }
+.wc-drawer nav, .wc-drawer .wc-menu-actions { display: flex; flex-direction: column; gap: .5rem; padding: .5rem 0; border: 0; background: transparent; }
+.wc-drawer :is(button, a) { min-height: 44px; min-width: 44px; border-radius: .5rem; }
+.wc-drawer nav :is(button, a), .wc-drawer .wc-menu-actions button { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .75rem; text-align: left; white-space: normal; font-size: 1rem; }
+.wc-drawer :is(button, a):focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 2px; }
+.wc-drawer [aria-current="page"] { background: var(--accent-soft, #e6f4ea); color: var(--accent, #137333); font-weight: 600; }
+.wc-drawer-badge { margin-left: auto; padding: .1rem .5rem; border-radius: 1rem; background: var(--accent-soft, #e6f4ea); color: var(--accent, #137333); }
+.wc-drawer-theme { border-top: 1px solid var(--workspace-border); padding-top: .75rem; }
+@keyframes wc-drawer-enter { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) { .wc-drawer { animation: none; } }
+
+.wc-drawer { display: flex; flex-direction: column; }
+.wc-drawer > * { flex-shrink: 0; }
+.wc-drawer .wc-profile-role { font-size: .875rem; color: var(--muted, #5f6368); }
+.wc-drawer-signout { margin-top: auto; padding-top: 1rem; }
+.wc-drawer-signout button { width: 100%; text-align: left; }
