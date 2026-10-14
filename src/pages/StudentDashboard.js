@@ -155,8 +155,18 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         url.searchParams.set("tab", tab);
         window.history.replaceState({}, "", url.toString());
       } catch {}
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     }
   }, [profile?.id]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if ("scrollRestoration" in window.history) {
+        window.history.scrollRestoration = "manual";
+      }
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    }
+  }, [classroomTab, activePage]);
 
   const activeClassrooms = useMemo(
     () => classrooms.filter((classroom) => !classroom.isArchived),
