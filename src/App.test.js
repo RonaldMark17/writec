@@ -8,7 +8,7 @@ test('renders the WriteCheck landing page', async () => {
 
   expect(
     screen.getByRole('heading', {
-      name: /detect plagiarism in handwritten essays/i,
+      name: /handwritten essays. clearer review./i,
     })
   ).toBeInTheDocument();
 });

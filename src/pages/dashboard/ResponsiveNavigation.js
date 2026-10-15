@@ -1,3 +1,4 @@
+import { SignOutAction } from "../../SignOutConfirmation";
 import { getInitials, isCustomAvatarUrl } from "./shared";
 import { profileName, profileRole } from "../../profileIdentity";
 import { useEffect, useId, useRef, useState } from "react";
@@ -62,7 +63,7 @@ export default function ResponsiveNavigation({ label, current, children, classNa
         {content}
         {actions && <div className="wc-menu-actions" onClick={close}>{actions}</div>}
         <div className="wc-drawer-theme"><p className="mb-2 text-sm">Appearance</p><ThemeToggle inline /></div>
-        {onSignOut && <div className="wc-drawer-signout"><button type="button" className="account-signout" onClick={event => { onSignOut(event); close(); }}>Sign out</button></div>}
+        {onSignOut && <div className="wc-drawer-signout"><SignOutAction onClick={event => { onSignOut(event); close(); }} /></div>}
       </section>
     </div>, document.body)}
   </div>;

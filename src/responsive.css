@@ -160,3 +160,27 @@
 .wc-drawer .wc-profile-role { font-size: .875rem; color: var(--muted, #5f6368); }
 .wc-drawer-signout { margin-top: auto; padding-top: 1rem; }
 .wc-drawer-signout button { width: 100%; text-align: left; }
+
+/* Native checkboxes retain keyboard/label behavior; the full row is a touch target. */
+.notification-preference { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 44px; padding: .75rem; border: 1px solid var(--workspace-border); border-radius: .75rem; background: var(--workspace-surface); cursor: pointer; }
+.notification-preference:hover { background: var(--panel-soft, #f8f9fa); }
+.notification-preference:focus-within { outline: 2px solid var(--accent, #137333); outline-offset: 2px; }
+.notification-preference-input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent, #137333); cursor: pointer; }
+.notification-preference:has(input:disabled) { opacity: .6; cursor: wait; }
+.notification-preference-input:disabled { cursor: wait; }
+
+/* Shared sign-out hierarchy and interaction states across all account surfaces. */
+.account-signout { display: inline-flex; align-items: center; justify-content: flex-start; gap: .5rem; min-height: 44px; padding: .65rem 1rem; border: 1px solid transparent; border-radius: .6rem; color: var(--danger-text, #b3261e); background: transparent; font-weight: 600; cursor: pointer; }
+.account-signout .signout-icon { width: 18px; height: 18px; flex-shrink: 0; }
+.account-signout:hover:not(:disabled) { background: var(--danger-background, #fce8e6); border-color: currentColor; }
+.account-signout:active:not(:disabled) { background: var(--danger-background, #fce8e6); box-shadow: inset 0 0 0 1px currentColor; transform: translateY(1px); }
+.account-signout:focus-visible { outline: 3px solid var(--danger-text, #b3261e); outline-offset: 3px; }
+.account-signout:disabled { opacity: .6; cursor: wait; }
+.account-signout.signout-confirm { background: #b3261e; color: #fff; }
+.account-signout.signout-confirm:hover:not(:disabled) { background: #8c1d18; }
+:root[data-theme="dark"] .account-signout.signout-confirm { background: #f2b8b5; color: #601410; }
+:root[data-theme="dark"] .account-signout.signout-confirm:hover:not(:disabled) { background: #ffdad6; }
+.signout-header-separator { margin-left: .75rem; padding-left: .75rem; border-left: 1px solid var(--workspace-border); }
+.signout-account-last { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--workspace-border); }
+.wc-drawer-signout { border-top: 1px solid var(--workspace-border); padding-top: 1rem; }
+@media (max-width: 1023px) { .signout-header-separator { display: none; } }

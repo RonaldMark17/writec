@@ -2,6 +2,29 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { signOutAndExpireToken } from "./supabaseClient";
 
+function LogOutIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  );
+}
+
+export function SignOutAction({ children = "Sign out", className = "", ...props }) {
+  return <button type="button" {...props} className={`account-signout ${className}`}><LogOutIcon className="signout-icon" /><span>{children}</span></button>;
+}
+
 function Confirmation({ onClose, returnTo }) {
   const id = useId(), panel = useRef(null), submitting = useRef(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -16,7 +39,7 @@ function Confirmation({ onClose, returnTo }) {
     };
   }, [returnTo]);
   return createPortal(<div className="signout-backdrop" onClick={e => e.stopPropagation()}>
-    <section className="signout-dialog wc-modal-panel" ref={panel} role="dialog" aria-modal="true" aria-labelledby={id} aria-describedby={`${id}-description`}
+    <section className="signout-dialog wc-modal-panel" ref={panel} role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby={id} aria-describedby={`${id}-description`}
       onKeyDown={event => {
         event.stopPropagation();
         if (event.key === "Escape" && !submitting.current) onClose();
@@ -32,13 +55,13 @@ function Confirmation({ onClose, returnTo }) {
       {error && <p role="alert" className="validation-error mt-3">{error}</p>}
       <div className="signout-actions">
         <button type="button" className="similarity-chip" disabled={busy} onClick={onClose}>Cancel</button>
-        <button type="button" className="account-signout" disabled={busy} onClick={async () => {
+        <SignOutAction className="signout-confirm" disabled={busy} onClick={async () => {
           if (submitting.current) return;
           submitting.current=true; setBusy(true); setError("");
-          try { await signOutAndExpireToken("/login"); }
+          try { await signOutAndExpireToken("/login", { preserveOnFailure: true }); }
           catch { setError("Could not sign out. Please try again."); }
           finally { submitting.current=false; setBusy(false); }
-        }}>{busy ? "Signing out..." : "Sign Out"}</button>
+        }}>{busy ? "Signing out..." : "Sign Out"}</SignOutAction>
       </div>
     </section>
   </div>, document.body);
@@ -57,5 +80,5 @@ export function useSignOutConfirmation() {
 }
 export function SignOutButton({ children = "Sign out", ...props }) {
   const {requestSignOut, signOutDialog} = useSignOutConfirmation();
-  return <><button type="button" {...props} onClick={requestSignOut}>{children}</button>{signOutDialog}</>;
+  return <><SignOutAction {...props} onClick={requestSignOut}>{children}</SignOutAction>{signOutDialog}</>;
 }

@@ -17,5 +17,5 @@ export default function ThemeToggle({ inline = false }) {
 
 export function GlobalThemeToggle() {
   const { pathname } = useLocation();
-  return pathname === "/admin" || pathname.startsWith("/admin/") ? null : <ThemeToggle />;
+  return ["/", "/login", "/register"].includes(pathname) || pathname === "/admin" || pathname.startsWith("/admin/") ? null : <ThemeToggle />;
 }

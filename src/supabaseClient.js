@@ -29,11 +29,13 @@ export function isSessionExpired(session) {
  * Fully signs out the user, revokes session on the server globally,
  * and purges all cached authentication tokens from browser storage.
  */
-export async function signOutAndExpireToken(redirectPath = "/login") {
+export async function signOutAndExpireToken(redirectPath = "/login", { preserveOnFailure = false } = {}) {
   try {
     // 1. Invalidate session globally on the Supabase auth server
-    await supabase.auth.signOut({ scope: "global" });
+    const result = await supabase.auth.signOut({ scope: "global" });
+    if (result?.error) throw result.error;
   } catch (err) {
+    if (preserveOnFailure) throw err;
     console.warn("Supabase global signout notice:", err);
   }
 

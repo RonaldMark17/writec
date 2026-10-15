@@ -2053,11 +2053,26 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   useEffect(() => {
     if (!reviewingSubmission) return;
     const latest = submissions.find((row) => row.id === reviewingSubmission.id);
-    if (!latest || !latest.processingState || (latest.processingState === reviewingSubmission.processingState
+    if (!latest || isSavingGrade || (latest.processingState === reviewingSubmission.processingState
       && latest.processingError === reviewingSubmission.processingError
+      && latest.fileUrl === reviewingSubmission.fileUrl
+      && latest.createdAt === reviewingSubmission.createdAt
+      && latest.grade === reviewingSubmission.grade
+      && latest.feedback === reviewingSubmission.feedback
+      && latest.returnedAt === reviewingSubmission.returnedAt
+      && latest.status === reviewingSubmission.status
+      && JSON.stringify(latest.revisionRequest) === JSON.stringify(reviewingSubmission.revisionRequest)
+      && JSON.stringify(latest.revisionHistory) === JSON.stringify(reviewingSubmission.revisionHistory)
       && latest.classroomName === reviewingSubmission.classroomName
       && latest.transcribedText === reviewingSubmission.transcribedText
       && JSON.stringify(latest.scanResult) === JSON.stringify(reviewingSubmission.scanResult))) return;
+    // Revisions replace the canonical row in place. Never carry an old attempt's
+    // grade draft into its replacement; preserve drafts on ordinary polling.
+    if (latest.fileUrl !== reviewingSubmission.fileUrl || latest.createdAt !== reviewingSubmission.createdAt
+      || (reviewingSubmission.revisionRequest && !latest.revisionRequest)) {
+      setGradeInput(latest.grade ?? "");
+      setFeedbackInput(latest.feedback ?? "");
+    }
     setReviewingSubmission((current) => ({ ...current, ...latest }));
     if (latest.processingState === "ready") {
       setReviewTranscribedText(latest.transcribedText || "");
@@ -2065,7 +2080,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     } else {
       setReviewScanResult(null);
     }
-  }, [submissions, reviewingSubmission, isReviewScanning]);
+  }, [submissions, reviewingSubmission, isReviewScanning, isSavingGrade]);
 
   const gradeSaveInFlight = useRef(false);
   const handleSaveGrade = async (event, returnWork = false) => {
@@ -2102,7 +2117,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         : submission));
       setSuccessMessage(`Grade saved for ${reviewingSubmission.studentName}.`);
       setReviewingSubmission((current) => ({ ...current, grade: saved.grade ?? "",
-        feedback: saved.feedback ?? "", returnedAt: saved.returned_at,
+        feedback: saved.feedback ?? "", returnedAt: saved.returned_at, status: saved.status,
         transcribedText: saved.transcribed_text ?? "", scanResult: saved.scan_result ?? null }));
       if (returnWork) {
         const { data: released, error: releaseError } = await supabase.rpc("return_submission", {

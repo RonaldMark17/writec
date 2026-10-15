@@ -165,7 +165,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           {tookLong && (
             <div className="mt-2 flex flex-col items-center gap-2">
               <p className="text-xs text-amber-700">Connecting is taking longer than usual.</p>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col items-center gap-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -177,11 +177,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
                 >
                   Retry Connection
                 </button>
-                <SignOutButton
-                  className="rounded-md bg-[#137333] px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-[#0d5925]"
-                >
-                  Sign Out
-                </SignOutButton>
+                <div className="signout-account-last"><SignOutButton /></div>
               </div>
             </div>
           )}
@@ -198,7 +194,7 @@ export default function Dashboard({ session: propSession, adminOnly = false }) {
           profile?.account_status === "rejected" ? "Your registration was rejected. Contact an administrator for assistance." :
           "This account is inactive. Contact an administrator to reactivate it.")}</p>
         <button onClick={() => setRetry(retry + 1)} className="m-3 text-emerald-700 underline">Retry</button>
-        <SignOutButton className="m-3 text-emerald-700 underline" />
+        <div className="signout-account-last"><SignOutButton /></div>
       </div>
     </main>
   );

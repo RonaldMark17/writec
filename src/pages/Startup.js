@@ -3,70 +3,8 @@ import { useNavigate } from "react-router-dom";
 import AuthModal from "./AuthModal";
 import { useTheme } from "../theme";
 
-import {
-  ACCEPTED_CHECK_FILE_TYPES,
-  analyzePlagiarismInput,
-  formatFileSize,
-  getFileKind,
-  readTextFromFiles,
-} from "./dashboard/plagiarismScan";
-
-function UploadIcon({ className = "h-5 w-5" }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <path d="M17 8 12 3 7 8" />
-      <path d="M12 3v12" />
-    </svg>
-  );
-}
-
-function ImageIcon({ className = "h-5 w-5" }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="18" height="18" x="3" y="3" rx="2" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
-    </svg>
-  );
-}
-
-function LayoutIcon({ className = "h-5 w-5" }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="16" height="14" x="4" y="5" rx="2" />
-      <path d="M4 10h16" />
-      <path d="M9 10v9" />
-    </svg>
-  );
-}
+import LandingDemo from "./LandingDemo";
+import "./landing.css";
 
 function LayersIcon({ className = "h-5 w-5" }) {
   return (
@@ -122,27 +60,6 @@ function FileIcon({ className = "h-5 w-5" }) {
       <path d="M16 13H8" />
       <path d="M16 17H8" />
       <path d="M10 9H8" />
-    </svg>
-  );
-}
-
-function ClipboardIcon({ className = "h-5 w-5" }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="8" height="4" x="8" y="2" rx="1" />
-      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-      <path d="M9 14h6" />
-      <path d="M9 18h6" />
-      <path d="M9 10h1" />
     </svg>
   );
 }
@@ -207,24 +124,6 @@ function ClassroomHatIcon({ className = "h-5 w-5" }) {
   );
 }
 
-function CheckShieldIcon({ className = "h-5 w-5" }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      <path d="m9 12 2 2 4-4" />
-    </svg>
-  );
-}
-
 const lightTheme = {
   "--page-bg": "#ffffff",
   "--page-text": "#202124",
@@ -248,58 +147,33 @@ const lightTheme = {
 
 
 const stats = [
-  ["YOLO26x + TrOCR", "Handwriting OCR engine"],
-  ["Copyleaks API", "Web & peer plagiarism scan"],
-];
-
-const steps = [
-  { step: "1", title: "Intake", desc: "Photo, Doc, or Paste" },
-  { step: "2", title: "Detect", desc: "Text region segmentation" },
-  { step: "3", title: "Transcribe", desc: "Handwriting OCR" },
-  { step: "4", title: "Verify", desc: "Copyleaks similarity" },
-];
-
-const demoModes = [
-  {
-    id: "picture",
-    label: "Picture",
-    icon: ImageIcon,
-  },
-  {
-    id: "file",
-    label: "Document",
-    icon: FileIcon,
-  },
-  {
-    id: "text",
-    label: "Paste Text",
-    icon: ClipboardIcon,
-  },
+  ["From paper to text", "Handwritten essays, ready for review"],
+  ["Context for educators", "Matching passages inform your judgment"],
 ];
 
 const features = [
   {
-    title: "Classroom Section Isolation",
+    title: "Organized classrooms",
     copy:
       "Every assignment is strictly bound to its section. Submissions, files, and grades never cross between classes.",
     icon: ClassroomHatIcon,
   },
   {
-    title: "Handwriting OCR & Vision",
+    title: "Smart Handwriting OCR",
     copy:
       "Transcribes handwritten student essay scans and photographs into searchable text using advanced OCR models.",
     icon: LayersIcon,
   },
   {
-    title: "Copyleaks Plagiarism Engine",
+    title: "Similarity Analysis",
     copy:
-      "Checks student submissions against billions of web pages, published academic papers, and local peer submissions.",
+      "Reviews essay text for matching content and presents similarity results and sources for instructor review.",
     icon: SearchIcon,
   },
   {
-    title: "Official PDF Audit Reports",
+    title: "Classroom Peer Similarity",
     copy:
-      "Export grade-ready plagiarism summary cards with matched excerpts, similarity percentages, and student timestamps.",
+      "Helps instructors identify matching passages between submissions within the same classroom.",
     icon: FileIcon,
   },
 ];
@@ -309,14 +183,6 @@ export default function Startup({ initialAuthModal = null }) {
   const [authModal, setAuthModal] = useState(initialAuthModal);
   const { isDark, toggleTheme } = useTheme();
   const [activeSection, setActiveSection] = useState("home");
-  const [demoMode, setDemoMode] = useState("picture");
-  const [demoFiles, setDemoFiles] = useState([]);
-  const [demoText, setDemoText] = useState("");
-  const [demoPreview, setDemoPreview] = useState("");
-  const [demoResult, setDemoResult] = useState(null);
-  const [demoError, setDemoError] = useState("");
-  const [isDemoScanning, setIsDemoScanning] = useState(false);
-
   useEffect(() => {
     setAuthModal(initialAuthModal);
   }, [initialAuthModal]);
@@ -335,123 +201,41 @@ export default function Startup({ initialAuthModal = null }) {
 
 
   useEffect(() => {
-    const updateActiveSection = () => {
-      const sectionIds = ["home", "about", "features"];
-      const scrollMarker = window.scrollY + 160;
-
-      const currentSection = sectionIds.reduce((current, sectionId) => {
-        const section = document.getElementById(sectionId);
-
-        if (!section) {
-          return current;
-        }
-
-        return section.offsetTop <= scrollMarker ? sectionId : current;
+    const ids = ["home", "demo", "about", "features"];
+    if (!window.IntersectionObserver) return undefined;
+    let observer;
+    const update = () => {
+      const current = window.scrollY < 80 ? "home" : ids.reduce((selected, id) => {
+        const node = document.getElementById(id);
+        return node && node.getBoundingClientRect().top <= 230 ? id : selected;
       }, "home");
-
-      setActiveSection(currentSection);
+      setActiveSection(current);
+      if (window.location.hash !== `#${current}`) {
+        window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#${current}`);
+      }
     };
-
-    updateActiveSection();
-
-    window.addEventListener("scroll", updateActiveSection, { passive: true });
-    window.addEventListener("resize", updateActiveSection);
-    window.addEventListener("hashchange", updateActiveSection);
-
-    return () => {
-      window.removeEventListener("scroll", updateActiveSection);
-      window.removeEventListener("resize", updateActiveSection);
-      window.removeEventListener("hashchange", updateActiveSection);
-    };
-  }, []);
-
-  useEffect(() => {
-    const imageFile = demoFiles.find((file) => file.type?.startsWith("image/"));
-
-    if (!imageFile) {
-      setDemoPreview("");
-      return undefined;
-    }
-
-    const previewUrl = URL.createObjectURL(imageFile);
-    setDemoPreview(previewUrl);
-
-    return () => URL.revokeObjectURL(previewUrl);
-  }, [demoFiles]);
-
-  const handleDemoFiles = (event) => {
-    const nextFiles = Array.from(event.target.files ?? []);
-
-    setDemoFiles(nextFiles);
-    setDemoResult(null);
-    setDemoError("");
-
-    if (nextFiles.length > 0 && demoMode === "text") {
-      setDemoMode("file");
-    }
-  };
-
-  const handleDemoScan = async (event) => {
-    event.preventDefault();
-    setDemoError("");
-    setDemoResult(null);
-
-    if (!demoText.trim() && demoFiles.length === 0) {
-      setDemoError("Select an essay picture, upload a file, or paste text to scan.");
-      return;
-    }
-
-    setIsDemoScanning(true);
-
-    try {
-      const fileText = await readTextFromFiles(demoFiles);
-
-      const combinedText = [demoText, fileText.text]
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .join("\n\n");
-
-      setDemoResult({
-        ...analyzePlagiarismInput({
-          text: combinedText,
-          files: demoFiles,
-        }),
-        extractedText: fileText.extractedText,
-        extractedImages: fileText.extractedImages,
-        readableFiles: fileText.readableFiles,
-        unreadableFiles: fileText.unreadableFiles,
+    const observe = () => {
+      observer?.disconnect();
+      // Pixel margins avoid percentage root margins being based on viewport width.
+      observer = new IntersectionObserver(update, {
+        rootMargin: `-120px 0px -${Math.max(0, window.innerHeight - 230)}px 0px`, threshold: 0,
       });
-    } catch (error) {
-      setDemoError(error.message || "Could not scan the selected material.");
-    } finally {
-      setIsDemoScanning(false);
-    }
-  };
-
-  const handleUseSampleText = () => {
-    setDemoMode("text");
-    setDemoText(
-      "Climate change impacts agricultural yields through erratic precipitation and elevated temperatures. Peer-reviewed research confirms that sustainable irrigation practices and soil biodiversity reduce vulnerability across diverse microclimates."
-    );
-    setDemoResult(null);
-    setDemoError("");
-  };
+      ids.forEach(id => { const node = document.getElementById(id); if (node) observer.observe(node); });
+      update();
+    };
+    observe();
+    window.addEventListener("resize", observe);
+    return () => { observer.disconnect(); window.removeEventListener("resize", observe); };
+  }, []);
 
   const getNavLinkClass = (sectionId) =>
     activeSection === sectionId
       ? "text-[var(--accent)] font-semibold bg-[var(--accent-soft)] px-3.5 py-1.5 rounded-full transition"
       : "text-[var(--muted)] font-medium hover:text-[var(--page-text)] hover:bg-[var(--border-soft)] px-3.5 py-1.5 rounded-full transition";
 
-  const demoResultBadgeClass =
-    demoResult?.tone === "red"
-      ? "bg-red-50 text-red-700 border border-red-200"
-      : demoResult?.tone === "amber"
-        ? "bg-amber-50 text-amber-700 border border-amber-200"
-        : "bg-emerald-50 text-emerald-700 border border-emerald-200";
-
   return (
     <div
-      className="min-h-screen bg-[var(--page-bg)] text-[var(--page-text)] antialiased transition-colors duration-200"
+      className="landing-page min-h-screen bg-[var(--page-bg)] text-[var(--page-text)] antialiased transition-colors duration-200"
       style={isDark ? undefined : lightTheme}
     >
       {/* Google Classroom styled Top Navigation */}
@@ -476,16 +260,17 @@ export default function Startup({ initialAuthModal = null }) {
               </div>
             </a>
 
-            <nav className="hidden md:flex items-center gap-1 pl-4 border-l border-[var(--border)] text-sm">
-              <a href="#home" className={getNavLinkClass("home")}>
+            <nav aria-label="Main navigation" className="landing-desktop-nav hidden md:flex items-center gap-1 pl-4 border-l border-[var(--border)] text-sm">
+              <a href="#home" aria-current={activeSection === "home" ? "location" : undefined} className={getNavLinkClass("home")}>
                 Home
               </a>
-              <a href="#about" className={getNavLinkClass("about")}>
+              <a href="#about" aria-current={activeSection === "about" ? "location" : undefined} className={getNavLinkClass("about")}>
                 About
               </a>
-              <a href="#features" className={getNavLinkClass("features")}>
+              <a href="#features" aria-current={activeSection === "features" ? "location" : undefined} className={getNavLinkClass("features")}>
                 Features
               </a>
+              <a href="#demo" aria-current={activeSection === "demo" ? "location" : undefined} className={getNavLinkClass("demo")}>How it works</a>
             </nav>
           </div>
 
@@ -515,12 +300,16 @@ export default function Startup({ initialAuthModal = null }) {
             <button
               type="button"
               onClick={() => handleOpenAuthModal("register")}
-              className="inline-flex h-9 items-center justify-center rounded-full bg-[var(--accent)] px-5 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] transition"
+              className="landing-nav-register inline-flex h-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] px-5 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] transition"
             >
               Get started
             </button>
           </div>
         </div>
+        <nav aria-label="Mobile navigation" className="landing-mobile-nav">
+          {[['home', 'Home'], ['demo', 'How it works'], ['about', 'About'], ['features', 'Features']].map(([id, label]) =>
+            <a key={id} href={`#${id}`} aria-current={activeSection === id ? 'location' : undefined} className={getNavLinkClass(id)}>{label}</a>)}
+        </nav>
       </header>
 
       {/* Hero Section */}
@@ -531,12 +320,12 @@ export default function Startup({ initialAuthModal = null }) {
         >
           {/* Left Column: Heading & Google Classroom Intro */}
           <div className="lg:col-span-6 xl:col-span-6 pt-2">
-            <h1 className="text-4xl font-semibold tracking-tight text-[var(--page-text)] sm:text-5xl lg:text-[3.25rem] lg:leading-[1.15]">
-              Detect plagiarism in handwritten essays
+            <h1 className="text-4xl font-bold tracking-tight text-[var(--page-text)] sm:text-5xl lg:text-[3.25rem] lg:leading-[1.15]">
+              Handwritten essays. Clearer review.
             </h1>
 
             <p className="mt-6 text-base sm:text-lg leading-relaxed text-[var(--muted)] max-w-xl">
-              Upload essay photos, review document files, or paste copied text directly into your classroom review station. Purpose-built for educators checking handwritten drafts alongside digital submissions.
+              Turn handwritten essays into readable text and review matching passages. A focused classroom workflow for teachers and students, from submission to feedback.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -549,7 +338,7 @@ export default function Startup({ initialAuthModal = null }) {
               </button>
 
               <a
-                href="#about"
+                href="#demo"
                 className="inline-flex h-11 items-center justify-center rounded-full border border-[var(--border)] bg-transparent px-6 text-sm font-medium text-[var(--page-text)] hover:bg-[var(--panel-soft)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] transition"
               >
                 See how it works
@@ -571,241 +360,8 @@ export default function Startup({ initialAuthModal = null }) {
             </div>
           </div>
 
-          {/* Right Column: Google Classroom Originality Station Card */}
-          <div className="lg:col-span-6 xl:col-span-6">
-            <form
-              onSubmit={handleDemoScan}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-sm overflow-hidden"
-            >
-              {/* Classroom header strip */}
-              <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--panel-soft)] px-5 py-3.5">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]">
-                    <CheckShieldIcon className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <span className="text-sm font-semibold text-[var(--page-text)]">
-                      Classroom Review Station
-                    </span>
-                    <span className="hidden sm:inline-block ml-2 text-xs text-[var(--muted)]">
-                      • Live submission check
-                    </span>
-                  </div>
-                </div>
-                <span className="inline-flex items-center rounded-full bg-[var(--accent-soft)] px-2.5 py-0.5 text-xs font-medium text-[var(--accent)]">
-                  Interactive Demo
-                </span>
-              </div>
-
-              <div className="p-5 sm:p-6 space-y-4">
-                {/* Segmented Mode Selector */}
-                <div className="flex rounded-lg bg-[var(--panel-soft)] p-1 border border-[var(--border-soft)]">
-                  {demoModes.map(({ id, label, icon: Icon }) => {
-                    const isActive = demoMode === id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setDemoMode(id)}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs sm:text-sm font-medium rounded-md transition ${
-                          isActive
-                            ? "bg-[var(--panel)] text-[var(--accent)] shadow-sm font-semibold"
-                            : "text-[var(--muted)] hover:text-[var(--page-text)]"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <span>{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Upload or Drop Area */}
-                {demoMode !== "text" && (
-                  <label className="flex min-h-[170px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--panel-soft)] p-6 text-center hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]/20 transition group">
-                    {demoPreview ? (
-                      <img
-                        src={demoPreview}
-                        alt="Essay upload preview"
-                        className="max-h-[150px] w-full rounded-lg object-contain"
-                      />
-                    ) : (
-                      <>
-                        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)] transition-transform group-hover:scale-105">
-                          <UploadIcon className="h-5 w-5" />
-                        </div>
-                        <span className="text-sm font-medium text-[var(--page-text)]">
-                          Upload handwritten essay or document
-                        </span>
-                        <span className="mt-1 text-xs text-[var(--muted)]">
-                          Images (PNG, JPG), PDF, or Word files
-                        </span>
-                      </>
-                    )}
-                    <input
-                      type="file"
-                      accept={
-                        demoMode === "picture"
-                          ? "image/png,image/jpeg,image/jpg,image/webp"
-                          : ACCEPTED_CHECK_FILE_TYPES
-                      }
-                      multiple
-                      onChange={handleDemoFiles}
-                      className="sr-only"
-                    />
-                  </label>
-                )}
-
-                {demoFiles.length > 0 && (
-                  <div className="rounded-lg border border-[var(--border)] divide-y divide-[var(--border)] overflow-hidden text-xs">
-                    {demoFiles.slice(0, 2).map((file) => (
-                      <div
-                        key={`${file.name}-${file.size}-${file.lastModified}`}
-                        className="flex items-center justify-between px-3 py-2 bg-[var(--panel)]"
-                      >
-                        <span className="truncate font-medium text-[var(--page-text)] max-w-[220px]">
-                          {file.name}
-                        </span>
-                        <span className="text-[var(--muted)]">
-                          {getFileKind(file)} • {formatFileSize(file.size)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Pasted text textarea */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label
-                      htmlFor="pasted-text"
-                      className="text-xs font-medium text-[var(--muted)]"
-                    >
-                      Student Text / OCR Input
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleUseSampleText}
-                      className="text-xs font-medium text-[var(--accent)] hover:underline"
-                    >
-                      Insert sample essay
-                    </button>
-                  </div>
-                  <textarea
-                    id="pasted-text"
-                    value={demoText}
-                    onChange={(event) => {
-                      setDemoText(event.target.value);
-                      setDemoResult(null);
-                      if (event.target.value && demoMode !== "text") {
-                        setDemoMode("text");
-                      }
-                    }}
-                    rows={3}
-                    placeholder="Paste essay paragraph or OCR transcript here..."
-                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 text-sm text-[var(--page-text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition"
-                  />
-                </div>
-
-                {demoError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                    {demoError}
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex items-center gap-3 pt-1">
-                  <button
-                    type="submit"
-                    disabled={isDemoScanning}
-                    className="flex-1 inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-5 text-sm font-medium text-white shadow-sm hover:bg-[var(--accent-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition"
-                  >
-                    <SearchIcon className="h-4 w-4" />
-                    <span>{isDemoScanning ? "Analyzing..." : "Run Originality Check"}</span>
-                  </button>
-                </div>
-
-                {/* Results or Workflow Steps */}
-                <div className="rounded-xl border border-[var(--border)] bg-[var(--panel-soft)] p-4">
-                  {demoResult ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-2xl font-bold text-[var(--page-text)]">
-                            {demoResult.score}
-                          </div>
-                          <div className="text-xs uppercase tracking-wider text-[var(--muted)] font-medium">
-                            Similarity Index
-                          </div>
-                        </div>
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${demoResultBadgeClass}`}
-                        >
-                          {demoResult.label}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 rounded-lg bg-[var(--panel)] p-2.5 border border-[var(--border-soft)] text-center">
-                        <div>
-                          <div className="text-sm font-bold text-[var(--page-text)]">
-                            {demoResult.wordCount}
-                          </div>
-                          <div className="text-[11px] text-[var(--muted)]">Words</div>
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-[var(--page-text)]">
-                            {demoResult.sourceSignals}
-                          </div>
-                          <div className="text-[11px] text-[var(--muted)]">Sources</div>
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-[var(--page-text)]">
-                            {demoResult.unreadableFiles.length === 0 ? "Ready" : "Flags"}
-                          </div>
-                          <div className="text-[11px] text-[var(--muted)]">OCR Status</div>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-[var(--muted)] leading-relaxed">
-                        {demoResult.flags[0]}
-                      </p>
-
-                      {demoResult.extractedText && (
-                        <div>
-                          <span className="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider">
-                            Extracted Transcript
-                          </span>
-                          <pre className="mt-1 max-h-24 overflow-auto rounded-lg border border-[var(--border)] bg-[var(--panel)] p-2 text-xs font-mono text-[var(--page-text)] whitespace-pre-wrap">
-                            {demoResult.extractedText}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)] mb-3 text-center">
-                        Classroom Verification Pipeline
-                      </div>
-                      <div className="grid grid-cols-4 gap-2 text-center">
-                        {steps.map(({ step, title, desc }) => (
-                          <div key={step} className="flex flex-col items-center">
-                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)] mb-1">
-                              {step}
-                            </div>
-                            <span className="text-xs font-semibold text-[var(--page-text)]">
-                              {title}
-                            </span>
-                            <span className="text-[10px] text-[var(--muted)] leading-tight mt-0.5">
-                              {desc}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </form>
+          <div id="demo" className="lg:col-span-6 xl:col-span-6 min-w-0">
+            <LandingDemo onAuth={handleOpenAuthModal} />
           </div>
         </section>
 
@@ -829,7 +385,7 @@ export default function Startup({ initialAuthModal = null }) {
           {/* Features Grid */}
           <div
             id="features"
-            className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4 scroll-mt-24"
+            className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-2 scroll-mt-24"
           >
             {features.map(({ title, copy, icon: Icon }) => (
               <div
@@ -857,10 +413,10 @@ export default function Startup({ initialAuthModal = null }) {
               <ClassroomHatIcon className="h-6 w-6" />
             </div>
             <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--page-text)]">
-              Ready to verify student work with Google Classroom?
+              Bring handwritten essays into your classroom workflow.
             </h2>
             <p className="mt-3 text-sm sm:text-base text-[var(--muted)] max-w-xl mx-auto">
-              Join teachers and students already checking handwritten essays, upholding academic integrity, and reviewing clear submission reports.
+              Create a classroom, collect essay submissions, and review similarity evidence with the context it deserves.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <button
@@ -890,7 +446,7 @@ export default function Startup({ initialAuthModal = null }) {
               <ClassroomHatIcon className="h-3.5 w-3.5" />
             </div>
             <span className="font-semibold text-[var(--page-text)]">WriteCheck</span>
-            <span>— Google Classroom Inspired Academic Integrity</span>
+            <span>— Thoughtful review. Original thinking.</span>
           </div>
 
           <div className="flex items-center gap-6">

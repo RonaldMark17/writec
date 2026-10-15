@@ -1,0 +1,93 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import LandingDemo from "./LandingDemo";
+import Startup from "./Startup";
+import { GlobalThemeToggle } from "../ThemeToggle";
+import { DEMO_KEY, reference } from "./landingSamples";
+jest.mock("./AuthModal", () => () => <div>Account dialog</div>);
+let network;
+beforeEach(() => {
+  localStorage.clear();
+  global.fetch = jest.fn();
+  network = jest.spyOn(global, "fetch").mockImplementation(() => { throw new Error("Demo must not use network"); });
+  URL.createObjectURL = jest.fn(() => "blob:preview"); URL.revokeObjectURL = jest.fn();
+});
+afterEach(() => jest.restoreAllMocks());
+const run = () => fireEvent.click(screen.getByRole("button", { name: /Run Originality Check/i }));
+test("guest sample completes locally with evidence and persists one-demo allowance", async () => {
+  const auth = jest.fn();
+  const view = render(<LandingDemo onAuth={auth} />);
+  fireEvent.click(screen.getByRole("button", { name: /Community essay/ }));
+  expect(screen.getByAltText(/illustrative handwritten essay/)).toHaveAttribute("src", "/demo/community.svg");
+  run();
+  expect(await screen.findByRole("heading", { name: "One matching passage to review" })).toBeInTheDocument();
+  expect(document.querySelector("mark")).toHaveTextContent(reference);
+  expect(document.querySelectorAll(".is-complete")).toHaveLength(4);
+  expect(network).not.toHaveBeenCalled(); expect(localStorage.getItem(DEMO_KEY)).toBe("used");
+  expect(screen.getByRole("button", { name: /Run Originality Check/i })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Create account" })); expect(auth).toHaveBeenCalledWith("register");
+  view.unmount(); render(<LandingDemo onAuth={auth} />);
+  expect(screen.getByText("You've completed the demo.")).toBeInTheDocument();
+});
+test("empty input does not spend demo; pasted text compares only visible reference", async () => {
+  render(<LandingDemo onAuth={jest.fn()} />); run();
+  expect(screen.getByRole("alert")).toHaveTextContent("Choose an essay sample");
+  expect(localStorage.getItem(DEMO_KEY)).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "Paste Text" })); run();
+  expect(screen.getByRole("alert")).toHaveTextContent("Paste some essay text");
+  fireEvent.change(screen.getByLabelText("Your essay text"), { target: { value: "An essay about books and learning." } }); run();
+  expect(await screen.findByRole("heading", { name: "No exact match in this example" })).toBeInTheDocument();
+  expect(screen.getByText(/does not establish plagiarism or originality/)).toBeInTheDocument();
+  expect(network).not.toHaveBeenCalled();
+});
+test("upload preview, removal and text tab isolate image controls without uploads", async () => {
+  render(<LandingDemo onAuth={jest.fn()} />);
+  const file = new File(["image"], "essay.jpg", { type: "image/jpeg" });
+  fireEvent.change(screen.getByLabelText("Choose essay image"), { target: { files: [file] } });
+  expect(await screen.findByAltText("Selected essay preview")).toHaveAttribute("src", "blob:preview");
+  expect(screen.getByText("essay.jpg")).toBeInTheDocument(); run();
+  expect(screen.getByRole("status")).toHaveTextContent("Choose an essay sample");
+  expect(localStorage.getItem(DEMO_KEY)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Remove selected essay" }));
+  expect(screen.queryByText("essay.jpg")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Choose essay image"), { target: { files: [file] } });
+  fireEvent.click(screen.getByRole("tab", { name: "Paste Text" }));
+  expect(screen.queryByAltText("Selected essay preview")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Choose essay image")).not.toBeInTheDocument();
+  expect(screen.queryByText("essay.jpg")).not.toBeInTheDocument();
+  expect(URL.revokeObjectURL).toHaveBeenCalled(); expect(network).not.toHaveBeenCalled();
+});
+test("rejects unsupported or oversized images and supports drag/drop", () => {
+  render(<LandingDemo onAuth={jest.fn()} />);
+  fireEvent.change(screen.getByLabelText("Choose essay image"), { target: { files: [new File(["x"], "essay.heic", { type: "image/heic" })] } });
+  expect(screen.getByRole("alert")).toHaveTextContent("Choose a PNG");
+  fireEvent.drop(document.querySelector(".demo-dropzone"), { dataTransfer: { files: [{ name: "huge.jpg", type: "image/jpeg", size: 11 * 1024 * 1024 }] } });
+  expect(screen.getByRole("alert")).toHaveTextContent("smaller than 10 MB");
+  fireEvent.drop(document.querySelector(".demo-dropzone"), { dataTransfer: { files: [new File(["x"], "essay.jpg", { type: "image/jpeg" })] } });
+  expect(screen.getByText("essay.jpg")).toBeInTheDocument();
+});
+test("tabs support arrow keys and document mode preserves sign-in processing access", () => {
+  const auth = jest.fn(); render(<LandingDemo onAuth={auth} />);
+  fireEvent.keyDown(screen.getByRole("tab", { name: "Picture" }), { key: "ArrowRight" });
+  expect(screen.getByRole("tab", { name: "Document" })).toHaveFocus();
+  expect(screen.getByRole("tab", { name: "Document" })).toHaveAttribute("aria-selected", "true");
+  fireEvent.change(screen.getByLabelText("Choose essay document"), { target: { files: [new File(["doc"], "essay.pdf", { type: "application/pdf" })] } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" })); expect(auth).toHaveBeenCalledWith("login");
+});
+test("landing has one theme control, demo anchor and observer-based section state", async () => {
+  let observeCallback;
+  const disconnect = jest.fn();
+  window.IntersectionObserver = jest.fn(callback => { observeCallback = callback; return { observe: jest.fn(), disconnect }; });
+  const view = render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><GlobalThemeToggle /><Startup /></MemoryRouter>);
+  expect(screen.getAllByRole("button", { name: /Switch.*theme/ })).toHaveLength(1);
+  expect(screen.getByRole("link", { name: "See how it works" })).toHaveAttribute("href", "#demo");
+  const { act } = require("@testing-library/react");
+  Object.defineProperty(window, "scrollY", { value: 500, configurable: true });
+  document.getElementById("about").getBoundingClientRect = () => ({ top: 130 });
+  document.getElementById("features").getBoundingClientRect = () => ({ top: 1000 });
+  act(() => observeCallback([{ isIntersecting: true, target: { id: "about" }, boundingClientRect: { top: 130 } }]));
+  await waitFor(() => expect(document.querySelector('nav a[href="#about"]')).toHaveAttribute("aria-current", "location"));
+  expect(window.location.hash).toBe("#about");
+  view.unmount(); expect(disconnect).toHaveBeenCalled(); delete window.IntersectionObserver; Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+});
+

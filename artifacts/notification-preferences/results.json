@@ -1,0 +1,206 @@
+{
+  "viewports": [
+    [
+      1366,
+      768
+    ],
+    [
+      390,
+      844
+    ],
+    [
+      360,
+      800
+    ]
+  ],
+  "results": [
+    {
+      "name": "notification-preferences",
+      "theme": "light",
+      "width": 1366,
+      "height": 768,
+      "pageOverflow": false,
+      "overflowing": [],
+      "modalFits": true,
+      "cards": null,
+      "table": null,
+      "marks": 0,
+      "smallButtons": 0,
+      "controls": [
+        {
+          "fits": true,
+          "height": 58.5,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(19, 115, 51)"
+        },
+        {
+          "fits": true,
+          "height": 58.5,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(19, 115, 51)"
+        }
+      ]
+    },
+    {
+      "name": "notification-preferences",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "pageOverflow": false,
+      "overflowing": [],
+      "modalFits": true,
+      "cards": null,
+      "table": null,
+      "marks": 0,
+      "smallButtons": 0,
+      "controls": [
+        {
+          "fits": true,
+          "height": 75,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(19, 115, 51)"
+        },
+        {
+          "fits": true,
+          "height": 75,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(19, 115, 51)"
+        }
+      ]
+    },
+    {
+      "name": "notification-preferences",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "pageOverflow": false,
+      "overflowing": [],
+      "modalFits": true,
+      "cards": null,
+      "table": null,
+      "marks": 0,
+      "smallButtons": 0,
+      "controls": [
+        {
+          "fits": true,
+          "height": 75,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(19, 115, 51)"
+        },
+        {
+          "fits": true,
+          "height": 75,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(19, 115, 51)"
+        }
+      ]
+    },
+    {
+      "name": "notification-preferences",
+      "theme": "dark",
+      "width": 1366,
+      "height": 768,
+      "pageOverflow": false,
+      "overflowing": [],
+      "modalFits": true,
+      "cards": null,
+      "table": null,
+      "marks": 0,
+      "smallButtons": 0,
+      "controls": [
+        {
+          "fits": true,
+          "height": 58.5,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(129, 201, 149)"
+        },
+        {
+          "fits": true,
+          "height": 58.5,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(129, 201, 149)"
+        }
+      ]
+    },
+    {
+      "name": "notification-preferences",
+      "theme": "dark",
+      "width": 390,
+      "height": 844,
+      "pageOverflow": false,
+      "overflowing": [],
+      "modalFits": true,
+      "cards": null,
+      "table": null,
+      "marks": 0,
+      "smallButtons": 0,
+      "controls": [
+        {
+          "fits": true,
+          "height": 75,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(129, 201, 149)"
+        },
+        {
+          "fits": true,
+          "height": 75,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(129, 201, 149)"
+        }
+      ]
+    },
+    {
+      "name": "notification-preferences",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "pageOverflow": false,
+      "overflowing": [],
+      "modalFits": true,
+      "cards": null,
+      "table": null,
+      "marks": 0,
+      "smallButtons": 0,
+      "controls": [
+        {
+          "fits": true,
+          "height": 75,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(129, 201, 149)"
+        },
+        {
+          "fits": true,
+          "height": 75,
+          "toggled": true,
+          "focus": "solid",
+          "disabledOpacity": "0.6",
+          "accent": "rgb(129, 201, 149)"
+        }
+      ]
+    }
+  ],
+  "keyboardChecks": [],
+  "keyboardNote": "Reduced viewport checks approximate keyboard space. Hardware/IME not simulated."
+}

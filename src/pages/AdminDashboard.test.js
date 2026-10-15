@@ -158,13 +158,13 @@ test("a profile for a different account never authorizes the current session", a
 test("admin logout requires confirmation and Cancel preserves the profile page", async () => {
  show("/admin/profile", <AdminDashboard profile={{...profile,academicTitle:"Ms."}} />);
  expect(screen.getByRole("heading", {name:"Ms. Admin Name"})).toBeInTheDocument();
- fireEvent.click(screen.getByRole("button", {name:"Logout"}));
+ fireEvent.click(screen.getAllByRole("button", {name:"Sign out"})[0]);
  await screen.findByRole("dialog", {name:"Sign out of WriteCheck?"});
  expect(signOutAndExpireToken).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button", {name:"Cancel"}));
  expect(screen.getByRole("heading", {name:"Ms. Admin Name"})).toBeInTheDocument();
- fireEvent.click(screen.getByRole("button", {name:"Logout"}));
+ fireEvent.click(screen.getAllByRole("button", {name:"Sign out"})[0]);
  await screen.findByRole("dialog", {name:"Sign out of WriteCheck?"});
  fireEvent.click(screen.getByRole("button", {name:"Sign Out"}));
- await waitFor(()=>expect(signOutAndExpireToken).toHaveBeenCalledWith("/login"));
+ await waitFor(()=>expect(signOutAndExpireToken).toHaveBeenCalledWith("/login", {preserveOnFailure:true}));
 });

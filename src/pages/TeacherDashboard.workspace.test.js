@@ -11,10 +11,11 @@ import { downloadGrades } from "./dashboard/gradeExport";
 jest.mock("./dashboard/gradeExport", () => ({ ...jest.requireActual("./dashboard/gradeExport"), downloadGrades: jest.fn(async () => {}) }));
 jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.fn(), channel: jest.fn(), removeChannel: jest.fn() } }));
 jest.mock("./dashboard/ocrService", () => ({ getOcrEngineInfo: async () => null, extractTextFromImages: jest.fn() }));
-jest.mock("./dashboard/submissionProgress", () => ({ ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: () => "",
+jest.mock("./dashboard/submissionProgress", () => ({ ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: (_id, update) => { mockProgressUpdate = update; return ""; },
   loadTeacherSubmissionStatus: jest.fn(async () => ({ results: [], progress: {} })) }));
 jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shared"), Header: ({ onPageChange, notifications }) => <>{notifications}
   <button onClick={() => onPageChange("upload")}>Scan tab</button><button onClick={() => onPageChange("classrooms")}>Classes tab</button><button onClick={() => onPageChange("assignments")}>Classwork tab</button><button onClick={() => onPageChange("submissions")}>Grades tab</button></> }));
+let mockProgressUpdate;
 let archived = false;
 let extraAssignments = [];
 let notificationRows = [];
@@ -411,4 +412,38 @@ test("close dashboard grades returns to class list even after selecting a filter
   fireEvent.click(screen.getByRole("button", {name:"Close grades"}));
   expect(screen.getByRole("button", {name:"Class A"})).toBeInTheDocument();
   expect(screen.getByRole("button", {name:"Class B"})).toBeInTheDocument();
+});
+
+ test("open review clears completed revision even when processing and essay text are unchanged", async () => {
+  const record = {id:"work",assignment_id:"essayA",classroom_id:"A",student_id:"s",transcribed_text:"Essay",grade:"80",feedback:"Old feedback",file_url:"old.txt",revision_request:{id:"revision",message:"Revise"}};
+  loadTeacherSubmissionStatus.mockResolvedValue({results:[record],progress:{work:{state:"ready"}}});
+  render(<TeacherDashboard profile={{id:"t",role:"teacher",full_name:"Teacher"}}/>);
+  const dialog = await openSavedReview();
+  expect(within(dialog).getByRole("button", {name:"Return work"})).toBeDisabled();
+  await act(async () => mockProgressUpdate(rows => rows.map(row => ({...row, revisionRequest:null, revisionHistory:[{id:"revision",completed_at:"2026-10-15"}], fileUrl:"new.txt", grade:"",feedback:"",returnedAt:null}))));
+  expect(within(dialog).queryByText("Revision requested: Revise")).not.toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Grade / Score")).toHaveValue("");
+  fireEvent.change(within(dialog).getByLabelText("Grade / Score"), {target:{value:"95"}});
+  fireEvent.change(within(dialog).getByLabelText("Teacher Feedback (optional)"), {target:{value:"Latest feedback"}});
+  apiFetch.mockResolvedValue({ok:true,json:async()=>({success:true,grade_record:{...record,grade:"95",feedback:"Latest feedback",status:"graded"}})});
+  supabase.rpc.mockImplementation(name => Promise.resolve({data:name === "return_submission" ? {returned_at:"2026-10-15T02:00:00Z"} : []}));
+  fireEvent.click(within(dialog).getByRole("button", {name:"Return work"}));
+  await within(dialog).findByText(/Work returned/);
+  expect(apiFetch).toHaveBeenCalledWith(expect.stringContaining("/work/grade"), expect.objectContaining({body:JSON.stringify({grade:"95",feedback:"Latest feedback",status:"graded",assignment_id:"essayA"})}));
+  expect(supabase.rpc).toHaveBeenCalledWith("return_submission", {submission_key:"work"});
+ });
+
+test("return failure preserves saved inputs and enables retry without success message", async () => {
+  const record = {id:"work",assignment_id:"essayA",classroom_id:"A",student_id:"s",transcribed_text:"Essay",grade:"88",feedback:"Keep feedback",status:"graded"};
+  loadTeacherSubmissionStatus.mockResolvedValue({results:[record],progress:{work:{state:"ready"}}});
+  render(<TeacherDashboard profile={{id:"t",role:"teacher",full_name:"Teacher"}}/>);
+  const dialog = await openSavedReview();
+  apiFetch.mockResolvedValue({ok:true,json:async()=>({success:true,grade_record:record})});
+  supabase.rpc.mockImplementation(name => Promise.resolve(name === "return_submission" ? {error:{message:"Please retry"}} : {data:[]}));
+  fireEvent.click(within(dialog).getByRole("button", {name:"Return work"}));
+  await within(dialog).findByText(/Grade saved, but could not return work/);
+  expect(within(dialog).getByLabelText("Grade / Score")).toHaveValue("88");
+  expect(within(dialog).getByLabelText("Teacher Feedback (optional)")).toHaveValue("Keep feedback");
+  expect(within(dialog).getByRole("button", {name:"Return work"})).toBeEnabled();
+  expect(within(dialog).queryByText(/Work returned/)).not.toBeInTheDocument();
 });

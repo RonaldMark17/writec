@@ -99,6 +99,43 @@ class NotificationTests(unittest.TestCase):
         self.worker.tick(self.now + timedelta(minutes=2))
         self.assertEqual(self.send.call_count, 2)
 
+    def test_preferences_are_independent_for_all_combinations(self):
+        for immediate in (False, True):
+            for digest in (False, True):
+                with self.subTest(immediate=immediate, digest=digest):
+                    worker = NotificationWorker(self.tmp.name + f'/{immediate}-{digest}.db')
+                    self.send.reset_mock()
+                    self.prefs = {'notifyOnSubmissions': immediate, 'weeklyDigest': digest}
+                    worker.tick(self.now)
+                    keys = [call.args[3] for call in self.send.call_args_list]
+                    self.assertEqual(any(key.startswith('submission:') for key in keys), immediate)
+                    self.assertEqual(any(key.startswith('digest:') for key in keys), digest)
+
+    def test_digest_is_monday_utc_only_and_does_not_require_immediate_emails(self):
+        self.prefs = {'notifyOnSubmissions': False, 'weeklyDigest': True}
+        self.worker.tick(self.now + timedelta(days=1))
+        self.send.assert_not_called()
+        self.worker.tick(self.now + timedelta(days=7))
+        self.assertEqual(self.send.call_count, 1)
+        self.assertTrue(self.send.call_args.args[3].startswith('digest:'))
+
+    def test_changed_remote_preferences_are_read_on_next_tick(self):
+        self.prefs = {'notifyOnSubmissions': False, 'weeklyDigest': False}
+        self.worker.tick(self.now)
+        self.send.assert_not_called()
+        self.prefs['weeklyDigest'] = True
+        self.worker.tick(self.now + timedelta(minutes=1))
+        self.assertEqual(self.send.call_count, 1)
+        self.assertTrue(self.send.call_args.args[3].startswith('digest:'))
+
+    def test_in_place_resubmission_preserves_existing_one_email_per_submission_rule(self):
+        self.prefs = {'notifyOnSubmissions': True, 'weeklyDigest': False}
+        self.worker.tick(self.now)
+        self.now += timedelta(minutes=1)  # Revision replaces created_at, retaining ID.
+        self.worker.tick(self.now)
+        self.assertEqual(self.send.call_count, 1)
+        self.assertEqual(self.send.call_args.args[3], 'submission:essay')
+
     def test_disabled_dispatcher_never_contacts_database_or_smtp(self):
         with patch.dict('os.environ', {'NOTIFICATIONS_ENABLED': '0'}):
             self.worker.tick(self.now)

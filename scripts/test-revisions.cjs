@@ -219,6 +219,36 @@ async function main() {
     await query('SELECT public.return_submission($1)', [id(31)]);
     await login(2);
     assert.equal((await notices()).filter(n => n.type === 'grade_posted').length, 2);
+    // Both attempts return through the same canonical submission ID. The earlier
+    // attempt survives only in its immutable revision snapshot.
+    for (const key of [id(31), id(30)]) {
+      await db.exec(`RESET ROLE; SET test.role = 'service_role';`);
+      await query(`UPDATE public.submission_jobs SET state = 'ready', checkpoint = '{"mode":"classroom"}' WHERE submission_id = $1`, [key]);
+      await query(`UPDATE public."submissionTable" SET grade = '96', feedback = 'Latest feedback', status = 'graded', scan_result = '{"mode":"classroom"}' WHERE id = $1`, [key]);
+      await login(1);
+      const released = (await query('SELECT public.return_submission($1) AS result', [key]))[0].result;
+      assert.ok(released.returned_at);
+      await login(2);
+      const before = (await notices()).filter(n => n.type === 'grade_posted' && n.submission_id === key).length;
+      for (let refresh = 0; refresh < 2; refresh++) {
+        const current = (await query('SELECT public.list_submission_results() AS result'))[0].result.find(s => s.id === key);
+        assert.equal(current.grade, '96');
+        assert.equal(current.feedback, 'Latest feedback');
+        assert.equal(current.status, 'graded');
+        assert.ok(current.returned_at);
+        assert.equal(current.revision_request, null);
+      }
+      await login(1);
+      await query('SELECT public.return_submission($1)', [key]);
+      await login(2);
+      assert.equal((await notices()).filter(n => n.type === 'grade_posted' && n.submission_id === key).length, before);
+    }
+    await db.exec('RESET ROLE');
+    const snapshot = (await query('SELECT snapshot FROM public.submission_revisions WHERE id = $1', [revision]))[0].snapshot;
+    assert.equal(snapshot.grade, '80');
+    assert.equal(snapshot.transcribed_text, 'Earlier essay');
+    assert.equal((await query('SELECT count(*)::int AS n FROM public."submissionTable" WHERE id = $1', [id(30)]))[0].n, 1);
+    console.log('PASS: first and revised attempt returns, persisted student results after refresh, preserved snapshot, and no duplicate grade notifications.');
     await db.exec(`RESET ROLE; DELETE FROM public."classroomMembers" WHERE student_id = '${id(2)}';`);
     await login(2);
     assert.equal((await notices()).length, 0, 'Leaving a classroom revokes notification access');

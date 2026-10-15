@@ -828,33 +828,34 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
                         />
                       </label>
 
-                      <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
-                        <div>
+                      <label className="notification-preference">
+                        <div className="min-w-0">
                           <p className="text-xs font-semibold text-[#202124]">Submission Email Notifications</p>
                           <p className="text-[11px] text-[#5f6368]">Receive notifications when students turn in work</p>
                         </div>
                         <ValidatedInput
                           type="checkbox"
                           checked={notifyOnSubmissions}
-                          disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
-                          onChange={(e) => setNotifyOnSubmissions(e.target.checked)}
-                          className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
+                          disabled={busy || profile?.role !== "teacher"}
+                          onChange={(e) => { setNotifyOnSubmissions(e.target.checked); setMessage(""); }}
+                          className="notification-preference-input"
                         />
                       </label>
 
-                      <label className="flex items-center justify-between cursor-pointer rounded-xl border border-[#dadce0] bg-white p-3 hover:bg-[#f8f9fa] transition">
-                        <div>
+                      <label className="notification-preference">
+                        <div className="min-w-0">
                           <p className="text-xs font-semibold text-[#202124]">Weekly Submission Digest</p>
                           <p className="text-[11px] text-[#5f6368]">Receive a submission-count summary on Mondays (UTC)</p>
                         </div>
                         <ValidatedInput
                           type="checkbox"
                           checked={weeklyDigest}
-                          disabled={profile?.role !== "teacher" || !services?.notifications?.configured}
-                          onChange={(e) => setWeeklyDigest(e.target.checked)}
-                          className="h-4 w-4 rounded text-[#137333] accent-[#137333] focus:ring-[#137333]"
+                          disabled={busy || profile?.role !== "teacher"}
+                          onChange={(e) => { setWeeklyDigest(e.target.checked); setMessage(""); }}
+                          className="notification-preference-input"
                         />
                       </label>
+                      <p className="text-xs text-[#5f6368]">Save profile to apply your email preferences. Email delivery requires the email service to be available.</p>
                       <p className="text-xs text-[#5f6368]">{services?.notifications?.message || serviceError || "Checking email availability…"}</p>
                     </div>
                   </>

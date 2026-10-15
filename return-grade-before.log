@@ -1,0 +1,209 @@
+
+> writecheck-ai@0.1.0 test
+> react-scripts test --watchAll=false --runInBand --runTestsByPath src/pages/TeacherDashboard.workspace.test.js --testNamePattern=open review clears
+
+  console.error
+    Error: Not implemented: window.scrollTo
+        at module.exports (C:\Users\crist\writec\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+        at scrollTo (C:\Users\crist\writec\node_modules\jsdom\lib\jsdom\browser\Window.js:866:7)
+        at C:\Users\crist\writec\src\pages\TeacherDashboard.js:163:14
+        at Object.react_stack_bottom_frame (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:25989:20)
+        at runWithFiberInDEV (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+        at commitHookEffectListMount (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:13249:29)
+        at commitHookPassiveMountEffects (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:13336:11)
+        at commitPassiveMountOnFiber (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:15484:13)
+        at recursivelyTraversePassiveMountEffects (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+        at commitPassiveMountOnFiber (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:15519:11)
+        at flushPassiveEffects (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:18432:9)
+        at C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:17923:15
+        at flushActQueue (C:\Users\crist\writec\node_modules\react\cjs\react.development.js:590:34)
+        at Object.<anonymous>.process.env.NODE_ENV.exports.act (C:\Users\crist\writec\node_modules\react\cjs\react.development.js:884:10)
+        at C:\Users\crist\writec\node_modules\@testing-library\react\dist\act-compat.js:46:25
+        at renderRoot (C:\Users\crist\writec\node_modules\@testing-library\react\dist\pure.js:189:26)
+        at render (C:\Users\crist\writec\node_modules\@testing-library\react\dist\pure.js:291:10)
+        at Object.<anonymous> (C:\Users\crist\writec\src\pages\TeacherDashboard.workspace.test.js:420:9)
+        at Promise.then.completed (C:\Users\crist\writec\node_modules\jest-circus\build\utils.js:391:28)
+        at new Promise (<anonymous>)
+        at callAsyncCircusFn (C:\Users\crist\writec\node_modules\jest-circus\build\utils.js:316:10)
+        at _callCircusTest (C:\Users\crist\writec\node_modules\jest-circus\build\run.js:218:40)
+        at _runTest (C:\Users\crist\writec\node_modules\jest-circus\build\run.js:155:3)
+        at _runTestsForDescribeBlock (C:\Users\crist\writec\node_modules\jest-circus\build\run.js:66:9)
+        at run (C:\Users\crist\writec\node_modules\jest-circus\build\run.js:25:3)
+        at runAndTransformResultsToJestFormat (C:\Users\crist\writec\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:170:21)
+        at jestAdapter (C:\Users\crist\writec\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:82:19)
+        at runTestInternal (C:\Users\crist\writec\node_modules\jest-runner\build\runTest.js:389:16)
+        at runTest (C:\Users\crist\writec\node_modules\jest-runner\build\runTest.js:475:34)
+        at TestRunner.runTests (C:\Users\crist\writec\node_modules\jest-runner\build\index.js:101:12)
+        at TestScheduler.scheduleTests (C:\Users\crist\writec\node_modules\@jest\core\build\TestScheduler.js:333:13)
+        at runJest (C:\Users\crist\writec\node_modules\@jest\core\build\runJest.js:404:19)
+        at _run10000 (C:\Users\crist\writec\node_modules\@jest\core\build\cli\index.js:320:7)
+        at runCLI (C:\Users\crist\writec\node_modules\@jest\core\build\cli\index.js:173:3)
+        at Object.run (C:\Users\crist\writec\node_modules\jest-cli\build\cli\index.js:155:37) undefined
+
+      161 |         window.history.scrollRestoration = "manual";
+      162 |       }
+    > 163 |       window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+          |              ^
+      164 |     }
+      165 |   }, [classroomTab, activePage]);
+      166 |   const [archivingClassroom, setArchivingClassroom] = useState(null);
+
+      at VirtualConsole.<anonymous> (node_modules/jsdom/lib/jsdom/virtual-console.js:29:45)
+      at module.exports (node_modules/jsdom/lib/jsdom/browser/not-implemented.js:12:26)
+      at scrollTo (node_modules/jsdom/lib/jsdom/browser/Window.js:866:7)
+      at src/pages/TeacherDashboard.js:163:14
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25989:20)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at commitHookEffectListMount (node_modules/react-dom/cjs/react-dom-client.development.js:13249:29)
+      at commitHookPassiveMountEffects (node_modules/react-dom/cjs/react-dom-client.development.js:13336:11)
+      at commitPassiveMountOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:15484:13)
+      at recursivelyTraversePassiveMountEffects (node_modules/react-dom/cjs/react-dom-client.development.js:15439:11)
+      at commitPassiveMountOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:15519:11)
+      at flushPassiveEffects (node_modules/react-dom/cjs/react-dom-client.development.js:18432:9)
+      at node_modules/react-dom/cjs/react-dom-client.development.js:17923:15
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/pages/TeacherDashboard.workspace.test.js:420:9)
+      at TestScheduler.scheduleTests (node_modules/@jest/core/build/TestScheduler.js:333:13)
+      at runJest (node_modules/@jest/core/build/runJest.js:404:19)
+      at _run10000 (node_modules/@jest/core/build/cli/index.js:320:7)
+      at runCLI (node_modules/@jest/core/build/cli/index.js:173:3)
+
+  console.error
+    Error: Not implemented: window.scrollTo
+        at module.exports (C:\Users\crist\writec\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+        at scrollTo (C:\Users\crist\writec\node_modules\jsdom\lib\jsdom\browser\Window.js:866:7)
+        at C:\Users\crist\writec\src\pages\TeacherDashboard.js:163:14
+        at Object.react_stack_bottom_frame (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:25989:20)
+        at runWithFiberInDEV (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+        at commitHookEffectListMount (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:13249:29)
+        at commitHookPassiveMountEffects (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:13336:11)
+        at commitPassiveMountOnFiber (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:15484:13)
+        at recursivelyTraversePassiveMountEffects (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:15439:11)
+        at commitPassiveMountOnFiber (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:15519:11)
+        at flushPassiveEffects (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:18432:9)
+        at flushPendingEffects (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:18358:14)
+        at flushSpawnedWork (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:18323:44)
+        at commitRoot (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:17955:9)
+        at performWorkOnRoot (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:16667:15)
+        at performSyncWorkOnRoot (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:18972:7)
+        at flushSyncWorkAcrossRoots_impl (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:18814:21)
+        at processRootScheduleInMicrotask (C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:18853:9)
+        at C:\Users\crist\writec\node_modules\react-dom\cjs\react-dom-client.development.js:18982:11
+        at flushActQueue (C:\Users\crist\writec\node_modules\react\cjs\react.development.js:590:34)
+        at Object.<anonymous>.process.env.NODE_ENV.exports.act (C:\Users\crist\writec\node_modules\react\cjs\react.development.js:884:10)
+        at C:\Users\crist\writec\node_modules\@testing-library\react\dist\act-compat.js:46:25
+        at Object.eventWrapper (C:\Users\crist\writec\node_modules\@testing-library\react\dist\pure.js:106:28)
+        at fireEvent (C:\Users\crist\writec\node_modules\@testing-library\dom\dist\events.js:12:35)
+        at fireEvent.<computed> [as click] (C:\Users\crist\writec\node_modules\@testing-library\dom\dist\events.js:110:36)
+        at fireEvent.click (C:\Users\crist\writec\node_modules\@testing-library\react\dist\fire-event.js:15:52)
+        at openSavedReview (C:\Users\crist\writec\src\pages\TeacherDashboard.workspace.test.js:343:13)
+        at Object.<anonymous> (C:\Users\crist\writec\src\pages\TeacherDashboard.workspace.test.js:421:24)
+        at Promise.then.completed (C:\Users\crist\writec\node_modules\jest-circus\build\utils.js:391:28)
+        at new Promise (<anonymous>)
+        at callAsyncCircusFn (C:\Users\crist\writec\node_modules\jest-circus\build\utils.js:316:10)
+        at _callCircusTest (C:\Users\crist\writec\node_modules\jest-circus\build\run.js:218:40)
+        at _runTest (C:\Users\crist\writec\node_modules\jest-circus\build\run.js:155:3)
+        at _runTestsForDescribeBlock (C:\Users\crist\writec\node_modules\jest-circus\build\run.js:66:9)
+        at run (C:\Users\crist\writec\node_modules\jest-circus\build\run.js:25:3)
+        at runAndTransformResultsToJestFormat (C:\Users\crist\writec\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapterInit.js:170:21)
+        at jestAdapter (C:\Users\crist\writec\node_modules\jest-circus\build\legacy-code-todo-rewrite\jestAdapter.js:82:19)
+        at runTestInternal (C:\Users\crist\writec\node_modules\jest-runner\build\runTest.js:389:16)
+        at runTest (C:\Users\crist\writec\node_modules\jest-runner\build\runTest.js:475:34)
+        at TestRunner.runTests (C:\Users\crist\writec\node_modules\jest-runner\build\index.js:101:12)
+        at TestScheduler.scheduleTests (C:\Users\crist\writec\node_modules\@jest\core\build\TestScheduler.js:333:13)
+        at runJest (C:\Users\crist\writec\node_modules\@jest\core\build\runJest.js:404:19)
+        at _run10000 (C:\Users\crist\writec\node_modules\@jest\core\build\cli\index.js:320:7)
+        at runCLI (C:\Users\crist\writec\node_modules\@jest\core\build\cli\index.js:173:3)
+        at Object.run (C:\Users\crist\writec\node_modules\jest-cli\build\cli\index.js:155:37) undefined
+
+      161 |         window.history.scrollRestoration = "manual";
+      162 |       }
+    > 163 |       window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+          |              ^
+      164 |     }
+      165 |   }, [classroomTab, activePage]);
+      166 |   const [archivingClassroom, setArchivingClassroom] = useState(null);
+
+      at VirtualConsole.<anonymous> (node_modules/jsdom/lib/jsdom/virtual-console.js:29:45)
+      at module.exports (node_modules/jsdom/lib/jsdom/browser/not-implemented.js:12:26)
+      at scrollTo (node_modules/jsdom/lib/jsdom/browser/Window.js:866:7)
+      at src/pages/TeacherDashboard.js:163:14
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25989:20)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at commitHookEffectListMount (node_modules/react-dom/cjs/react-dom-client.development.js:13249:29)
+      at commitHookPassiveMountEffects (node_modules/react-dom/cjs/react-dom-client.development.js:13336:11)
+      at commitPassiveMountOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:15484:13)
+      at recursivelyTraversePassiveMountEffects (node_modules/react-dom/cjs/react-dom-client.development.js:15439:11)
+      at commitPassiveMountOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:15519:11)
+      at flushPassiveEffects (node_modules/react-dom/cjs/react-dom-client.development.js:18432:9)
+      at flushPendingEffects (node_modules/react-dom/cjs/react-dom-client.development.js:18358:14)
+      at flushSpawnedWork (node_modules/react-dom/cjs/react-dom-client.development.js:18323:44)
+      at commitRoot (node_modules/react-dom/cjs/react-dom-client.development.js:17955:9)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16667:15)
+      at performSyncWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:18972:7)
+      at flushSyncWorkAcrossRoots_impl (node_modules/react-dom/cjs/react-dom-client.development.js:18814:21)
+      at processRootScheduleInMicrotask (node_modules/react-dom/cjs/react-dom-client.development.js:18853:9)
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18982:11
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at Object.eventWrapper (node_modules/@testing-library/react/dist/pure.js:106:28)
+      at fireEvent (node_modules/@testing-library/dom/dist/events.js:12:35)
+      at fireEvent.<computed> [as click] (node_modules/@testing-library/dom/dist/events.js:110:36)
+      at fireEvent.click (node_modules/@testing-library/react/dist/fire-event.js:15:52)
+      at openSavedReview (src/pages/TeacherDashboard.workspace.test.js:343:13)
+      at Object.<anonymous> (src/pages/TeacherDashboard.workspace.test.js:421:24)
+      at TestScheduler.scheduleTests (node_modules/@jest/core/build/TestScheduler.js:333:13)
+      at runJest (node_modules/@jest/core/build/runJest.js:404:19)
+      at _run10000 (node_modules/@jest/core/build/cli/index.js:320:7)
+      at runCLI (node_modules/@jest/core/build/cli/index.js:173:3)
+
+FAIL src/pages/TeacherDashboard.workspace.test.js
+  × open review clears completed revision even when processing and essay text are unchanged (406 ms)
+  ○ skipped create classroom identifies blank name and section without writing
+  ○ skipped confirmed rename updates the classroom header and classwork context
+  ○ skipped opened assignment exports immediately using its classroom and only its grades
+  ○ skipped Grades warns without context but exports a selected assignment without a classroom filter
+  ○ skipped Grades keeps one toolbar and immediately switches assignment work and export scope
+  ○ skipped opening a Grades card synchronizes the sole assignment selector and export
+  ○ skipped classroom export keeps classroom context without selecting an assignment
+  ○ skipped opened classroom persists into Classwork and Grades; manual switching updates the context
+  ○ skipped teacher archive menu disappears immediately after the final realtime restore
+  ○ skipped teacher requests a revision with instructions from the review dialog
+  ○ skipped resubmission notification refreshes and opens the exact teacher review
+  ○ skipped closing peer inspection preserves assignment, classroom, roster filter and page
+  ○ skipped Grades follows newly opened classrooms and drops foreign assignment state
+  ○ skipped Scan Station has no filters and retains upload and clear actions
+  ○ skipped teacher scans one ordered essay only when all pages finish (failure=false)
+  ○ skipped teacher scans one ordered essay only when all pages finish (failure=true)
+  ○ skipped review grade saves once, preserves drafts across disclosures, reloads and returns saved work
+  ○ skipped failed grade save leaves feedback and grade intact
+  ○ skipped close grades returns to its original classroom despite filter changes
+  ○ skipped close dashboard grades returns to class list even after selecting a filter
+  ○ skipped return failure preserves saved inputs and enables retry without success message
+
+  ● open review clears completed revision even when processing and essay text are unchanged
+
+    expect(element).not.toBeInTheDocument()
+
+    expected document not to contain element, found <p class="mt-3 text-sm text-amber-800">Revision requested: Revise</p> instead
+
+      422 |   expect(within(dialog).getByRole("button", {name:"Return work"})).toBeDisabled();
+      423 |   await act(async () => mockProgressUpdate(rows => rows.map(row => ({...row, revisionRequest:null, revisionHistory:[{id:"revision",completed_at:"2026-10-15"}], fileUrl:"new.txt", grade:"",feedback:"",returnedAt:null}))));
+    > 424 |   expect(within(dialog).queryByText("Revision requested: Revise")).not.toBeInTheDocument();
+          |                                                                        ^
+      425 |   expect(within(dialog).getByLabelText("Grade / Score")).toHaveValue("");
+      426 |   fireEvent.change(within(dialog).getByLabelText("Grade / Score"), {target:{value:"95"}});
+      427 |   fireEvent.change(within(dialog).getByLabelText("Teacher Feedback (optional)"), {target:{value:"Latest feedback"}});
+
+      at Object.<anonymous> (src/pages/TeacherDashboard.workspace.test.js:424:72)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 21 skipped, 22 total
+Snapshots:   0 total
+Time:        2.3 s, estimated 3 s
+Ran all test suites within paths "src/pages/TeacherDashboard.workspace.test.js".
