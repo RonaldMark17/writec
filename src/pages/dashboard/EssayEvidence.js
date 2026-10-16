@@ -2,22 +2,26 @@ import { useState } from "react";
 import { evidenceSegments, validPercentage } from "./similarityEvidence";
 import { PeerComparison, SimilarityDialog } from "./PeerSimilarityReview";
 
-export default function EssayEvidence({ text, ranges, submission, sources = [], mode = "all", onModeChange }) {
+export default function EssayEvidence({ text, ranges, submission, sources = [], mode = "all", onModeChange, onOpenSources, sourcesAvailable = true }) {
   const [selection, setSelection] = useState(null);
   const [inspecting, setInspecting] = useState(null);
   const selected = selection?.text === text && selection?.ranges === ranges ? selection : null;
-  const visibleRanges = mode === "plain" ? [] : ranges.filter(range => mode === "all" || range.type === "online");
   const peerCount = new Set(ranges.filter(r => r.type === "peer").map(r => r.id)).size;
+  const activeMode = mode === "peers" && !peerCount ? "all" : mode;
+  const visibleRanges = activeMode === "plain" ? [] : ranges.filter(range => activeMode === "all" || range.type === (activeMode === "peers" ? "peer" : "online"));
   return <div className="plagiarism-highlights">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <h4 className="text-xs font-bold tracking-wide"><span className="text-emerald-600" aria-hidden="true">&#9679; </span>PLAGIARISM HIGHLIGHTS</h4>
-        <span className="report-source-count">{sources.length} External {sources.length === 1 ? "Source" : "Sources"}</span>
+        {onOpenSources && <button type="button" className="report-source-count" aria-haspopup="dialog" onClick={() => onOpenSources()}>
+          {sourcesAvailable ? `${sources.length} External ${sources.length === 1 ? "Source" : "Sources"}` : "Source details unavailable"}
+        </button>}
       </div>
       <div className="flex flex-wrap gap-1" aria-label="Transcription display">
-        {[["all", `All (${sources.length + peerCount})`], ["sources", `Sources (${sources.length})`], ["plain", "Plain"]].map(([value, label]) =>
-          <button key={value} type="button" className="similarity-chip" aria-pressed={mode === value}
-            onClick={() => { setSelection(null); onModeChange?.(value); }}>{label}</button>)}
+        {[["all", "All highlights"], ["sources", sourcesAvailable ? `External sources (${sources.length})` : "External sources"], ...(peerCount ? [["peers", "Peer matches"]] : []), ["plain", "Plain text"]].map(([value, label]) =>
+          <button key={value} type="button" className="similarity-chip" aria-pressed={activeMode === value}
+            aria-haspopup={value === "sources" && onOpenSources ? "dialog" : undefined}
+            onClick={() => { setSelection(null); onModeChange?.(value); if (value === "sources") onOpenSources?.(); }}>{label}</button>)}
       </div>
     </div>
     {visibleRanges.some(r => r.type === "online") && <p className="report-instruction">Click any highlighted passage in the text below to view its source publication and destination link.</p>}

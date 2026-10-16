@@ -1,6 +1,6 @@
 import { SimilarityDialog } from "./PeerSimilarityReview";
 import EssayEvidence from "./EssayEvidence";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { collectEvidence, scopedPeerMatches, staleReport, validPercentage } from "./similarityEvidence";
 import SubmissionFilePreview from "./SubmissionFilePreview";
 import ClassmateMatches from "./ClassmateMatches";
@@ -13,6 +13,18 @@ export default function SubmissionReview({ submission, submissions = [], profile
   imageUrl, imageLoading, imageExpanded, onExpandImage }) {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const originalDetails = useRef(null);
+  const peerDetails = useRef(null);
+  const sourceDestination = useRef("sources");
+  function openSourceDetails(destination = "sources") {
+    sourceDestination.current = destination;
+    setSourcesOpen(true);
+  }
+  useEffect(() => {
+    if (sourcesOpen && sourceDestination.current === "peers") {
+      peerDetails.current?.scrollIntoView?.({ block: "start", behavior: "instant" });
+      peerDetails.current?.focus({ preventScroll: true });
+    }
+  }, [sourcesOpen]);
   function reveal(ref) {
     if (!ref.current) return;
     ref.current.open = true;
@@ -32,7 +44,7 @@ export default function SubmissionReview({ submission, submissions = [], profile
   const reportReady = !stale && !pending && !failed && !scanning;
   const peerStatus = !reportReady ? "Awaiting current check" : result?.peerComparisonEnabled === false
     ? "Comparison disabled" : !result?.peerSimilarity ? "Not checked" : peers.length
-      ? `${peers.length} potential ${peers.length === 1 ? "match" : "matches"}` : "No reportable matches";
+      ? `${peers.length} matching ${peers.length === 1 ? "classmate" : "classmates"}` : "No reportable matches";
   return <div role="dialog" aria-modal="true" aria-labelledby="submission-review-title"
     className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4 backdrop-blur-sm">
     <div className="wc-modal-panel review-workspace relative max-h-[94vh] w-full overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-2xl">
@@ -54,20 +66,30 @@ export default function SubmissionReview({ submission, submissions = [], profile
         <button type="button" className="similarity-chip mt-3 text-sm" onClick={() => reveal(originalDetails)}>Original submission / download</button>
         </div>
           <section aria-label="Similarity Analysis" className="review-summary">
-            <div className="review-summary-stats"><div>
-            <p className="text-sm text-gray-600">Online source similarity</p>
-            {scanning || pending ? <p role="status" className="mt-4">Checking similarity...</p>
-              : failed ? <div className="validation-error mt-2 rounded-lg p-3"><p role="alert">Similarity check failed</p>
-                {submission.processingError && <p>{submission.processingError}</p>}
-                <button type="button" disabled={scanning || saving} onClick={onRecheck} className="mt-2 underline">Retry processing</button></div>
-              : hasScore && !stale && result?.mode !== "classroom" ? <p className="mt-1"><span className="review-score block font-bold tracking-tight">{score}%</span></p>
-              : <p role="status" className="mt-4">No similarity result available</p>}
-            </div><dl className="review-supporting-stats">
-              <div><dt>Matching sources</dt><dd>{reportReady && result ? sources.length : "Not available"}</dd></div>
-              <div><dt>Classmate similarity</dt><dd>{peerStatus}</dd></div>
-            </dl></div>
+            <h3 className="review-summary-title">Similarity Review</h3>
+            <div className="review-summary-stats">
+              <section aria-label="Online source similarity" className="review-similarity-card">
+                <h4>Online Sources</h4>
+                {scanning || pending ? <p role="status">Checking similarity...</p>
+                  : failed ? <div className="validation-error rounded-lg p-3"><p role="alert">Similarity check failed</p>
+                    {submission.processingError && <p>{submission.processingError}</p>}
+                    <button type="button" disabled={scanning || saving} onClick={onRecheck} className="mt-2 underline">Retry processing</button></div>
+                  : hasScore && !stale && result?.mode !== "classroom" ? <p className="review-score font-bold tracking-tight">{score}%</p>
+                  : <p role="status">No similarity result available</p>}
+                {reportReady && result && <button type="button" className="review-source-link" aria-haspopup="dialog"
+                  onClick={() => openSourceDetails()}>{sources.length} matching {sources.length === 1 ? "source" : "sources"}</button>}
+                <button type="button" className="similarity-chip" aria-haspopup="dialog" onClick={() => openSourceDetails()}>View sources</button>
+              </section>
+              <section aria-label="Peer similarity" className="review-similarity-card">
+                <h4>Peer Similarity</h4>
+                <p className="review-peer-status">{reportReady && result?.peerComparisonEnabled !== false && result?.peerSimilarity && !peers.length && <span aria-hidden="true" className="review-peer-check">&#10003; </span>}{peerStatus}</p>
+                <p className="review-similarity-note">Same classroom and assignment</p>
+                <button type="button" className="similarity-chip" aria-haspopup="dialog" onClick={() => openSourceDetails("peers")}>
+                  {reportReady && peers.length ? "View peer matches" : "View peer comparison"}
+                </button>
+              </section>
+            </div>
             <div className="review-summary-actions">
-              <button type="button" className="similarity-chip" onClick={() => setSourcesOpen(true)}>View sources</button>
               <a className="similarity-chip review-grade-link" href="#review-grading">Go to grading</a>
             </div>
           </section>
@@ -83,7 +105,7 @@ export default function SubmissionReview({ submission, submissions = [], profile
             {!text && <p role={failed ? "alert" : "status"} className="mb-2 text-sm text-gray-600">
               {failed ? "Text extraction did not complete. Use Retry processing in the similarity overview." : pending ? "Text extraction is in progress." : "Extracted text is not available."}
             </p>}
-            <EssayEvidence text={text} ranges={ranges} submission={submission} sources={sources} mode={displayMode} onModeChange={setDisplayMode} />
+            <EssayEvidence text={text} ranges={ranges} submission={submission} sources={sources} mode={displayMode} onModeChange={setDisplayMode} onOpenSources={openSourceDetails} sourcesAvailable={reportReady && Boolean(result)} />
             {!pending && !failed && <button type="button" onClick={onRecheck} disabled={scanning || saving || !text.trim()} className="similarity-chip mt-2">Re-run Similarity Check</button>}
 
           </section>
@@ -143,7 +165,10 @@ export default function SubmissionReview({ submission, submissions = [], profile
                 </div>}
               </>}
           </section>
-            {reportReady && <ClassmateMatches key={submission.id} submission={{ ...submission, scanResult: result }} compact storedMatches={peers} stale={stale} />}
+            <div ref={peerDetails} tabIndex={-1} className="review-peer-details" aria-label="Saved peer comparison">
+              {reportReady ? <ClassmateMatches key={submission.id} submission={{ ...submission, scanResult: result }} compact storedMatches={peers} stale={stale} />
+                : <section><h3 className="font-semibold">Peer Similarity</h3><p>{peerStatus}</p></section>}
+            </div>
             </div>
     </SimilarityDialog>}
     {imageExpanded && imageUrl && <div role="dialog" aria-modal="true" aria-label="Original image" className="wc-modal-backdrop fixed inset-0 z-[70] flex flex-col items-center justify-center gap-2 bg-black/85 p-4">

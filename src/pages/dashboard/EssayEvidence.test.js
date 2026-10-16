@@ -25,3 +25,13 @@ test.each(["light", "dark"])("%s: overlap remains one essay with source and peer
   expect(screen.queryByRole("complementary", {name:"Selected match details"})).not.toBeInTheDocument();
   delete document.documentElement.dataset.theme;
 });
+
+
+test("peer filter falls back to All highlights when updated evidence has no peer ranges", () => {
+  const text = "A saved sentence.";
+  const { rerender } = render(<EssayEvidence text={text} ranges={[{start:0,end:7,type:"peer",id:"peer"}]} submission={{id:"essay"}} mode="peers" />);
+  expect(screen.getByRole("button", {name:"Peer matches"})).toHaveAttribute("aria-pressed", "true");
+  rerender(<EssayEvidence text={text} ranges={[]} submission={{id:"essay"}} mode="peers" />);
+  expect(screen.queryByRole("button", {name:"Peer matches"})).not.toBeInTheDocument();
+  expect(screen.getByRole("button", {name:"All highlights"})).toHaveAttribute("aria-pressed", "true");
+});
