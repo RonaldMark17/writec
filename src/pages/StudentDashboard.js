@@ -1,7 +1,7 @@
+import StudentSubmissionReview, { StudentSubmissionContent } from "./dashboard/StudentSubmissionReview";
 import ClassroomInformation from "./dashboard/ClassroomInformation";
 import ValidatedForm, { ValidatedInput, ValidatedTextarea, ValidatedSelect } from "../ValidatedForm";
 import { ArrowLeftIcon } from "./dashboard/shared";
-import StudentSimilarity from "./dashboard/StudentSimilarity";
 import { PaginatedList } from "./dashboard/Pagination";
 import AssignmentCalendar from "./dashboard/AssignmentCalendar";
 import RevisionHistory from "./dashboard/RevisionHistory";
@@ -24,7 +24,6 @@ import {
   CLASSROOM_TABLE,
   CheckIcon,
   ClipboardIcon,
-  CopyIcon,
   DoorIcon,
   CalendarIcon,
   ESSAY_BUCKET,
@@ -45,7 +44,6 @@ import {
   normalizeAssignment,
   normalizeClassroom,
   openSubmissionFile,
-  resolveStorageImageUrl,
   studentPages,
   SearchIcon,
   getInitials,
@@ -284,15 +282,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   const [viewingSubmission, setViewingSubmission] =
     useState(null);
 
-  const [studentImagePreviewUrl, setStudentImagePreviewUrl] =
-    useState("");
-
-  const [isStudentImageExpanded, setIsStudentImageExpanded] =
-    useState(false);
-
-  const [studentCopySuccess, setStudentCopySuccess] =
-    useState(false);
-
   const selectedAssignment =
     assignments.find((assignment) => assignment.id === submissionDraft.assignmentId) ??
     null;
@@ -435,7 +424,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
         await supabase.rpc("list_submission_results");
 
       if (submissionError) {
-        setErrorMessage(submissionError.message);
+        setErrorMessage("We couldn?t load your submissions. Please try again.");
         setIsLoading(false);
         return;
       }
@@ -1209,9 +1198,6 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       handleOpenSubmissionDraft(assignment);
       if (["grade_posted", "feedback_added"].includes(notification.type)) {
         setViewingSubmission(submission);
-        setStudentImagePreviewUrl("");
-        setStudentCopySuccess(false);
-        setIsStudentImageExpanded(false);
       }
     };
   };
@@ -1387,7 +1373,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           );
         })()}
 
-        {activePage === "calendar" && (isLoading ? <p role="status">Loading assignments...</p> : !studentDataReady ? <p role="alert">Unable to load assignments. <button onClick={loadStudentData}>Retry</button></p> :
+        {activePage === "calendar" && (isLoading ? <p role="status">Loading assignments...</p> : !studentDataReady ? <p role="alert">Unable to load assignments. <button onClick={() => loadStudentData()}>Retry</button></p> :
           <AssignmentCalendar assignments={assignments} classrooms={classrooms} classroomId={selectedClassroomId}
             onClassroomChange={id => { setSelectedClassroomId(id); setOpenedClassroomId(id || null); }}
             onOpenAssignment={assignment => { handleViewClassroomAssignments(assignment.classroomId); handleOpenSubmissionDraft(assignment); }} />)}
@@ -1615,8 +1601,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
         {activePage === "assignments" && (
           isLoading ? <p role="status">Loading submission...</p> :
-            !studentDataReady ? <div role="alert">Unable to load assignments and submissions. <button type="button" onClick={loadStudentData}>Retry</button></div> :
-              <div className={selectedAssignment ? "mx-auto w-full max-w-3xl" : ""}>
+            !studentDataReady ? <div role="alert">Unable to load assignments and submissions. <button type="button" onClick={() => loadStudentData()}>Retry</button></div> :
+              <div className={selectedAssignment ? "mx-auto w-full max-w-[1100px]" : ""}>
                 {selectedAssignment && (
                   <button
                     type="button"
@@ -1636,8 +1622,9 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                       {selectedAssignment ? selectedAssignment.title : "To-do"}
                     </h2>
                     <p className="mt-1 text-sm text-[#5f6368]">
-                      {selectedAssignment ? (selectedAssignment.submitted ? "Your previously submitted work is shown below." : "Review the instructions below and add your work.") : "Work assigned to you across your enrolled classes."}
+                      {selectedAssignment ? (selectedAssignment.submitted ? "Your latest submitted work is shown below." : "Review the instructions below and add your work.") : "Work assigned to you across your enrolled classes."}
                     </p>
+                    {selectedAssignment?.submitted && <p className="mt-1 text-sm text-[#5f6368]">Due: {selectedAssignment.dueDate ? formatDateTime(selectedAssignment.dueDate) : "No due date"}</p>}
                     {selectedClassroom && !selectedAssignment && (
                       <p className="mt-1 text-xs text-[#137333] font-medium">
                         Filtering: {selectedClassroom.name} — Section {selectedClassroom.section}
@@ -1779,7 +1766,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                           key={assignment.id}
                           className="rounded-xl border border-[#dadce0] bg-white p-5 shadow-2xs hover:shadow-xs transition duration-150"
                         >
-                          <button
+                          {!(selectedAssignment && assignment.submitted && isDraftOpen) && <button
                             type="button"
                             aria-expanded={isDraftOpen}
                             aria-controls={`assignment-draft-${assignment.id}`}
@@ -1814,7 +1801,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                               {assignment.dueInfo.isOverdue && <AlertCircleIcon className="h-3.5 w-3.5" />}
                               {assignment.revisionRequest ? "Revision requested" : assignment.dueInfo.label}
                             </span>
-                          </button>
+                          </button>}
 
                           {assignment.instructions && (
                             <p className="mt-2.5 sm:mt-3 text-xs text-[#5f6368] leading-relaxed pl-0 sm:pl-14">
@@ -1871,18 +1858,10 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                             <h4 className="font-semibold">Revision requested</h4><p className="whitespace-pre-wrap">{assignment.revisionRequest.message}</p>
                             <p className="mt-2 text-sm">Submit updated work below. Your earlier submission will be preserved. This request allows submission after the original deadline.</p>
                           </div>}
-                          {isDraftOpen && <RevisionHistory history={assignment.submission?.revisionHistory} />}
+                          {isDraftOpen && !assignment.submitted && <RevisionHistory history={assignment.submission?.revisionHistory} />}
                           {isDraftOpen && assignment.submitted && !submissionDraft.retrySubmissionId && (
-                            <section aria-label="Submitted work" className="mt-5 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                              <h4 className="font-semibold text-[#137333]">Turned In</h4>
-                              <p>{assignment.submission.essayTitle}</p>
-                              <p className="text-sm text-gray-600">Submitted {formatDateTime(assignment.submission.createdAt)}</p>
-                              <SubmissionFilePreview fileUrl={assignment.submission.fileUrl} transcript={assignment.submission.transcribedText} />
-                              {assignment.submission.transcribedText && <pre className="whitespace-pre-wrap font-sans text-sm">{assignment.submission.transcribedText}</pre>}
-                              <StudentSimilarity key={assignment.submission.id} submission={assignment.submission} />
-                              {String(assignment.submission.grade ?? "").trim() !== "" && <p>Grade: {assignment.submission.grade}</p>}
-                              {assignment.submission.feedback && <p>Teacher feedback: {assignment.submission.feedback}</p>}
-                              <button type="button" onClick={() => setViewingSubmission(assignment.submission)} className="text-sm font-medium text-[#137333] underline">View submission details</button>
+                            <section aria-label="Submitted work" className="student-review student-review-inline">
+                              <StudentSubmissionContent submission={assignment.submission} profile={profile} showComments={false} />
                             </section>
                           )}
 
@@ -2192,7 +2171,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
             {/* Submissions Table / Card Container */}
             <div className="overflow-hidden rounded-2xl border border-[#dadce0] bg-white shadow-2xs">
-              {isLoading ? <p role="status" className="p-4">Loading submission...</p> : !studentDataReady ? <p role="alert" className="p-4">Unable to load submissions.</p> : submissions.length === 0 ? (
+              {isLoading ? <p role="status" className="p-4">Loading submission...</p> : !studentDataReady ? <div role="alert" className="p-4"><p>We couldn?t load your submissions.</p><button type="button" className="mt-2 min-h-[44px] rounded-lg border px-4" onClick={() => loadStudentData()}>Try Again</button></div> : submissions.length === 0 ? (
                 <div className="p-12 text-center max-w-md mx-auto">
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e6f4ea] text-[#137333]">
                     <ClipboardIcon className="h-7 w-7" />
@@ -2363,18 +2342,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                               type="button"
                               onClick={() => {
                                 setViewingSubmission(submission);
-                                setStudentCopySuccess(false);
-                                setIsStudentImageExpanded(false);
-                                setStudentImagePreviewUrl("");
-                                const fileUrl = submission.fileUrl;
-                                if (!fileUrl) return;
-                                resolveStorageImageUrl(fileUrl)
-                                  .then((resolvedUrl) => {
-                                    if (resolvedUrl) setStudentImagePreviewUrl(resolvedUrl);
-                                  })
-                                  .catch((err) => {
-                                    console.warn("Failed to resolve student preview URL:", err);
-                                  });
+
                               }}
                               className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333] hover:text-[#137333] shadow-2xs active:scale-[0.98]"
                             >
@@ -2392,265 +2360,18 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           </div>
         )}
 
-        {/* Student Submission Detail Modal */}
-        {viewingSubmission && (
-          <div className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
-            <div className="wc-modal-panel relative max-h-[92vh] w-full max-w-4xl lg:max-w-5xl overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
-              {/* Header */}
-              <div className="wc-modal-heading flex items-start justify-between border-b border-gray-100 pb-4">
-                <div>
-                  <span className="inline-block rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
-                    My Submission
-                  </span>
-                  <h3 className="mt-1.5 text-2xl font-black text-gray-950">
-                    {viewingSubmission.essayTitle}
-                  </h3>
-                  <p className="mt-1 text-sm font-semibold text-gray-500">
-                    {viewingSubmission.assignmentTitle} • Submitted {formatDateTime(viewingSubmission.createdAt)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewingSubmission(null);
-                    setStudentImagePreviewUrl("");
-                    setIsStudentImageExpanded(false);
-                    setStudentCopySuccess(false);
-                  }}
-                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 text-lg font-bold"
-                >
-                  ✕
-                </button>
-              </div>
+        {viewingSubmission && <StudentSubmissionReview submission={viewingSubmission} profile={profile}
+          onClose={() => setViewingSubmission(null)}
+          onResubmit={(viewingSubmission.revisionRequest || canResubmit(viewingSubmission)) && assignments.some(a => a.id === viewingSubmission.assignmentId && !a.isArchived) ? () => {
+            const assignment = assignments.find(a => a.id === viewingSubmission.assignmentId);
+            setViewingSubmission(null);
+            handleViewClassroomAssignments(assignment.classroomId);
+            handleOpenSubmissionDraft(assignment);
+            if (!viewingSubmission.revisionRequest) setSubmissionDraft({ ...emptySubmissionDraft,
+              assignmentId: assignment.id, essayTitle: viewingSubmission.essayTitle || "",
+              retrySubmissionId: viewingSubmission.id, retryJobId: viewingSubmission.processingJobId });
+          } : undefined} />}
 
-              <div className="mt-5 space-y-5">
-                {/* Submitted Image Preview */}
-                {studentImagePreviewUrl && (
-                  <div>
-                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Submitted image</p>
-                    <div
-                      className="group relative cursor-zoom-in overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm"
-                      onClick={() => setIsStudentImageExpanded(true)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === "Enter" && setIsStudentImageExpanded(true)}
-                      style={{ maxHeight: "280px" }}
-                    >
-                      <img
-                        src={studentImagePreviewUrl}
-                        alt="Your submission"
-                        className="w-full object-contain transition duration-200 group-hover:brightness-90"
-                        style={{ maxHeight: "280px" }}
-                        onError={(e) => e.target.closest(".group").style.display = "none"}
-                      />
-                      <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/50 px-2 py-1 text-[11px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-                        Expand
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Lightbox */}
-                {isStudentImageExpanded && studentImagePreviewUrl && (
-                  <div
-                    className="wc-modal-backdrop fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
-                    onClick={() => setIsStudentImageExpanded(false)}
-                  >
-                    <div className="wc-modal-panel relative max-h-[95vh] max-w-[95vw]">
-                      <button
-                        type="button"
-                        onClick={() => setIsStudentImageExpanded(false)}
-                        className="absolute -right-3 -top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white font-bold text-gray-800 shadow-lg hover:bg-gray-100 text-sm"
-                      >✕</button>
-                      <img
-                        src={studentImagePreviewUrl}
-                        alt="Your submission full view"
-                        className="max-h-[92vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <p className="mt-2 text-center text-xs font-semibold text-white/70">
-                        {viewingSubmission.essayTitle}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Grade & Status Banner */}
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex-1">
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Grade</p>
-                      {viewingSubmission.returnedAt && String(viewingSubmission.grade ?? "").trim() !== "" ? (
-                        <p className="mt-1 text-3xl font-black text-emerald-700">{viewingSubmission.grade}</p>
-                      ) : (
-                        <p className="mt-1 text-lg font-extrabold text-gray-400">{viewingSubmission.status === "graded" ? "Grade not released yet" : "Awaiting review"}</p>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Status</p>
-                      <p className={`mt-1 text-lg font-extrabold capitalize ${viewingSubmission.status === "graded" ? "text-emerald-700" :
-                          viewingSubmission.status === "submitted" ? "text-blue-600" : "text-gray-500"
-                        }`}>{viewingSubmission.revisionRequest ? "Revision requested" : viewingSubmission.returnedAt ? "Returned" : viewingSubmission.processingState && viewingSubmission.processingState !== "ready" ? `Turned In - ${processingLabel(viewingSubmission.processingState)}` : viewingSubmission.status === "graded" ? "Graded" : "Turned In"}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => openSubmissionFile(viewingSubmission.fileUrl, setErrorMessage)}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 text-xs font-extrabold text-gray-700 hover:bg-gray-50 shadow-sm transition"
-                    >
-                      <FileSearchIcon className="h-4 w-4 text-gray-500" />
-                      Open file
-                    </button>
-                  </div>
-
-                  {/* Teacher Feedback */}
-                  {viewingSubmission.feedback && (
-                    <div className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
-                      <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Teacher Feedback</p>
-                      <p className="mt-1 text-sm font-semibold text-emerald-900 leading-6">{viewingSubmission.feedback}</p>
-                    </div>
-                  )}
-                </div>
-
-                <SubmissionFilePreview fileUrl={viewingSubmission.fileUrl} />
-
-                {/* Submission Confirmation & Automated Processing Status */}
-                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between border-b border-gray-100 pb-3">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-wider text-emerald-700">
-                        Submission Pipeline Status
-                      </p>
-                      <h4 className="mt-1 text-lg font-black text-gray-950">
-                        Automated Processing Confirmation
-                      </h4>
-                    </div>
-                    <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-extrabold text-emerald-800">
-                      {viewingSubmission.processingState === "ready" || viewingSubmission.returnedAt || viewingSubmission.status === "graded"
-                        ? "Processing Complete"
-                        : viewingSubmission.processingState === "failed"
-                          ? "Processing Needs Attention"
-                          : "Processing In Progress"}
-                    </span>
-                  </div>
-
-                  {/* 3 Step Pipeline Progress */}
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {/* Step 1: Upload */}
-                    <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-black text-xs">
-                        ✓
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-gray-900">Original Document</p>
-                        <p className="text-[11px] text-gray-500 font-medium">Uploaded to cloud</p>
-                      </div>
-                    </div>
-
-                    {/* Step 2: OCR */}
-                    <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
-                      <div
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black text-xs ${viewingSubmission.hasTranscribed || viewingSubmission.transcribedText
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-amber-100 text-amber-700"
-                          }`}
-                      >
-                        {viewingSubmission.hasTranscribed || viewingSubmission.transcribedText ? "✓" : "⏳"}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-gray-900">AI Transcription</p>
-                        <p className="text-[11px] text-gray-500 font-medium">
-                          {viewingSubmission.hasTranscribed || viewingSubmission.transcribedText
-                            ? "Digital text extracted"
-                            : "Digitizing essay"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Step 3: Integrity Check */}
-                    <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50/60">
-                      <div
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black text-xs ${viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-amber-100 text-amber-700"
-                          }`}
-                      >
-                        {viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready" ? "✓" : "⏳"}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-gray-900">Similarity Analysis</p>
-                        <p className="text-[11px] text-gray-500 font-medium">
-                          {viewingSubmission.hasPlagiarismChecked || viewingSubmission.processingState === "ready"
-                            ? "Similarity check completed"
-                            : "Analyzing submission"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Transcribed Text Display (without plagiarism highlights) */}
-                {viewingSubmission.transcribedText && (
-                  <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-black text-gray-900">
-                          Transcribed handwritten text
-                        </p>
-                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">
-                          YOLO + TrOCR
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(viewingSubmission.transcribedText);
-                          setStudentCopySuccess(true);
-                          setTimeout(() => setStudentCopySuccess(false), 2000);
-                        }}
-                        className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
-                      >
-                        {studentCopySuccess ? (
-                          <>
-                            <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
-                            <span>Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <CopyIcon className="h-3.5 w-3.5" />
-                            <span>Copy text</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <div className="mt-3 rounded-lg bg-gray-50 p-4 text-sm font-medium leading-relaxed text-gray-800 whitespace-pre-wrap font-sans border border-gray-200">
-                      {viewingSubmission.transcribedText}
-                    </div>
-                  </div>
-                )}
-
-                <StudentSimilarity key={viewingSubmission.id} submission={viewingSubmission} />
-
-                {/* Close button */}
-                <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewingSubmission(null);
-                      setStudentImagePreviewUrl("");
-                      setIsStudentImageExpanded(false);
-                      setStudentCopySuccess(false);
-                    }}
-                    className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-xs font-extrabold text-gray-700 transition hover:bg-gray-50"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

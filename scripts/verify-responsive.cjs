@@ -27,7 +27,7 @@ let socket;
   socket.onmessage = event => { const message = JSON.parse(event.data); if (message.id) { const item = pending.get(message.id); pending.delete(message.id); message.error ? item.reject(message.error) : item.resolve(message.result); } };
   const send = (method, params = {}) => new Promise((resolve,reject) => { pending.set(++id,{resolve,reject}); socket.send(JSON.stringify({id,method,params})); });
   const cssFile = fs.readdirSync('build/static/css').find(name => name.endsWith('.css'));
-  const css = fs.readFileSync(path.join('build/static/css',cssFile),'utf8').replace(/@import[^;]+;/g,'');
+  const css = fs.readFileSync(path.join('build/static/css',cssFile),'utf8').replace(/@import\s+(?:url\([^)]*\)|"[^"]*"|\x27[^\x27]*\x27)\s*;/g,'');
   // Append current responsive source so a focused CSS fix can be checked before rebuilding.
   const responsive = fs.readFileSync('src/responsive.css','utf8');
   const fixtures = fs.readdirSync(fixtureDir).filter(name => name.endsWith('.body.html'));

@@ -147,7 +147,7 @@ export default function ClassroomDetail({
             <h2 className="text-2xl font-medium break-words">{classroom.name}</h2>
             <p className="mt-2 text-sm">Section {classroom.section}</p>
             {classroom.subject && classroom.subject !== "No subject" && (
-              <p className="mt-0.5 text-xs opacity-80">{classroom.subject}</p>
+              <p className="mt-0.5 text-xs opacity-90">{classroom.subject}</p>
             )}
           </div>
           {isArchived && (

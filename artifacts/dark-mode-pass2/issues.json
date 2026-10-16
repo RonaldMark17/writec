@@ -1,0 +1,122 @@
+[
+  {
+    "name": "teacher-grades",
+    "theme": "light",
+    "width": 390,
+    "state": "default",
+    "label": "No file submitted",
+    "kind": "text",
+    "tag": "SPAN",
+    "class": "text-xs font-bold text-gray-400",
+    "color": "rgb(156, 163, 175)",
+    "background": [
+      255,
+      255,
+      255
+    ],
+    "opacity": 1,
+    "ratio": 2.54,
+    "limit": 4.5,
+    "disabled": false
+  },
+  {
+    "name": "teacher-grades",
+    "theme": "light",
+    "width": 390,
+    "state": "hover",
+    "label": "No file submitted",
+    "kind": "text",
+    "tag": "SPAN",
+    "class": "text-xs font-bold text-gray-400",
+    "color": "rgb(156, 163, 175)",
+    "background": [
+      255,
+      255,
+      255
+    ],
+    "opacity": 1,
+    "ratio": 2.54,
+    "limit": 4.5,
+    "disabled": false
+  },
+  {
+    "name": "teacher-grades",
+    "theme": "light",
+    "width": 390,
+    "state": "focus-visible",
+    "label": "No file submitted",
+    "kind": "text",
+    "tag": "SPAN",
+    "class": "text-xs font-bold text-gray-400",
+    "color": "rgb(156, 163, 175)",
+    "background": [
+      255,
+      255,
+      255
+    ],
+    "opacity": 1,
+    "ratio": 2.54,
+    "limit": 4.5,
+    "disabled": false
+  },
+  {
+    "name": "teacher-grades",
+    "theme": "light",
+    "width": 1366,
+    "state": "default",
+    "label": "No file submitted",
+    "kind": "text",
+    "tag": "SPAN",
+    "class": "text-xs font-bold text-gray-400",
+    "color": "rgb(156, 163, 175)",
+    "background": [
+      255,
+      255,
+      255
+    ],
+    "opacity": 1,
+    "ratio": 2.54,
+    "limit": 4.5,
+    "disabled": false
+  },
+  {
+    "name": "teacher-grades",
+    "theme": "light",
+    "width": 1366,
+    "state": "hover",
+    "label": "No file submitted",
+    "kind": "text",
+    "tag": "SPAN",
+    "class": "text-xs font-bold text-gray-400",
+    "color": "rgb(156, 163, 175)",
+    "background": [
+      255,
+      255,
+      255
+    ],
+    "opacity": 1,
+    "ratio": 2.54,
+    "limit": 4.5,
+    "disabled": false
+  },
+  {
+    "name": "teacher-grades",
+    "theme": "light",
+    "width": 1366,
+    "state": "focus-visible",
+    "label": "No file submitted",
+    "kind": "text",
+    "tag": "SPAN",
+    "class": "text-xs font-bold text-gray-400",
+    "color": "rgb(156, 163, 175)",
+    "background": [
+      255,
+      255,
+      255
+    ],
+    "opacity": 1,
+    "ratio": 2.54,
+    "limit": 4.5,
+    "disabled": false
+  }
+]

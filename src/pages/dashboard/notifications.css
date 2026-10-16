@@ -8,7 +8,7 @@
 .notification-content button, .notification-view-all { font-size: .875rem; padding: 8px; border-radius: 6px; }
 .notification-root button:focus-visible, .notifications-page button:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 2px; }
 .notification-content button:hover, .notification-bell:hover, .notification-view-all:hover { background: var(--accent-soft, #e6f4ea); }
-.notification-content button:disabled { opacity: .5; cursor: default; }
+.notification-content button:disabled { cursor: not-allowed; }
 .notification-empty, .notification-content > p { padding: 16px; font-size: .875rem; }
 .notification-empty p + p { margin-top: 6px; color: var(--muted, #5f6368); }
 .notification-recent { list-style: none; margin: 0; padding: 0; }

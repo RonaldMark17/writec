@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
+import SubmittedImageGallery from "./SubmittedImageGallery";
 
-export default function EssayBundlePreview({ fileUrl, transcript, originalsOnly = false }) {
+export default function EssayBundlePreview({ fileUrl, transcript, originalsOnly = false, studentReview = false }) {
+  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState({ pages: [], text: "", error: "", loading: true });
   useEffect(() => {
     let live = true;
@@ -29,9 +31,10 @@ export default function EssayBundlePreview({ fileUrl, transcript, originalsOnly 
     }
     load();
     return () => { live = false; controller.abort(); urls.forEach(url => URL.revokeObjectURL(url)); };
-  }, [fileUrl]);
-  if (state.error) return <p role="alert">{state.error}</p>;
+  }, [fileUrl, attempt]);
+  if (state.error) return <div role="alert"><p>We couldn't load your submission.</p><button type="button" onClick={() => setAttempt(value => value + 1)}>Try Again</button></div>;
   if (state.loading) return <p role="status">Loading essay pages…</p>;
+  if (studentReview) return state.pages.length ? <SubmittedImageGallery pages={state.pages} /> : <p>No submitted files available.</p>;
   if (!originalsOnly) return <section aria-label="Original essay pages" className="space-y-3 rounded border bg-white p-4">
     <h3 className="font-semibold">Extracted Essay - {state.pages.length} pages</h3>
     {state.pages.map(page => <details key={page.page_number}><summary>Page {page.page_number}: {page.name}</summary>

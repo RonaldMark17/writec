@@ -1,0 +1,127 @@
+{
+  "checks": [
+    {
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "light",
+      "width": 430,
+      "height": 932,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "light",
+      "width": 768,
+      "height": 1024,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1024,
+      "height": 768,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1366,
+      "height": 768,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "light",
+      "width": 1920,
+      "height": 1080,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "height": 844,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 430,
+      "height": 932,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 768,
+      "height": 1024,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1024,
+      "height": 768,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1366,
+      "height": 768,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    },
+    {
+      "theme": "dark",
+      "width": 1920,
+      "height": 1080,
+      "overflow": false,
+      "themeControls": 1,
+      "navOverflow": false
+    }
+  ],
+  "result": {
+    "result": true,
+    "complete": 4,
+    "used": "used",
+    "disabled": true,
+    "overflow": false
+  },
+  "demoRequests": [],
+  "textIsolation": true,
+  "scrollSpy": "location",
+  "errors": []
+}

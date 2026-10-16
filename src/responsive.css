@@ -166,7 +166,7 @@
 .notification-preference:hover { background: var(--panel-soft, #f8f9fa); }
 .notification-preference:focus-within { outline: 2px solid var(--accent, #137333); outline-offset: 2px; }
 .notification-preference-input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent, #137333); cursor: pointer; }
-.notification-preference:has(input:disabled) { opacity: .6; cursor: wait; }
+.notification-preference:has(input:disabled) { cursor: wait; }
 .notification-preference-input:disabled { cursor: wait; }
 
 /* Shared sign-out hierarchy and interaction states across all account surfaces. */
@@ -175,7 +175,7 @@
 .account-signout:hover:not(:disabled) { background: var(--danger-background, #fce8e6); border-color: currentColor; }
 .account-signout:active:not(:disabled) { background: var(--danger-background, #fce8e6); box-shadow: inset 0 0 0 1px currentColor; transform: translateY(1px); }
 .account-signout:focus-visible { outline: 3px solid var(--danger-text, #b3261e); outline-offset: 3px; }
-.account-signout:disabled { opacity: .6; cursor: wait; }
+.account-signout:disabled { cursor: wait; }
 .account-signout.signout-confirm { background: #b3261e; color: #fff; }
 .account-signout.signout-confirm:hover:not(:disabled) { background: #8c1d18; }
 :root[data-theme="dark"] .account-signout.signout-confirm { background: #f2b8b5; color: #601410; }

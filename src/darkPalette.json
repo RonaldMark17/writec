@@ -1,10 +1,10 @@
 {
   "--page-bg": "#202124",
   "--page-text": "#e8eaed",
-  "--muted": "#9aa0a6",
+  "--muted": "#b2b8c2",
   "--accent": "#81c995",
   "--accent-hover": "#a8dab5",
-  "--accent-soft": "rgba(129, 201, 149, 0.15)",
+  "--accent-soft": "#263c30",
   "--accent-border": "rgba(129, 201, 149, 0.3)",
   "--panel": "#292a2d",
   "--panel-soft": "#303134",
@@ -13,5 +13,8 @@
   "--line": "#3c4043",
   "--nav-bg": "rgba(32, 33, 36, 0.96)",
   "--shadow": "0 4px 14px rgba(0, 0, 0, 0.35)",
-  "--card-shadow": "0 2px 6px rgba(0, 0, 0, 0.4)"
+  "--card-shadow": "0 2px 6px rgba(0, 0, 0, 0.4)",
+  "--text-secondary": "#c5cbd4",
+  "--disabled-text": "#b8bec8",
+  "--on-accent": "var(--page-bg)"
 }

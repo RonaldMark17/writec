@@ -1,3 +1,7 @@
+import Startup from "./pages/Startup";
+import AuthModal from "./pages/AuthModal";
+import PasswordReset from "./pages/PasswordReset";
+import { PeerComparison } from "./pages/dashboard/PeerSimilarityReview";
 import ProfileEditor from "./pages/dashboard/ProfileEditor";
 import { SignOutButton } from "./SignOutConfirmation";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
@@ -145,4 +149,35 @@ test("profile identity wraps long names and omits legacy Bio", () => {
  expect(screen.getByRole("heading", {name:"Dr. Maria Christina Dela Cruz-Santos"})).toBeInTheDocument();
  expect(screen.queryByLabelText(/Bio/)).not.toBeInTheDocument();
  capture("profile-identity");
+});
+
+
+test("public pages and account forms expose theme fixtures", async () => {
+  let view=show(<Startup />);capture("landing");
+  fireEvent.click(screen.getByRole("button",{name:/Community essay/}));
+  fireEvent.click(screen.getByRole("button",{name:/Run Originality Check/}));
+  await screen.findByRole("heading",{name:"One matching passage to review"});capture("landing-demo-result");view.unmount();
+  for (const mode of ["login","register"]) {view=show(<AuthModal initialMode={mode} onClose={()=>{}} />);capture(`auth-${mode}`);view.unmount();}
+  view=show(<PasswordReset />);capture("password-reset");view.unmount();
+});
+
+test("admin overview, users and profile expose theme fixtures",async()=>{
+ adminRequest.mockResolvedValue({students:10,teachers:2,classes:3,submissions:20,active:12,inactive:0,recent_users:[],recent_activity:[],items:[],total:0});
+ for(const page of ["dashboard","users","profile"]){
+  const view=show(<AdminDashboard profile={{...teacher,role:"admin"}} />,`/admin/${page}`);
+  await act(async()=>{});capture(`admin-${page}`);view.unmount();
+ }
+});
+
+test("peer comparison and yellow/pink evidence expose theme fixtures",async()=>{
+ apiFetch.mockResolvedValue({ok:true,json:async()=>({enabled:true,assignment_title:"Essay",classroom_name:"English",score_percent:84,
+ matching_snippets:["Students learn by sharing ideas"],left:{submission_id:"a",student_name:"Juan",text:"Students learn by sharing ideas. First conclusion."},
+ right:{submission_id:"b",student_name:"Maria",text:"Students learn by sharing ideas. Another conclusion."}})});
+ const view=render(<PeerComparison submission={{id:"a",classroomId:"c",assignmentId:"t"}} matchedSubmissionId="b"/>);
+ await screen.findByText("Similarity: 84%");capture("peer-comparison");view.unmount();
+ const text="Online evidence. Peer evidence. Combined evidence.";
+ render(<SubmissionReview submission={{id:"a",studentId:"a",classroomId:"c",assignmentId:"t",studentName:"Juan",transcribedText:text}} submissions={[{id:"b",studentId:"b",classroomId:"c",assignmentId:"t"}]}
+ text={text} result={{score:24,transcribedText:text,matchedSources:[{title:"Source",matching_fragments:[{start:0,end:16},{start:32,end:50}]}],peerSimilarity:{all_matches:[{submission_id:"b",score_percent:40,matching_snippets:["Peer evidence.","Combined evidence."]}]}}}
+ onClose={()=>{}} onCopy={()=>{}} onRecheck={()=>{}} grading={<div>Grade and feedback</div>}/>);
+ capture("highlight-categories");expect(document.querySelector('.essay-match-peer')).toBeInTheDocument();
 });

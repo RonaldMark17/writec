@@ -1,0 +1,92 @@
+.student-review-backdrop { position:fixed; inset:0; z-index:85; background:rgb(3 7 18 / .7); display:flex; align-items:center; justify-content:center; padding:12px; }
+.student-review { --sr-bg:var(--workspace-surface); --sr-soft:var(--workspace-bg); --sr-text:var(--workspace-text); --sr-muted:var(--text-secondary); --sr-border:var(--workspace-border); color:var(--sr-text); background:var(--sr-bg); border:1px solid var(--sr-border); border-radius:20px; padding:24px; min-width:0; overflow-wrap:anywhere; }
+.student-review-backdrop > .student-review { width:100%; max-width:960px; max-height:94dvh; overflow-y:auto; overflow-x:hidden; }
+.student-review-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding-bottom:18px; border-bottom:1px solid var(--sr-border); }
+.student-review h2 { font-size:1.5rem; font-weight:750; line-height:1.35; min-width:0; }
+.student-review h3, .student-review summary { font-weight:650; }
+.student-review button, .student-review a, .student-review summary { min-height:44px; }
+.student-review button { padding:10px 16px; border:1px solid var(--sr-border); border-radius:10px; }
+.student-review button:disabled { cursor:not-allowed; }
+.student-review :is(button,a,summary,input,textarea,select):focus-visible { outline:3px solid var(--accent, #137333); outline-offset:3px; }
+.student-review summary { cursor:pointer; padding:10px 0; }
+.student-review-content { display:grid; gap:18px; padding-top:20px; }
+.student-review-summary { grid-template-columns:minmax(0,1fr); gap:16px; }
+.student-review-title { font-size:1.05rem; font-weight:600; }
+.student-review-muted { color:var(--sr-muted); font-size:.875rem; }
+.student-status { width:fit-content; padding:7px 12px; border-radius:99px; font-size:.875rem; font-weight:650; }
+.student-status.submitted { color:var(--text-secondary); background:var(--sr-soft); }
+.student-status.returned { color:#146034; background:#e6f4ea; }
+.student-status.revision { color:#804700; background:#fff1cc; }
+.student-review-card { border:1px solid var(--sr-border); border-radius:14px; padding:18px; min-width:0; }
+.student-review-grade { color:#137333; font-size:2.4rem; font-weight:750; margin:4px 0 16px; }
+.student-feedback-heading { margin-top:14px; }
+.student-feedback { white-space:pre-wrap; line-height:1.75; margin-top:8px; }
+.student-review-action { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px; background:var(--sr-soft); border-radius:14px; }
+.student-review button.student-review-primary { background:var(--accent, #137333); color:var(--on-accent, white); border-color:transparent; flex-shrink:0; font-weight:650; }
+.student-file-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:18px; }
+.student-file-grid figure { min-width:0; padding:12px; border:1px solid var(--sr-border); border-radius:12px; }
+.student-file-grid figcaption { display:grid; gap:4px; font-size:.875rem; margin-bottom:10px; }
+.student-file-grid figcaption span { color:var(--sr-muted); }
+.student-review button.student-image-trigger { padding:0; width:100%; background:var(--sr-soft); cursor:zoom-in; overflow:hidden; }
+.student-image-trigger img { width:100%; height:320px; object-fit:contain; }
+.student-file-grid a { display:inline-flex; align-items:center; text-decoration:underline; font-size:.875rem; }
+.student-image-lightbox img { width:100%; max-height:65dvh; object-fit:contain; margin:12px 0; }
+.student-image-lightbox nav { display:flex; justify-content:space-between; gap:12px; }
+.student-review-details { display:grid; gap:12px; margin:12px 0; }
+.student-review-details dt { color:var(--sr-muted); font-size:.875rem; }
+.student-review-history { display:grid; gap:16px; margin-top:12px; }
+.student-review-history li { border-left:3px solid var(--sr-border); padding-left:14px; }
+[data-theme="dark"] .student-review { --sr-soft:var(--panel-soft); --sr-muted:var(--muted); }
+[data-theme="dark"] .student-status.submitted { color:var(--text-secondary); background:var(--panel-soft); }
+[data-theme="dark"] .student-status.returned { color:var(--accent); background:var(--accent-soft); }
+[data-theme="dark"] .student-status.revision { color:#fdd663; background:rgb(57 50 22); }
+[data-theme="dark"] .student-review-grade { color:var(--accent); }
+@media(max-width:639px) { .student-review { padding:16px; border-radius:14px; } .student-review h2 { font-size:1.25rem; } .student-review-card { padding:14px; } .student-file-grid { grid-template-columns:minmax(0,1fr); } .student-review-action { flex-direction:column; align-items:stretch; } .student-image-trigger img { height:auto; max-height:420px; } }
+/* Submitted work uses spacing for grouping and one document surface. */
+.student-review-backdrop > .student-review { max-width:1100px; overscroll-behavior:contain; padding-bottom:max(24px,env(safe-area-inset-bottom)); }
+.student-review-content { gap:22px; }
+.student-review-summary { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,.7fr); align-items:start; gap:16px 24px; padding-bottom:20px; border-bottom:1px solid var(--sr-border); }
+.student-review-summary > div { min-width:0; display:grid; gap:8px; }
+.student-review-label { color:var(--sr-muted); font-size:.875rem; font-weight:400; }
+.student-review-grade { font-size:1.75rem; margin:0; }
+.student-review-metadata { color:var(--sr-muted); margin-top:12px; font-size:.875rem; }
+.student-review-feedback { padding:20px; background:var(--sr-soft); border-radius:12px; }
+.student-review-work { min-width:0; }
+.student-review-work > h3 { margin-bottom:12px; }
+.student-document { padding:20px; border:0; border-radius:12px; background:var(--sr-soft); }
+.student-document a { display:inline-flex; align-items:center; font-weight:500; color:var(--sr-text); }
+.student-document .student-document-text { max-height:clamp(240px,48dvh,560px); margin:16px auto 0; max-width:78ch; font-size:1rem; line-height:1.8; scrollbar-width:thin; scrollbar-color:var(--sr-muted) transparent; }
+.student-document iframe { height:clamp(280px,50dvh,600px); border:0; border-radius:0; }
+.student-review :is(pre,iframe):focus-visible { outline:3px solid var(--accent, #137333); outline-offset:3px; }
+.student-review-card { padding:0; border:0; border-radius:0; }
+.student-file-grid figure { padding:0; border:0; }
+.student-similarity { min-width:0; display:grid; gap:8px; padding:20px 0; border-block:1px solid var(--sr-border); }
+.student-similarity > button { justify-self:start; }
+.student-source-details { padding-top:20px; }
+.student-source-details a { display:inline-flex; align-items:center; }
+.student-review-inline { border:0; padding:0; border-radius:0; background:transparent; }
+@media(max-width:639px) {
+  .student-review-summary { grid-template-columns:minmax(0,1fr); gap:16px; }
+  .student-review-summary > div { margin-left:0; }
+  .student-document,.student-review-feedback { padding:16px; }
+  .student-review-backdrop { padding:max(6px,env(safe-area-inset-top)) 6px max(6px,env(safe-area-inset-bottom)); }
+  .student-review-backdrop > .student-review { max-height:calc(100dvh - 12px); padding-bottom:max(20px,env(safe-area-inset-bottom)); }
+}
+
+/* Secondary controls share the workspace palette in both themes. */
+.student-review button { color:var(--sr-text); background:transparent; transition:background-color .15s; }
+.student-review button:hover:not(:disabled) { background:var(--sr-soft); }
+.student-review button.student-review-primary:hover:not(:disabled) { background:var(--accent-hover, #0f5b28); }
+.student-review button:disabled { color:var(--disabled-text); background:var(--sr-soft); }
+.student-review a:hover { text-decoration-thickness:2px; }
+.student-review-feedback { border-inline-start:3px solid var(--accent, #137333); }
+.student-review-action { background:var(--sr-soft); border-inline-start:3px solid var(--accent, #137333); }
+.student-review h3 { font-size:1.05rem; }
+.student-review-summary h3 { font-size:.875rem; color:var(--sr-muted); font-weight:400; }
+.student-review-work .student-document-text { color:var(--sr-text); }
+.student-source-item { padding:16px 0; border-bottom:1px solid var(--sr-border); }
+.student-source-item:last-child { border-bottom:0; }
+.student-source-item > p:not(:first-child) { color:var(--sr-muted); font-size:.875rem; margin-top:4px; }
+.student-source-item a { color:var(--accent, #137333); margin-top:8px; }
+.student-similarity > .student-review-muted, .student-similarity > .text-sm { color:var(--sr-muted); }
+@media(prefers-reduced-motion:reduce) { .student-review button { transition:none; } }

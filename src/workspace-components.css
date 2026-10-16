@@ -1,0 +1,108 @@
+/* Hand-maintained component styles, included by generate_workspace_theme.cjs. */
+/* Teacher review evidence follows the shared palette in either theme. */
+.similarity-chip { border: 1px solid var(--workspace-border); background: var(--panel-soft, #f1f3f4); color: var(--workspace-text); border-radius: .6rem; padding: .35rem .6rem; }
+.similarity-chip:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 2px; }
+.similarity-chip:disabled { cursor: not-allowed; }
+.essay-match { background: var(--accent-soft, #e6f4ea); color: var(--workspace-text); text-decoration: underline solid var(--accent, #137333) 2px; text-underline-offset: 3px; }
+.essay-match-peer { background: var(--panel-soft, #f1f3f4); text-decoration-style: dotted; outline: 1px dotted var(--accent, #137333); }
+
+.essay-match[role="button"]:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+
+/* Evidence uses amber for external sources and rose for peer matches. */
+:root { --review-match-bg: #f9e397; --review-match-line: #947020; }
+:root[data-theme="dark"] { --review-match-bg: #816521; --review-match-line: #e8c56e; }
+
+:root { --report-peer-bg: #fce0eb; --report-peer-line: #a94369; }
+:root[data-theme="dark"] { --report-peer-bg: #713c56; --report-peer-line: #f3a6c8; }
+.plagiarism-highlights { padding: 1.25rem; border: 1px solid var(--workspace-border); border-radius: 1rem; background: var(--workspace-surface); color: var(--workspace-text); min-width: 0; }
+.report-source-count { background: var(--review-match-bg); border-radius: 999px; padding: .25rem .65rem; font-size: .75rem; }
+.plagiarism-highlights .similarity-chip[aria-pressed="true"] { background: #137333; color: #fff; }
+.report-instruction { margin: 1rem 0; padding: .65rem; background: var(--workspace-bg); font-size: .8rem; }
+.report-transcription { margin-top: 1rem; max-height: 420px; overflow-y: auto; overflow-x: hidden; overflow-wrap: anywhere; background: var(--workspace-bg); white-space: pre-wrap; }
+.review-workspace .essay-match { background: var(--review-match-bg); color: var(--workspace-text); text-decoration: none; }
+.review-workspace .essay-match-peer { background: var(--report-peer-bg); outline: none; }
+.review-workspace .essay-match-combined { background: linear-gradient(var(--review-match-bg) 60%, var(--report-peer-bg) 60%); outline: none; }
+.review-workspace .essay-keyword { text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.report-legend { display: flex; flex-wrap: wrap; gap: .65rem 1.25rem; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--workspace-border); font-size: .75rem; }
+.report-legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+.report-swatch { display: inline-block; width: 1rem; height: .75rem; border: 1px solid var(--review-match-line); border-radius: .2rem; background: var(--review-match-bg); }
+.report-swatch-peer { background: var(--report-peer-bg); border-color: var(--report-peer-line); }
+.plagiarism-highlights aside { background: var(--workspace-surface); overflow-wrap: anywhere; }
+
+.field-error { display: block; margin-top: .35rem; padding: .4rem .6rem; border-radius: .35rem; font-size: .8rem; }
+.field-invalid[aria-invalid="true"] { border-color: var(--danger-text, #a61c18) !important; outline-color: var(--danger-text, #a61c18); }
+
+.classroom-icon { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 2rem; min-height: 2rem; border-radius: .5rem; color: inherit; }
+.classroom-icon:hover { background: var(--accent-soft, #e6f4ea); color: var(--accent, #137333); }
+.classroom-icon:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+.review-close-row { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .25rem 0 .75rem; background: var(--workspace-surface); color: var(--workspace-text); }
+.review-close-row > button:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+.classroom-code { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .5rem .75rem; border: 1px solid var(--workspace-border); border-radius: .5rem; background: var(--workspace-surface); color: var(--workspace-text); font-size: .8125rem; min-width: 0; }
+.classroom-info-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgb(0 0 0 / .5); }
+.classroom-info-dialog { width: 100%; max-width: 28rem; max-height: 90dvh; overflow-y: auto; padding: 1.5rem; border-radius: 1rem; border: 1px solid var(--workspace-border); background: var(--workspace-surface); color: var(--workspace-text); }
+
+/* Grading workspace: restrained surfaces and distinct, readable evidence. */
+.review-workspace { max-width: 1440px; color: var(--workspace-text); scroll-padding-top: 4rem; }
+.review-header { display: grid; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--workspace-border); overflow-wrap: anywhere; }
+.review-summary { min-width: 0; border-top: 1px solid var(--workspace-border); padding-top: 1rem; }
+.review-score { font-size: clamp(2.25rem, 3.5vw, 3rem); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.review-summary-stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: center; }
+.review-supporting-stats { display: grid; gap: .5rem; }
+.review-supporting-stats dt { font-size: .75rem; color: var(--muted, #5f6368); }
+.review-supporting-stats dd { margin-top: .15rem; font-size: .875rem; font-weight: 600; }
+.review-summary-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .65rem; font-size: .8125rem; }
+.review-essay-heading { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin-bottom: .65rem; }
+.review-essay-heading h3 { margin-right: auto; }
+.review-essay-heading .similarity-chip, .review-workspace .plagiarism-highlights .similarity-chip { font-size: .8125rem; }
+.review-original { border: 1px solid var(--workspace-border); border-radius: .75rem; padding: 1rem; background: var(--workspace-surface); }
+.review-original > summary { cursor: pointer; font-size: .875rem; font-weight: 600; }
+.review-evidence-dialog { background: var(--workspace-surface); color: var(--workspace-text); border-color: var(--workspace-border); overflow-wrap: anywhere; }
+.review-evidence-dialog a:focus-visible, .review-evidence-dialog summary:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+.review-workspace summary:focus-visible, .review-workspace a:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 4px; border-radius: .25rem; }
+.review-grading { scroll-margin-top: 4rem; }
+.review-grading > form { margin-top: 0; }
+.review-workspace .report-transcription { background: var(--workspace-surface); border: 1px solid var(--workspace-border); font-size: .9375rem; line-height: 1.95; min-height: min(500px, 60dvh); max-height: 70dvh; padding: 1.25rem; scrollbar-gutter: stable; }
+.review-workspace .report-instruction { margin: .5rem 0; padding: 0; background: transparent; color: var(--muted, #5f6368); }
+.review-workspace .essay-match { border-radius: .2rem; box-shadow: 0 1px 0 var(--review-match-line); color: #33270b; }
+.review-workspace .essay-match-peer { color: #542039; box-shadow: 0 1px 0 var(--report-peer-line); }
+.review-workspace .essay-match-combined { color: #33270b; }
+.review-workspace .essay-match:hover { outline: 1px solid var(--review-match-line); }
+.review-workspace .essay-match:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+:root[data-theme="dark"] .review-workspace .essay-match { color: #fff5d6; }
+:root[data-theme="dark"] .review-workspace .essay-match-peer { color: #ffe9f2; }
+:root[data-theme="dark"] .review-workspace .essay-match-combined { color: #fff5e8; }
+:root[data-theme="dark"] .review-workspace .similarity-chip[aria-pressed="true"] { background: #81c995; color: #14281b; }
+@media (min-width: 1024px) {
+  .review-header { grid-template-columns: minmax(0, 1fr) minmax(360px, .8fr); gap: 1.5rem; }
+  .review-summary { border-top: 0; border-left: 1px solid var(--workspace-border); padding: 0 0 0 1.5rem; }
+  .review-columns { grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr); gap: 1.25rem; }
+  .review-workspace .report-transcription { min-height: min(650px, 65dvh); max-height: 75dvh; }
+  .review-grade-link { display: none; }
+}
+@media (max-width: 480px) {
+  .review-workspace .plagiarism-highlights { padding: .75rem; }
+  .review-workspace .report-transcription { padding: .75rem; }
+}
+
+.signout-backdrop { position: fixed; inset: 0; z-index: 150; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgb(0 0 0 / .5); }
+.signout-dialog { width: min(100%, 28rem); max-height: calc(100dvh - 2rem); overflow-y: auto; border: 1px solid var(--workspace-border); border-radius: 1rem; padding: 1.5rem; background: var(--workspace-surface); color: var(--workspace-text); overflow-wrap: anywhere; }
+.signout-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .75rem; margin-top: 1.5rem; }
+.signout-actions button, .account-signout { min-height: 44px; padding: .65rem 1rem; border-radius: .5rem; }
+.account-signout { color: var(--danger-text, #b3261e); background: var(--danger-background, #fce8e6); }
+.account-signout:focus-visible, .signout-dialog button:focus-visible { outline: 2px solid var(--accent, #137333); outline-offset: 3px; }
+.account-signout:disabled { cursor: wait; }
+.profile-account-actions { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--workspace-border); }
+.profile-account-actions > p { margin-bottom: .5rem; }
+@media (max-width: 380px) { .signout-actions { flex-direction: column; } .signout-actions button { width: 100%; } }
+
+/* Preserve readable disabled labels instead of fading the entire control. */
+:root :is(button, input, textarea, select):disabled,
+:root[data-theme="dark"] :is(button, input, textarea, select):disabled {
+  opacity: 1; color: var(--disabled-text); background-color: var(--panel-soft, #eef0f2);
+  border-color: var(--workspace-border); cursor: not-allowed; -webkit-text-fill-color: currentColor;
+}
+:root input::placeholder, :root textarea::placeholder { color: var(--muted, #626b75); opacity: 1; }
+:root[data-theme="dark"] :is(input, textarea, select):disabled { color: var(--disabled-text); }
+
+/* Amber metadata on the pale due-date badge needs the darker brand shade in light mode. */
+:root:not([data-theme="dark"]) .text-\[\#b06000\] { color: #965200; }

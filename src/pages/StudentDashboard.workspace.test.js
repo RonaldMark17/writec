@@ -9,7 +9,7 @@ jest.mock("../supabaseClient", () => ({ supabase: { from: jest.fn(), rpc: jest.f
 jest.mock("./dashboard/submissionProgress", () => ({ ...jest.requireActual("./dashboard/submissionProgress"), useSubmissionProgress: jest.fn(() => "") }));
 jest.mock("./dashboard/SubmissionFilePreview", () => ({ fileUrl }) => <div>Saved file: {fileUrl}</div>);
 jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shared"), Header: ({ onPageChange, notifications }) => <>{notifications}
-  <button onClick={() => onPageChange("calendar")}>Calendar tab</button><button onClick={() => onPageChange("classrooms")}>Classes tab</button><button onClick={() => onPageChange("assignments")}>Assignments tab</button></> }));
+  <button onClick={() => onPageChange("submissions")}>Submissions tab</button><button onClick={() => onPageChange("calendar")}>Calendar tab</button><button onClick={() => onPageChange("classrooms")}>Classes tab</button><button onClick={() => onPageChange("assignments")}>Assignments tab</button></> }));
 configure({ asyncUtilTimeout: 10000 });
 const profile = { id: "s", role: "student", full_name: "Alex" };
 const saved = { id: "work", assignment_id: "a", classroom_id: "A", student_id: "s", essay_title: "My saved essay",
@@ -52,8 +52,8 @@ test("grade notification opens the specific student's submission detail", async 
   render(<StudentDashboard profile={profile} />);
   fireEvent.click(await screen.findByRole("button", { name: "Notifications, 1 unread" }));
   fireEvent.click(await screen.findByRole("button", { name: /Grade posted Grade for Essay A/ }));
-  await screen.findByRole("heading", { name: "My saved essay" });
-  expect(await screen.findByText("Well done")).toBeInTheDocument();
+  const dialog = await screen.findByRole("dialog", { name: "Essay A" });
+  expect(await within(dialog).findByText("Well done")).toBeInTheDocument();
 });
 
 test("subject context follows the student into To-do and manual section changes persist", async () => {
@@ -95,13 +95,20 @@ test("submitted assignment opens saved work and remains available after a fresh 
     expect(work.compareDocumentPosition(screen.getByRole("region", { name: "Class Comments" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(await within(work).findByText("24% Similarity")).toBeInTheDocument();
     expect(within(work).getByRole("button", { name: "View similarity details" })).toHaveAttribute("aria-expanded", "false");
-    expect(within(work).getByRole("region", { name: "Similarity result" }).compareDocumentPosition(within(work).getByText("Grade: 90")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(work).getByText("Turned In")).toBeInTheDocument();
+    expect(within(work).getByText("90").compareDocumentPosition(within(work).getByRole("region", { name: "Similarity result" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(work).getAllByText("Returned")[0]).toBeInTheDocument();
+    if (process.env.WC_CAPTURE_DIR) {
+      const fs = require("fs"), path = require("path");
+      fs.mkdirSync(process.env.WC_CAPTURE_DIR, {recursive:true});
+      fs.writeFileSync(path.join(process.env.WC_CAPTURE_DIR, "student-inline-submitted.body.html"), document.body.innerHTML);
+    }
+    expect(screen.getAllByText("Essay A")).toHaveLength(1);
+    expect(within(work).queryByText("Turned In")).not.toBeInTheDocument();
     expect(within(work).getByText("My saved essay")).toBeInTheDocument();
-    expect(within(work).getByText("Grade: 90")).toBeInTheDocument();
-    expect(within(work).getByText("Teacher feedback: Well done")).toBeInTheDocument();
+    expect(within(work).getByText("90")).toBeInTheDocument();
+    expect(within(work).getByText("Well done")).toBeInTheDocument();
     expect(within(work).getByText(/Saved file: s\/a\/original.pdf/)).toBeInTheDocument();
-    expect(within(work).getByText(/^Submitted /)).toBeInTheDocument();
+    expect(within(within(work).getByRole("region", {name:"Submission summary"})).getByText(/2026/, {selector:"p.student-review-muted"})).toBeInTheDocument();
     expect(screen.queryByText("No work due")).not.toBeInTheDocument();
     expect(screen.queryByText("Someone else's essay")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Submit assignment" })).not.toBeInTheDocument();
@@ -314,4 +321,24 @@ test("student class codes appear only in information without management controls
   fireEvent.click(screen.getByRole("button", {name:"Classroom information: English"}));
   expect(within(screen.getByRole("dialog")).getByText("ENGB")).toBeInTheDocument();
   expect(screen.queryByText("ENG")).not.toBeInTheDocument();
+});
+
+
+test("review resubmission action opens the existing revision form and respects archived classrooms", async () => {
+  const revision = { id: "revision", message: "Revise your conclusion", requested_at: "2026-10-14" };
+  setup({results:[{...saved,returned_at:null,revision_request:revision}]});
+  const view = render(<StudentDashboard profile={profile} />);
+  await screen.findByRole("button", { name: "English" });
+  fireEvent.click(screen.getByText("Submissions tab"));
+  fireEvent.click(await screen.findByRole("button", {name:"View details"}));
+  const dialog=screen.getByRole("dialog",{name:"Essay A"});
+  expect(within(dialog).getByText("Revise your conclusion")).toBeVisible();
+  fireEvent.click(within(dialog).getByRole("button",{name:"Resubmit Work"}));
+  expect(screen.queryByRole("dialog",{name:"Essay A"})).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox",{name:/Essay title/})).toBeVisible();
+  view.unmount(); setup({archived:true,results:[{...saved,returned_at:null,revision_request:revision}]});
+  render(<StudentDashboard profile={profile} />);
+  fireEvent.click(screen.getByText("Submissions tab"));
+  fireEvent.click(await screen.findByRole("button",{name:"View details"}));
+  expect(within(screen.getByRole("dialog",{name:"Essay A"})).queryByRole("button",{name:"Resubmit Work"})).not.toBeInTheDocument();
 });

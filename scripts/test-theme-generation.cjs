@@ -1,0 +1,10 @@
+﻿const assert=require('node:assert/strict'),fs=require('node:fs'),{execFileSync}=require('node:child_process');
+const before=fs.readFileSync('src/workspace-theme.css','utf8');
+execFileSync(process.execPath,['scripts/generate_workspace_theme.cjs']);
+assert.equal(fs.readFileSync('src/workspace-theme.css','utf8'),before,'Regeneration must be deterministic');
+assert.ok(before.includes(fs.readFileSync('src/workspace-components.css','utf8')),'Component styles must survive regeneration');
+assert.ok(before.includes('.group:hover .group-hover\\:text-\\[\\#137333\\]'),'Grouped hover text must adapt to the theme');
+assert.ok(!before.includes(':group-hover'),'Group variants must target the parent, not an invalid pseudo-class');
+assert.ok(before.includes(':not([class*="bg-gradient-"])'),'Gradient avatars must keep their own foreground');
+assert.ok(before.includes(':not(.landing-nav-register):not(:disabled)'),'Outline and disabled actions must keep appropriate foregrounds');
+console.log('6 theme-generation regression checks passed.');

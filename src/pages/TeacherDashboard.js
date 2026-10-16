@@ -2543,7 +2543,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           </button>
                         </div>
                       ) : (
-                        <span className="text-xs font-bold text-gray-400">
+                        <span className="text-xs font-bold text-gray-600">
                           No file submitted
                         </span>
                       )}

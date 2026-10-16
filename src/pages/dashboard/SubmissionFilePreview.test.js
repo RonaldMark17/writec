@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import SubmissionFilePreview from "./SubmissionFilePreview";
 import { downloadSubmissionFileBlob } from "./shared";
 
-jest.mock("./shared", () => ({ downloadSubmissionFileBlob: jest.fn() }));
+jest.mock("./shared", () => ({ DownloadIcon: () => null, downloadSubmissionFileBlob: jest.fn() }));
 beforeEach(() => {
   jest.clearAllMocks();
   URL.createObjectURL = jest.fn(() => "blob:preview");
@@ -30,5 +30,5 @@ test("loads a saved PDF through authenticated download and embeds it", async () 
 test("a failed download reports an error instead of showing a broken preview", async () => {
   downloadSubmissionFileBlob.mockRejectedValue(new Error("Forbidden"));
   render(<SubmissionFilePreview fileUrl="student/essay.docx" />);
-  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("could not be loaded"));
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("couldn't load your submission"));
 });

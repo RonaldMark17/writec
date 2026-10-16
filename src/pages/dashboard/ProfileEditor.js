@@ -536,7 +536,7 @@ export default function ProfileEditor({ profile, onSaved, onClose, setupMode = f
 
           {/* Form Content */}
           <ValidatedForm onSubmit={save} onValidationError={() => setActiveTab("profile")} className="mt-5 space-y-4">
-            {/* TAB 1: Profile & Bio */}
+            {/* TAB 1: Profile */}
               <div hidden={activeTab !== "profile"} className="space-y-4 animate-fadeIn">
                 {/* Profile Photo Option Card */}
                 <div className="rounded-xl border border-[#dadce0] bg-[#f8f9fa] p-3.5 space-y-2.5">
