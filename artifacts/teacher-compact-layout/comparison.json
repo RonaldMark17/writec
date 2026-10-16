@@ -1,0 +1,59 @@
+{
+  "desktop1366": [
+    {
+      "fixture": "highlighted-review",
+      "theme": "light",
+      "beforeHeaderPx": 285.765625,
+      "afterHeaderPx": 210.28125,
+      "reductionPercent": 26.4,
+      "essayMovedUpPx": 83.484375,
+      "visibleEssayLines": 8
+    },
+    {
+      "fixture": "highlighted-review",
+      "theme": "dark",
+      "beforeHeaderPx": 285.765625,
+      "afterHeaderPx": 210.28125,
+      "reductionPercent": 26.4,
+      "essayMovedUpPx": 83.484375,
+      "visibleEssayLines": 8
+    },
+    {
+      "fixture": "teacher-grading",
+      "theme": "light",
+      "beforeHeaderPx": 235.671875,
+      "afterHeaderPx": 176.171875,
+      "reductionPercent": 25.2,
+      "essayMovedUpPx": 67.5,
+      "visibleEssayLines": 10
+    },
+    {
+      "fixture": "teacher-grading",
+      "theme": "dark",
+      "beforeHeaderPx": 235.671875,
+      "afterHeaderPx": 176.171875,
+      "reductionPercent": 25.2,
+      "essayMovedUpPx": 67.5,
+      "visibleEssayLines": 10
+    },
+    {
+      "fixture": "teacher-review-matches",
+      "theme": "light",
+      "beforeHeaderPx": 285.765625,
+      "afterHeaderPx": 210.28125,
+      "reductionPercent": 26.4,
+      "essayMovedUpPx": 83.484375,
+      "visibleEssayLines": 8
+    },
+    {
+      "fixture": "teacher-review-matches",
+      "theme": "dark",
+      "beforeHeaderPx": 285.765625,
+      "afterHeaderPx": 210.28125,
+      "reductionPercent": 26.4,
+      "essayMovedUpPx": 83.484375,
+      "visibleEssayLines": 8
+    }
+  ],
+  "narrowLayoutsUnchanged": true
+}
