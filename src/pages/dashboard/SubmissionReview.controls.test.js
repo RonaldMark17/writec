@@ -78,7 +78,8 @@ test.each([
   setup(result);
   const summary = screen.getByRole("region", {name:"Peer similarity"});
   expect(within(summary).getByText(status)).toBeVisible();
-  expect(within(summary).queryByText(/\d+%/)).not.toBeInTheDocument();
+  if (status === "No reportable matches") expect(within(summary).getByText("0%")).toHaveClass("review-score");
+  else expect(within(summary).queryByText(/\d+%/)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", {name:"Peer matches"})).not.toBeInTheDocument();
   capture(`teacher-review-${status.replaceAll(" ", "-")}`);
   fireEvent.click(screen.getByRole("button", {name:"View peer comparison"}));
@@ -91,4 +92,24 @@ test("a saved peer score without ranges offers inspection without a fake highlig
   setup({peerSimilarity:{all_matches:[{...peer, matching_snippets:[]}]}});
   expect(screen.getByRole("button", {name:"View peer matches"})).toBeVisible();
   expect(screen.queryByRole("button", {name:"Peer matches"})).not.toBeInTheDocument();
+});
+
+ test.each([34, 57.7])("peer summary displays the saved %s percent prominently", score => {
+  setup({peerSimilarity:{peer_similarity_score:score, all_matches:[peer]}});
+  const summary = screen.getByRole("region", {name:"Peer similarity"});
+  expect(within(summary).getByText(`${score}%`)).toHaveClass("review-score");
+  expect(within(summary).getByText("1 matching classmate")).toBeVisible();
+});
+test("older reports display the real match score and multiple classmate count", () => {
+  const peers = [peer, {...peer, submission_id:"second",score_percent:57.7}, {...peer,submission_id:"third",score_percent:22}];
+  setup({peerSimilarity:{all_matches:peers}}, {submissions:peers.map((match,i) => ({id:match.submission_id,studentId:`student-${i}`,classroomId:"class",assignmentId:"assignment"}))});
+  const summary = screen.getByRole("region", {name:"Peer similarity"});
+  expect(within(summary).getByText("57.7%")).toHaveClass("review-score");
+  expect(within(summary).getByText("3 matching classmates")).toBeVisible();
+});
+test("disabled peer payload never displays a percentage", () => {
+  setup({peerSimilarity:{enabled:false,peer_similarity_score:34,all_matches:[]}});
+  const summary = screen.getByRole("region", {name:"Peer similarity"});
+  expect(within(summary).getByText("Comparison disabled")).toBeVisible();
+  expect(within(summary).queryByText(/\d+%/)).not.toBeInTheDocument();
 });

@@ -145,7 +145,7 @@ test("registration allows validation attempts and still rejects mismatched passw
   expect(supabase.auth.signUp).not.toHaveBeenCalled();
 });
 
- test.each(["student", "teacher"])("%s sees early domain feedback that clears immediately", role => {
+test.each(["student", "teacher"])("%s sees early domain feedback that clears immediately", role => {
   render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthModal initialMode="register" /></MemoryRouter>);
   if (role === "teacher") fireEvent.click(screen.getByRole("button", {name:/Teacher Create classes/i}));
   const email = screen.getByLabelText("Email address");
@@ -168,4 +168,27 @@ test.each(["student", "teacher"])("accepts institutional subdomains for %s", asy
   register(role, "Alex@DEPT.SCHOOL.EDU.PH");
   expect(await screen.findByRole("status")).toHaveTextContent("Verification email sent");
   expect(supabase.auth.signUp).toHaveBeenCalledWith(expect.objectContaining({ email: "alex@dept.school.edu.ph" }));
+});
+
+test.each(["login", "register"])("%s password visibility preserves the value and resets when switching forms", (mode) => {
+  const { rerender } = render(<MemoryRouter><AuthModal initialMode={mode} /></MemoryRouter>);
+  const password = screen.getByLabelText("Password", { exact: true });
+  fireEvent.change(password, { target: { value: "example-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "Show password", exact: true }));
+  expect(password).toHaveAttribute("type", "text");
+  expect(password).toHaveValue("example-password");
+  expect(screen.getByRole("button", { name: "Hide password", exact: true })).toHaveAttribute("aria-pressed", "true");
+  if (mode === "register") {
+    const confirmation = screen.getByLabelText("Confirm password");
+    expect(confirmation).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getByRole("button", { name: "Show confirm password" }));
+    expect(confirmation).toHaveAttribute("type", "text");
+    fireEvent.click(screen.getByRole("button", { name: "Hide confirm password" }));
+    expect(confirmation).toHaveAttribute("type", "password");
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Hide password", exact: true }));
+  expect(password).toHaveAttribute("type", "password");
+  fireEvent.click(screen.getByRole("button", { name: "Show password", exact: true }));
+  rerender(<MemoryRouter><AuthModal initialMode={mode === "login" ? "register" : "login"} /></MemoryRouter>);
+  expect(screen.getByLabelText("Password", { exact: true })).toHaveAttribute("type", "password");
 });

@@ -42,9 +42,16 @@ export default function SubmissionReview({ submission, submissions = [], profile
   const score = result?.score ?? result?.plagiarism_score ?? result?.result_data?.plagiarism_score;
   const hasScore = validPercentage(score);
   const reportReady = !stale && !pending && !failed && !scanning;
-  const peerStatus = !reportReady ? "Awaiting current check" : result?.peerComparisonEnabled === false
+  const peerStatus = !reportReady ? "Awaiting current check" : (result?.peerComparisonEnabled === false || result?.peerSimilarity?.enabled === false)
     ? "Comparison disabled" : !result?.peerSimilarity ? "Not checked" : peers.length
       ? `${peers.length} matching ${peers.length === 1 ? "classmate" : "classmates"}` : "No reportable matches";
+  const peerAvailable = reportReady && result?.peerComparisonEnabled !== false
+    && result?.peerSimilarity?.enabled !== false && Boolean(result?.peerSimilarity);
+  // Use the saved score; older reports only stored individual match percentages.
+  const savedPeerScore = result?.peerSimilarity?.peer_similarity_score;
+  const peerScore = !peerAvailable ? null : !peers.length ? 0
+    : validPercentage(savedPeerScore) ? savedPeerScore
+      : peers.reduce((highest, match) => Number(match.score_percent) > Number(highest) ? match.score_percent : highest, peers[0].score_percent);
   return <div role="dialog" aria-modal="true" aria-labelledby="submission-review-title"
     className="wc-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-2 sm:p-4 backdrop-blur-sm">
     <div className="wc-modal-panel review-workspace relative max-h-[94vh] w-full overflow-y-auto overflow-x-hidden rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-2xl">
@@ -66,7 +73,7 @@ export default function SubmissionReview({ submission, submissions = [], profile
         <button type="button" className="similarity-chip mt-3 text-sm" onClick={() => reveal(originalDetails)}>Original submission / download</button>
         </div>
           <section aria-label="Similarity Analysis" className="review-summary">
-            <h3 className="review-summary-title">Similarity Review</h3>
+            <h3 className="sr-only">Similarity Review</h3>
             <div className="review-summary-stats">
               <section aria-label="Online source similarity" className="review-similarity-card">
                 <h4>Online Sources</h4>
@@ -82,7 +89,8 @@ export default function SubmissionReview({ submission, submissions = [], profile
               </section>
               <section aria-label="Peer similarity" className="review-similarity-card">
                 <h4>Peer Similarity</h4>
-                <p className="review-peer-status">{reportReady && result?.peerComparisonEnabled !== false && result?.peerSimilarity && !peers.length && <span aria-hidden="true" className="review-peer-check">&#10003; </span>}{peerStatus}</p>
+                {peerScore !== null && <p className="review-score font-bold tracking-tight">{peerScore}%</p>}
+                <p className="review-peer-status">{peerStatus}</p>
                 <p className="review-similarity-note">Same classroom and assignment</p>
                 <button type="button" className="similarity-chip" aria-haspopup="dialog" onClick={() => openSourceDetails("peers")}>
                   {reportReady && peers.length ? "View peer matches" : "View peer comparison"}

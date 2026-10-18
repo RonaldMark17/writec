@@ -353,11 +353,11 @@ body { background-color: var(--workspace-bg); color: var(--workspace-text); }
   .review-header > div > .similarity-chip { margin-top: .5rem; }
   .review-summary { border-top: 0; border-left: 1px solid var(--workspace-border); padding: 0 0 0 1rem; }
   .review-summary-title { font-size: .8125rem; margin-bottom: .25rem; color: var(--text-secondary); }
-  .review-similarity-card { padding: .75rem; gap: .35rem; }
+  .review-similarity-card { padding: .25rem .75rem; gap: .25rem; }
   .review-summary .review-score { font-size: 2.5rem; }
-  .review-peer-status { font-size: 1rem; line-height: 1.4; }
+  .review-peer-status { font-size: .875rem; line-height: 1.4; font-weight: 400; }
   .review-workspace .review-header button.similarity-chip { min-height: 36px; padding: .25rem .6rem; }
-  .review-workspace .review-header .review-source-link { min-height: 32px; }
+  .review-workspace .review-header .review-source-link { min-height: 24px; }
   .review-summary-actions { display: none; }
   .review-columns { grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr); gap: 1.25rem; margin-top: .75rem; }
   .review-workspace .report-transcription { min-height: min(650px, 65dvh); max-height: 75dvh; }

@@ -53,3 +53,9 @@ img, video, canvas, svg {
 
 /* Shared size/alignment for decorative action icons beside existing labels. */
 .action-icon { display: inline-block; width: 1rem; height: 1rem; flex-shrink: 0; vertical-align: -0.125em; margin-right: 0.375rem; }
+
+/* These fields provide their own accessible password visibility button.
+   Keep the class active when switching between password and text types. */
+.auth-password-input::-ms-reveal {
+  display: none;
+}

@@ -11,7 +11,6 @@ import ThemeToggle from "../ThemeToggle";
 import { downloadAdminCsv } from "../adminCsv";
 
 function AdminIcon({ name }) {
-  if (name === "dashboard" || name === "profile") return <ShieldIcon />;
   if (name === "approvals") return <ClockIcon />;
   const paths = {
     dashboard: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
@@ -161,7 +160,7 @@ export default function AdminDashboard({ profile, onProfileUpdated }) {
     <div className="min-h-screen bg-[#f8f9fa] text-[#202124]">
       <header className="wc-admin-header sticky top-0 z-20 flex min-h-[56px] sm:min-h-[64px] lg:min-h-[72px] items-center justify-between gap-4 border-b border-[#dadce0] bg-white px-4 sm:px-8">
         <div><span className="text-xl sm:text-2xl font-bold">WriteCheck</span><span className="ml-3 hidden text-sm text-emerald-700 sm:inline">Admin workspace</span></div>
-        <div className="flex items-center gap-2 sm:gap-3"><ThemeToggle inline /><button className={action} title={profileName(profile)} aria-label="Open admin profile" onClick={() => setEditing(true)}>{profile?.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-6 w-6 rounded-full object-cover" /> : <ShieldIcon className="h-5 w-5" />}</button><div className="signout-header-separator"><SignOutAction onClick={requestSignOut} /></div></div>
+        <div className="flex items-center gap-2 sm:gap-3"><ThemeToggle inline /><button className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" title={profileName(profile)} aria-label="Open admin profile" onClick={() => setEditing(true)}>{profile?.avatarUrl ? <img src={profile.avatarUrl} alt={profile.full_name} className="h-6 w-6 rounded-full object-cover" /> : <ShieldIcon className="h-5 w-5" />}</button><div className="signout-header-separator"><SignOutAction onClick={requestSignOut} /></div></div>
       </header>
       <div className="mx-auto flex max-w-[1440px] flex-col gap-6 p-4 sm:p-6 lg:flex-row lg:p-8">
         <aside className="shrink-0 lg:w-52"><ResponsiveNavigation onSignOut={requestSignOut} profile={profile} navigationBlocked={saving} actions={<><button type="button" onClick={() => setEditing(true)}>Profile</button></>} label="Admin menu" current={navigation.find(([key]) => key === page)?.[1]}><nav aria-label="Admin navigation" className="flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-3 lg:flex-col">

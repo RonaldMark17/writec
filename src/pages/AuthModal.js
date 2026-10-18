@@ -19,7 +19,7 @@ function registrationError(error) {
 
 /* ─── SVG Icons ─────────────────────────────────────────────── */
 function EyeIcon({ open, className = "h-5 w-5" }) {
-  return open ? (
+  return !open ? (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
       <circle cx="12" cy="12" r="3" />
@@ -110,6 +110,11 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
   const [fullName, setFullName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  useEffect(() => {
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+  }, [mode]);
+
   const [emailBlurred, setEmailBlurred] = useState(false);
   const validRegistrationEmail = /^[^\s@]+@([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+edu\.ph$/i.test(email.trim());
   const emailWarning = email.trim() && !validRegistrationEmail && (emailBlurred || /@.+/.test(email));
@@ -372,12 +377,13 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="h-11 sm:h-12 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] pl-10 pr-11 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
+                    className="auth-password-input h-11 sm:h-12 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] pl-10 pr-12 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-[#5f6368] hover:bg-[#f1f3f4] transition"
+                    className="absolute right-0 top-0 flex h-11 w-11 sm:h-12 items-center justify-center rounded-xl text-[#5f6368] hover:bg-[#f1f3f4] transition"
+                    aria-pressed={showPassword}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     <EyeIcon open={showPassword} className="h-4 w-4" />
@@ -559,12 +565,13 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="h-10 sm:h-11 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3.5 pr-9 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
+                      className="auth-password-input h-11 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3.5 pr-12 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-[#5f6368] hover:bg-[#f1f3f4] transition"
+                      className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-xl text-[#5f6368] hover:bg-[#f1f3f4] transition"
+                      aria-pressed={showPassword}
                       aria-label={showPassword ? "Hide password" : "Show password"}
                     >
                       <EyeIcon open={showPassword} className="h-4 w-4" />
@@ -588,13 +595,14 @@ export default function AuthModal({ initialMode = "login", onClose, onModeChange
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       required
-                      className="h-10 sm:h-11 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3.5 pr-9 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
+                      className="auth-password-input h-11 w-full rounded-xl border border-[#dadce0] bg-[#fafafa] px-3.5 pr-12 text-sm text-[#202124] outline-none transition placeholder:text-[#9aa0a6] hover:border-[#747775] focus:bg-white focus:border-[#137333] focus:ring-4 focus:ring-[#137333]/15"
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword((v) => !v)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-[#5f6368] hover:bg-[#f1f3f4] transition"
-                      aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                      className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-xl text-[#5f6368] hover:bg-[#f1f3f4] transition"
+                      aria-pressed={showConfirmPassword}
+                      aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                     >
                       <EyeIcon open={showConfirmPassword} className="h-4 w-4" />
                     </button>
