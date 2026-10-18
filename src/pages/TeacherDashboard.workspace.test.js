@@ -53,6 +53,7 @@ test("confirmed rename updates the classroom header and classwork context", asyn
   await screen.findAllByText("No comments yet.");
 });
 beforeEach(() => {
+  window.scrollTo = jest.fn();
   apiFetch.mockReset().mockResolvedValue({ok:true,json:async()=>({})});
   downloadGrades.mockClear();
   checkPeerSimilarityViaBackend.mockResolvedValue({ total_peers_compared: 0, all_matches: [] });
@@ -296,11 +297,11 @@ test("Grades follows newly opened classrooms and drops foreign assignment state"
   await screen.findAllByText("No comments yet.");
 });
 
-test("Scan Station has no filters and retains upload and clear actions", async () => {
+test("Scan Station offers assignment linking and retains upload and clear actions", async () => {
   render(<TeacherDashboard profile={{ id: "t", role: "teacher", full_name: "Teacher" }} />);
   await screen.findByRole("button", { name: "Class A" });
   fireEvent.click(screen.getByText("Scan tab"));
-  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  expect(screen.getByRole("combobox", {name:"Link assignment"})).toHaveValue("all");
   expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Upload station" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Clear station" }));
@@ -446,4 +447,93 @@ test("return failure preserves saved inputs and enables retry without success me
   expect(within(dialog).getByLabelText("Teacher Feedback (optional)")).toHaveValue("Keep feedback");
   expect(within(dialog).getByRole("button", {name:"Return work"})).toBeEnabled();
   expect(within(dialog).queryByText(/Work returned/)).not.toBeInTheDocument();
+});
+
+async function openScanAssignment() {
+  fireEvent.click(await screen.findByRole("button", {name:"Class A"}));
+  fireEvent.click(screen.getByText("Classwork tab"));
+  fireEvent.click(screen.getAllByText("Essay A")[0]);
+  await screen.findAllByText("No comments yet.");
+}
+function expectUnlinkedStation() {
+  expect(screen.getByRole("combobox", {name:"Link assignment"})).toHaveValue("all");
+  expect(screen.queryByText("Linked Assignment")).not.toBeInTheDocument();
+  expect(screen.queryByText("Student Submissions & Roster")).not.toBeInTheDocument();
+}
+test("assignment directly opens a linked Scan Station, and manual unlink exposes the selector", async () => {
+  render(<TeacherDashboard profile={{id:"t",role:"teacher"}} />);
+  await openScanAssignment();
+  fireEvent.click(screen.getByText("Scan tab"));
+  expect(screen.getByText("Linked Assignment")).toBeInTheDocument();
+  expect(screen.getByRole("heading", {name:"Essay A"})).toBeInTheDocument();
+  expect(screen.getByText("Student Submissions & Roster")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:"Unlink"}));
+  expectUnlinkedStation();
+  fireEvent.click(screen.getByText("Scan tab"));
+  expectUnlinkedStation();
+  fireEvent.change(screen.getByLabelText("Link assignment"), {target:{value:"essayB"}});
+  expect(screen.getByRole("heading", {name:"Essay B"})).toBeInTheDocument();
+});
+test.each([false,true])("return to classroom clears assignment and scan link (previously linked=%s)", async linked => {
+  const view = render(<TeacherDashboard profile={{id:"t",role:"teacher"}} />);
+  await openScanAssignment();
+  if (linked) fireEvent.click(screen.getByText("Scan tab"));
+  fireEvent.click(screen.getByText("Classes tab"));
+  expect(screen.getByRole("heading", {name:"Class A"})).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Scan tab"));
+  expectUnlinkedStation();
+  fireEvent.click(screen.getByText("Classwork tab"));
+  expect(screen.getByRole("heading", {name:"Classwork"})).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Scan tab"));
+  expectUnlinkedStation();
+  view.unmount();
+  render(<TeacherDashboard profile={{id:"t",role:"teacher"}} />);
+  await screen.findByRole("option", {name:"Essay A / Class A"});
+  expectUnlinkedStation();
+});
+test("Back to Classwork retains classroom scope and clears assignment linking", async () => {
+  render(<TeacherDashboard profile={{id:"t",role:"teacher"}} />);
+  await openScanAssignment();
+  fireEvent.click(screen.getByRole("button", {name:"Back to Classwork"}));
+  expect(screen.getByRole("heading", {name:"Classwork"})).toBeInTheDocument();
+  expect(screen.getAllByText("Essay A").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Essay B")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("Scan tab"));
+  expectUnlinkedStation();
+});
+test("opening another assignment after returning to classroom links only the new assignment", async () => {
+  extraAssignments = [{id:"essayA2", classroom_id:"A",teacher_id:"t",title:"Second essay"}];
+  render(<TeacherDashboard profile={{id:"t",role:"teacher"}} />);
+  await openScanAssignment();
+  fireEvent.click(screen.getByText("Scan tab"));
+  fireEvent.click(screen.getByText("Classes tab"));
+  fireEvent.click(screen.getByText("Classwork tab"));
+  fireEvent.click(screen.getAllByText("Second essay")[0]);
+  await screen.findAllByText("No comments yet.");
+  fireEvent.click(screen.getByText("Scan tab"));
+  expect(screen.getByRole("heading", {name:"Second essay"})).toBeInTheDocument();
+  expect(screen.queryByRole("heading", {name:"Essay A"})).not.toBeInTheDocument();
+});
+test("closing Grades clears assignment linking without losing the origin classroom", async () => {
+  render(<TeacherDashboard profile={{id:"t",role:"teacher"}} />);
+  await openScanAssignment();
+  fireEvent.click(screen.getByText("Grades tab"));
+  fireEvent.click(screen.getByRole("button", {name:"Close grades"}));
+  expect(screen.getByRole("heading", {name:"Class A"})).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Scan tab"));
+  expectUnlinkedStation();
+});
+test("clearing assignment context preserves uploaded scan files", async () => {
+  URL.createObjectURL = jest.fn(() => "blob:preserved"); URL.revokeObjectURL = jest.fn();
+  const {container} = render(<TeacherDashboard profile={{id:"t",role:"teacher"}} />);
+  await openScanAssignment();
+  fireEvent.click(screen.getByText("Scan tab"));
+  fireEvent.click(screen.getByRole("button", {name:"Picture"}));
+  fireEvent.change(container.querySelector('input[type="file"]'), {target:{files:[new File(["image"],"retained.jpg",{type:"image/jpeg"})]}});
+  expect(screen.getAllByText("retained.jpg").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByText("Classes tab"));
+  fireEvent.click(screen.getByText("Scan tab"));
+  expectUnlinkedStation();
+  expect(screen.getAllByText("retained.jpg").length).toBeGreaterThan(0);
+  await act(async () => {});
 });

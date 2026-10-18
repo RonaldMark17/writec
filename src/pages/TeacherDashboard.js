@@ -528,11 +528,18 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   const gradeClasswork = assignments.filter(assignment => selectedSubmissionsClassroomId === "all"
     || String(assignment.classroomId) === String(selectedSubmissionsClassroomId));
 
+  // Leaving assignment detail clears its scan link, without touching scan content or the classroom.
+  function clearAssignmentContext() {
+    setSelectedAssignmentId(null);
+    setLinkedScanAssignmentId("all");
+  }
+
   function selectGradeAssignment(assignmentId) {
     setErrorMessage("");
     setSuccessMessage("");
     const assignment = assignments.find(row => String(row.id) === String(assignmentId));
-    setSelectedAssignmentId(assignment?.id || null);
+    if (assignment) setSelectedAssignmentId(assignment.id);
+    else clearAssignmentContext();
     setAssignmentDetailTab("roster");
     setSubmissionRosterFilter("all");
     setSubmissionRosterSearch("");
@@ -2227,7 +2234,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={onBack || (() => setSelectedAssignmentId(null))}
+              onClick={onBack || clearAssignmentContext}
               className="inline-flex items-center gap-1.5 rounded-full border border-[#dadce0] bg-white px-3.5 py-1.5 text-xs font-medium text-[#3c4043] transition hover:bg-[#f8f9fa] hover:border-[#137333]"
             >
               <ArrowLeftIcon className="h-3.5 w-3.5" />
@@ -2623,7 +2630,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         onProfileUpdated={onProfileUpdated}
         workspace="Teacher workspace"
         unreadNotifications={notifications.unread}
-        notifications={<NotificationBell model={notifications} onOpen={openNotification} onViewAll={() => setActivePage("notifications")} />}
+        notifications={<NotificationBell model={notifications} onOpen={openNotification} onViewAll={() => { clearAssignmentContext(); setActivePage("notifications"); }} />}
         pages={teacherPages}
         activePage={activePage}
         onPageChange={(page) => {
@@ -2638,9 +2645,10 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           } else if ((page === "assignments" || page === "submissions" || page === "calendar") && openedClassroomId) {
             setAssignmentFilterClassroomId(openedClassroomId);
             setSelectedSubmissionsClassroomId(openedClassroomId);
-            setSelectedAssignmentId(null);
+            clearAssignmentContext();
           }
-          if (page === "upload") setLinkedScanAssignmentId(selectedAssignment?.id || "all");
+          if (!["assignments", "submissions", "upload"].includes(page)) clearAssignmentContext();
+          if (page === "upload" && activePage !== "upload") setLinkedScanAssignmentId(selectedAssignment?.id || "all");
           setActivePage(page);
         }}
       />
@@ -2657,7 +2665,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         {activePage === "calendar" && (isLoading ? <p role="status">Loading assignments...</p> :
           <AssignmentCalendar assignments={assignments.map(a => ({ ...a, isArchived: classrooms.find(c => c.id === a.classroomId)?.isArchived }))}
             classrooms={classrooms} classroomId={assignmentFilterClassroomId === "all" ? "" : assignmentFilterClassroomId}
-            onClassroomChange={id => { setAssignmentFilterClassroomId(id || "all"); setOpenedClassroomId(id || null); }}
+            onClassroomChange={id => { clearAssignmentContext(); setAssignmentFilterClassroomId(id || "all"); setOpenedClassroomId(id || null); }}
             onOpenAssignment={assignment => { setAssignmentFilterClassroomId(assignment.classroomId); setOpenedClassroomId(assignment.classroomId); setSelectedAssignmentId(assignment.id); setActivePage("assignments"); }} />)}
         <section className="space-y-6">
 
@@ -2835,7 +2843,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             classroom={classrooms.find((c) => c.id === openedClassroomId)}
             assignments={assignments}
             teacher={{ id: profile?.id, name: profile?.full_name || profile?.email || "Teacher", email: profile?.email || "" }}
-            onBack={() => setOpenedClassroomId(null)}
+            onBack={() => { clearAssignmentContext(); setOpenedClassroomId(null); }}
             onOpenAssignment={(assignment) => {
               setAssignmentFilterClassroomId(openedClassroomId);
               setSelectedAssignmentId(assignment.id);
@@ -3073,7 +3081,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                             onClick={() => {
                               setOpenedClassroomId(classroom.id);
                               setAssignmentFilterClassroomId(classroom.id);
-                              setSelectedAssignmentId(null);
+                              clearAssignmentContext();
                               setActivePage("assignments");
                             }}
                             className="inline-flex items-center gap-1 text-[#137333] hover:underline"
@@ -3179,7 +3187,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
         {/* Classwork Page */}
         {activePage === "assignments" && (
           selectedAssignment ? (
-            renderAssignmentDetailsAndSubmissions(() => setSelectedAssignmentId(null))
+            renderAssignmentDetailsAndSubmissions(clearAssignmentContext)
           ) : (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#dadce0] pb-4 sm:pb-5">
@@ -3198,6 +3206,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       onClick={() => {
                         const classroom = activeClassrooms.find((c) => c.id === assignmentFilterClassroomId);
                         if (!classroom) {
+                          clearAssignmentContext();
                           setOpenedClassroomId(null);
                           setActivePage("classrooms");
                           setSuccessMessage("Open a classroom to create its assignment.");
@@ -3221,7 +3230,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                         <ValidatedSelect
                           id="section-filter"
                           value={assignmentFilterClassroomId}
-                          onChange={(e) => { setAssignmentFilterClassroomId(e.target.value); setOpenedClassroomId(e.target.value === "all" ? null : e.target.value); }}
+                          onChange={(e) => { clearAssignmentContext(); setAssignmentFilterClassroomId(e.target.value); setOpenedClassroomId(e.target.value === "all" ? null : e.target.value); }}
                           className="h-9 w-full sm:w-auto max-w-[170px] sm:max-w-[220px] rounded-lg border border-[#dadce0] bg-white px-2.5 sm:px-3 text-xs font-medium text-[#202124] outline-none transition focus:border-[#137333] focus:ring-2 focus:ring-[#e6f4ea] truncate"
                         >
                           <option value="all">All sections</option>
@@ -3255,6 +3264,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                       onClick={() => {
                         const classroom = activeClassrooms.find((c) => c.id === assignmentFilterClassroomId);
                         if (!classroom) {
+                          clearAssignmentContext();
                           setOpenedClassroomId(null);
                           setActivePage("classrooms");
                           setSuccessMessage("Open a classroom to create its assignment.");
@@ -3390,6 +3400,17 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                     <span>Clear station</span>
                   </button>
                 </div>
+
+                {!selectedScanAssignment && <label className="block text-sm font-medium text-[#5f6368]" htmlFor="scan-assignment">
+                  Link assignment
+                  <select id="scan-assignment" value="all" onChange={event => setLinkedScanAssignmentId(event.target.value)}
+                    className="mt-1 block w-full max-w-md rounded-lg border border-[#dadce0] bg-white px-3 py-2 text-sm text-[#202124]">
+                    <option value="all">No assignment linked</option>
+                    {assignments.map(assignment => <option key={assignment.id} value={assignment.id}>
+                      {assignment.title} / {assignment.classroomName}
+                    </option>)}
+                  </select>
+                </label>}
 
                 {/* Linked Assignment Banner */}
                 {selectedScanAssignment && (
@@ -4606,6 +4627,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                 <div><h2 className="text-xl sm:text-2xl font-medium tracking-tight text-[#202124]">Grades & Submissions</h2>
                 <p className="mt-1 text-sm text-[#5f6368]">Review student work and grades.</p></div>
                 <button type="button" className="classroom-icon" aria-label="Close grades" title="Close grades" onClick={() => {
+                  clearAssignmentContext();
                   setOpenedClassroomId(classrooms.some(c => c.id === gradesOrigin) ? gradesOrigin : null);
                   setActivePage("classrooms");
                 }}><CloseIcon className="h-5 w-5" /></button>
@@ -4638,7 +4660,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   className="h-10 rounded-full px-3 text-xs font-medium text-[#137333] hover:bg-[#e6f4ea]">Reset filters</button>}
                 <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
                   {selectedAssignment && <>
-                    <button type="button" onClick={() => { setSelectedAssignmentId(null); setActivePage("assignments"); }}
+                    <button type="button" onClick={() => { clearAssignmentContext(); setActivePage("assignments"); }}
                       className="rounded-lg border border-[#dadce0] px-3 py-2 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa]"><ArrowLeftIcon className="action-icon" />Back to Classwork</button>
                     <button type="button" onClick={() => handleOpenEditAssignment(selectedAssignment)}
                       className="rounded-lg border border-[#dadce0] px-3 py-2 text-xs font-medium text-[#3c4043] hover:bg-[#f8f9fa]">Edit assignment</button>
