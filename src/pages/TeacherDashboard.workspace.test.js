@@ -18,6 +18,7 @@ jest.mock("./dashboard/shared", () => ({ ...jest.requireActual("./dashboard/shar
 let mockProgressUpdate;
 let archived = false;
 let extraAssignments = [];
+let deletedAssignments = new Set();
 let notificationRows = [];
 let onArchiveUpdate;
 
@@ -59,6 +60,7 @@ beforeEach(() => {
   checkPeerSimilarityViaBackend.mockResolvedValue({ total_peers_compared: 0, all_matches: [] });
   archived = false;
   extraAssignments = [];
+  deletedAssignments = new Set();
   notificationRows = [];
   loadTeacherSubmissionStatus.mockResolvedValue({ results: [], progress: {} });
   supabase.channel.mockImplementation(() => { const channel = { on: (type, filter, callback) => { onArchiveUpdate = callback; return channel; }, subscribe: () => channel }; return channel; });
@@ -66,7 +68,7 @@ beforeEach(() => {
   supabase.rpc.mockResolvedValue({ data: [] });
   supabase.from.mockImplementation((table) => {
     const data = table === "classroomTable" ? ["A", "B"].map(id => ({ id, teacher_id: "t", teacher_name: "Teacher", classroom_name: `Class ${id}`, classroom_code: id, is_archived: archived && id === "B" }))
-      : table === "assignmentTable" ? ["A", "B"].map(id => ({ id: `essay${id}`, classroom_id: id, teacher_id: "t", title: `Essay ${id}` })).concat(extraAssignments) : table === "notifications" ? notificationRows : [];
+      : table === "assignmentTable" ? ["A", "B"].map(id => ({ id: `essay${id}`, classroom_id: id, teacher_id: "t", title: `Essay ${id}` })).concat(extraAssignments).filter(row => !deletedAssignments.has(row.id)) : table === "notifications" ? notificationRows : [];
     const query = { then: resolve => Promise.resolve({ data, count: data.length }).then(resolve) };
     ["select", "eq", "in", "order", "update", "range"].forEach(name => { query[name] = () => query; });
     return query;
@@ -536,4 +538,99 @@ test("clearing assignment context preserves uploaded scan files", async () => {
   expectUnlinkedStation();
   expect(screen.getAllByText("retained.jpg").length).toBeGreaterThan(0);
   await act(async () => {});
+});
+
+function mockAssignmentDeletion(fail = false) {
+  supabase.rpc.mockImplementation(async (name, args) => {
+    if (name === "assignment_deletion_preview") return {data:{id:"essayA",classroomId:"A",title:"Essay A",classroomName:"Class A",classroomSection:"1",students:1,submissions:0,graded:0,comments:0}};
+    if (name === "delete_assignment_confirmed") {
+      if (fail) return {error:{message:"Database rejected deletion"}};
+      deletedAssignments.add(args.assignment_key);
+      return {data:{deleted:true,id:args.assignment_key,classroomId:args.classroom_key}};
+    }
+    return {data:[]};
+  });
+}
+async function openDeleteConfirmation() {
+  fireEvent.click(screen.getByText("More actions"));
+  fireEvent.click(screen.getByRole("button",{name:"Delete assignment"}));
+  const dialog = screen.getByRole("dialog",{name:"Delete assignment?"});
+  await waitFor(()=>expect(within(dialog).getByRole("textbox")).toBeEnabled());
+  return dialog;
+}
+test("assignment deletion requires confirmation and keeps sibling/classroom after refresh and remount", async()=>{
+  extraAssignments=[{id:"essayA2",classroom_id:"A",teacher_id:"t",title:"Second essay"}];
+  mockAssignmentDeletion();
+  const view=render(<TeacherDashboard profile={{id:"t",role:"teacher"}}/>);
+  await openScanAssignment();
+  const dialog=await openDeleteConfirmation();
+  expect(supabase.rpc.mock.calls.filter(([name])=>name==="delete_assignment_confirmed")).toHaveLength(0);
+  fireEvent.doubleClick(screen.getByRole("button",{name:"Delete assignment",hidden:true}));
+  expect(deletedAssignments.size).toBe(0);
+  fireEvent.keyDown(dialog,{key:"Escape"});
+  expect(screen.queryByRole("dialog",{name:"Delete assignment?"})).not.toBeInTheDocument();
+  expect(screen.getByRole("heading",{name:"Essay A"})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"Delete assignment"}));
+  const again=screen.getByRole("dialog",{name:"Delete assignment?"});
+  await waitFor(()=>expect(within(again).getByRole("textbox")).toBeEnabled());
+  fireEvent.change(within(again).getByRole("textbox"),{target:{value:"Essay A"}});
+  fireEvent.click(within(again).getByRole("checkbox"));
+  fireEvent.click(within(again).getByRole("button",{name:"Permanently delete assignment"}));
+  await screen.findByText("Assignment deleted successfully.");
+  expect(screen.queryByRole("dialog",{name:"Delete assignment?"})).not.toBeInTheDocument();
+  expect(screen.getByRole("heading",{name:"Classwork"})).toBeInTheDocument();
+  expect(screen.queryByText("Essay A")).not.toBeInTheDocument();
+  expect(screen.getAllByText("Second essay").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByText("Classes tab"));
+  expect(screen.getByRole("heading",{name:"Class A"})).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Scan tab")); expectUnlinkedStation();
+  expect(screen.queryByRole("option",{name:"Essay A / Class A"})).not.toBeInTheDocument();
+  view.unmount(); render(<TeacherDashboard profile={{id:"t",role:"teacher"}}/>);
+  await screen.findByRole("option",{name:"Second essay / Class A"});
+  expectUnlinkedStation();
+  expect(screen.queryByRole("option",{name:"Essay A / Class A"})).not.toBeInTheDocument();
+});
+test("failed deletion keeps assignment visible with no false success",async()=>{
+  mockAssignmentDeletion(true);
+  render(<TeacherDashboard profile={{id:"t",role:"teacher"}}/>);
+  await openScanAssignment();
+  const dialog=await openDeleteConfirmation();
+  fireEvent.change(within(dialog).getByRole("textbox"),{target:{value:"Essay A"}});
+  fireEvent.click(within(dialog).getByRole("checkbox"));
+  fireEvent.click(within(dialog).getByRole("button",{name:"Permanently delete assignment"}));
+  await within(dialog).findByRole("alert");
+  expect(screen.queryByText("Assignment deleted successfully.")).not.toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole("button",{name:"Cancel"}));
+  expect(screen.getByRole("heading",{name:"Essay A"})).toBeInTheDocument();
+  expect(deletedAssignments.size).toBe(0);
+});
+test("deletion actions are absent from Scan Station and Grades",async()=>{
+  render(<TeacherDashboard profile={{id:"t",role:"teacher"}}/>);
+  await openScanAssignment();
+  fireEvent.click(screen.getByText("Scan tab"));
+  expect(screen.queryByText("Delete assignment")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("Grades tab"));
+  expect(screen.queryByText("Delete assignment")).not.toBeInTheDocument();
+  await screen.findAllByText("No comments yet.");
+});
+
+test("deleting a still-linked assignment clears Scan Station after a notification returns to detail",async()=>{
+  mockAssignmentDeletion();
+  const savedWork={id:"workA",assignment_id:"essayA",classroom_id:"A",student_id:"s",essay_title:"Saved A",transcribed_text:"Saved essay",status:"submitted"};
+  loadTeacherSubmissionStatus.mockResolvedValue({results:[savedWork],progress:{workA:{state:"ready"}}});
+  notificationRows=[{id:"noticeA",recipient_user_id:"t",type:"submission_created",title:"Review assignment A",message:"New work",classroom_id:"A",assignment_id:"essayA",submission_id:"workA",metadata:{},is_read:false,created_at:"2026-10-14"}];
+  render(<TeacherDashboard profile={{id:"t",role:"teacher"}}/>);
+  await openScanAssignment();
+  fireEvent.click(screen.getByText("Scan tab"));
+  expect(screen.getByText("Linked Assignment")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"Notifications, 1 unread"}));
+  fireEvent.click(await screen.findByRole("button",{name:/Review assignment A New work/}));
+  fireEvent.click(await screen.findByRole("button",{name:"Close submitted work"}));
+  const dialog=await openDeleteConfirmation();
+  fireEvent.change(within(dialog).getByRole("textbox"),{target:{value:"Essay A"}});
+  fireEvent.click(within(dialog).getByRole("checkbox"));
+  fireEvent.click(within(dialog).getByRole("button",{name:"Permanently delete assignment"}));
+  await screen.findByText("Assignment deleted successfully.");
+  fireEvent.click(screen.getByText("Scan tab"));
+  expectUnlinkedStation();
 });

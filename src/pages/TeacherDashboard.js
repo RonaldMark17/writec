@@ -5,6 +5,7 @@ import ValidatedForm, { ValidatedInput, ValidatedTextarea, ValidatedSelect } fro
 import { compareStudentsByLastName } from "./dashboard/rosterSort";
 import SimilarityPreview from "./dashboard/SimilarityPreview";
 import SubmissionReview from "./dashboard/SubmissionReview";
+import DeleteAssignmentDialog from "./dashboard/DeleteAssignmentDialog";
 import EssayPagePicker from "./dashboard/EssayPagePicker";
 import { combinePageText, isEssayImage, validateEssayPages, useUploadLimits } from "./dashboard/essayPages";
 import { PeerComparison, SimilarityDialog } from "./dashboard/PeerSimilarityReview";
@@ -198,6 +199,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     useState(emptyAssignmentForm);
 
   const [editingAssignment, setEditingAssignment] = useState(null);
+  const [deletingAssignment, setDeletingAssignment] = useState(null);
   const [isUpdatingAssignment, setIsUpdatingAssignment] = useState(false);
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [assignmentDetailTab, setAssignmentDetailTab] = useState("roster");
@@ -1549,6 +1551,29 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     await loadTeacherData();
   };
 
+  const handleAssignmentDeleted = async ({ id, classroomId }) => {
+    let refreshed = false;
+    try { refreshed = await loadTeacherData(true); } catch { /* Deletion already committed. */ }
+    // The server has committed. Keep stale refreshes from resurrecting this item.
+    setAssignments(rows => rows.filter(row => String(row.id) !== String(id)));
+    setSubmissions(rows => rows.filter(row => String(row.assignmentId) !== String(id)));
+    setSelectedAssignmentId(null);
+    setLinkedScanAssignmentId(current => String(current) === String(id) ? "all" : current);
+    if (String(loadedSubmissionInfo?.assignmentId) === String(id)) setLoadedSubmissionInfo(null);
+    if (String(reviewingSubmission?.assignmentId) === String(id)) {
+      setReviewingSubmission(null);
+      setGradeInput("");
+      setFeedbackInput("");
+    }
+    setEditingAssignment(null);
+    setDeletingAssignment(null);
+    setOpenedClassroomId(classroomId);
+    setAssignmentFilterClassroomId(classroomId);
+    setActivePage("assignments");
+    setErrorMessage(refreshed ? "" : "The assignment was deleted, but the workspace could not refresh. Reload to update the remaining records.");
+    setSuccessMessage("Assignment deleted successfully.");
+  };
+
   const handleOpenEditAssignment = (assignment) => {
     setEditingAssignment({
       id: assignment.id,
@@ -2263,6 +2288,16 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
             <EditIcon className="h-3.5 w-3.5 text-[#5f6368]" />
             <span>Edit assignment</span>
           </button>
+          {profile?.role === "teacher" && <details className="relative text-sm">
+            <summary className="similarity-chip cursor-pointer">More actions</summary>
+            <div className="mt-2 border-t border-gray-200 pt-2">
+              <button type="button" className="validation-error rounded-lg px-3 py-2" onClick={() => {
+                setSuccessMessage("");
+                setErrorMessage("");
+                setDeletingAssignment(selectedAssignment);
+              }}>Delete assignment</button>
+            </div>
+          </details>}
         </div>}
 
         {/* Assignment Header Info */}
@@ -4932,6 +4967,9 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
               </div>
             </div>
           )}
+
+          {deletingAssignment && <DeleteAssignmentDialog key={deletingAssignment.id} assignment={deletingAssignment}
+            onClose={() => setDeletingAssignment(null)} onDeleted={handleAssignmentDeleted} />}
 
           {reviewingSubmission && <SubmissionReview key={reviewingSubmission.id} ocrEngineInfo={ocrEngineInfo}
             submission={reviewingSubmission} submissions={submissions} profile={profile}
