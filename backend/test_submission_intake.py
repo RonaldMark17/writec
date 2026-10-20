@@ -27,6 +27,15 @@ class IntakeTests(unittest.TestCase):
         patch('submission_intake.storage_download', return_value=image.getvalue()).start()
         self.addCleanup(patch.stopall)
 
+    def test_file_mode_rejects_images_and_text_before_database_write(self):
+        self.body.upload_mode = 'file'
+        for extension in ['jpg', 'txt', 'pdf', 'docx']:
+            self.body.file_url = f'{STUDENT}/{ASSIGNMENT}/essay.{extension}'
+            with self.subTest(extension=extension), self.assertRaises(HTTPException) as failure:
+                submit_reviewed_work(self.body, self.request)
+            self.assertEqual(failure.exception.status_code, 400)
+            self.db.assert_not_called()
+
     def test_saves_text_and_original_together_without_accepting_a_client_score(self):
         self.db.side_effect = lambda path, token, payload=None: ([dict(payload)] if payload else
             [{'classroom_id': 'class'}] if 'assignmentTable' in path else [])

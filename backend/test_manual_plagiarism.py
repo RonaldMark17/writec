@@ -1,6 +1,7 @@
 """Execute endpoint bodies without loading unrelated OCR model dependencies."""
 import ast
 import asyncio
+import io
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Optional
@@ -29,6 +30,15 @@ class ManualTests(unittest.TestCase):
     def setUp(self):
         self.scope = endpoints()
         self.request = SimpleNamespace(json=AsyncMock(return_value={'text': 'word ' * 25}))
+
+    def test_unsupported_upload_never_reaches_similarity_provider(self):
+        for name in ['essay.txt', 'photo.jpg', 'fake.pdf', 'fake.docx']:
+            upload = UploadFile(filename=name, file=io.BytesIO(b'not a document'))
+            with self.subTest(name=name), self.assertRaises(HTTPException) as failure:
+                asyncio.run(self.scope['check_plagiarism'](file=upload, request=self.request))
+            self.assertEqual(failure.exception.status_code, 400)
+            self.scope['copyleaks_service'].submit_scan.assert_not_called()
+            self.scope['plagiarism_db'].create_scan.assert_not_called()
 
     def test_submission_failure_is_error_without_a_success_record(self):
         self.scope['copyleaks_service'].submit_scan.side_effect = RuntimeError('unavailable')

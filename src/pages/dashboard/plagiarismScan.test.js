@@ -7,7 +7,7 @@ beforeEach(() => jest.clearAllMocks());
 
 test.each(["pdf", "docx"])("extracts %s contents on the backend before a manual check", async (extension) => {
   apiFetch.mockResolvedValue({ ok: true, json: async () => ({ text: "The actual document text" }) });
-  const file = new File(["binary"], `essay.${extension}`);
+  const file = new File([extension === "pdf" ? "%PDF-1.4" : "PK\x03\x04"], `essay.${extension}`);
   const result = await readTextFromFiles([file]);
   expect(result.text).toBe("The actual document text");
   expect(result.unreadableFiles).toEqual([]);
@@ -16,7 +16,7 @@ test.each(["pdf", "docx"])("extracts %s contents on the backend before a manual 
 
 test("extraction failure stops the check instead of scanning binary file content", async () => {
   apiFetch.mockResolvedValue({ ok: false, json: async () => ({ detail: "Unreadable PDF" }) });
-  await expect(readTextFromFiles([new File(["bad pdf"], "essay.pdf")])).rejects.toThrow("Unreadable PDF");
+  await expect(readTextFromFiles([new File(["%PDF-bad pdf"], "essay.pdf")])).rejects.toThrow("Unreadable PDF");
 });
 
 

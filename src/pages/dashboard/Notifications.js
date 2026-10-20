@@ -3,7 +3,9 @@ import { supabase } from "../../supabaseClient";
 import Pagination from "./Pagination";
 import "./notifications.css";
 
+const categories = { Comments: ["student_class_comment", "student_private_comment"], Assignments: ["assignment_created", "assignment_updated", "resubmission_requested"], Submissions: ["submission_created", "submission_resubmitted"], "Grades / Feedback": ["grade_posted", "feedback_added"] };
 const labels = {
+  student_class_comment: "Class Comment", student_private_comment: "Private Comment",
   assignment_created: "New assignment", assignment_updated: "Assignment updated",
   resubmission_requested: "Resubmission requested", grade_posted: "Grade / feedback",
   feedback_added: "Feedback", submission_created: "Submission", submission_resubmitted: "Resubmission",
@@ -49,16 +51,17 @@ export function useNotifications(userId) {
   return { userId, unread, countError, version, refresh, markRead };
 }
 
-function useNotificationList(model, filter, page, pageSize) {
+function useNotificationList(model, filter, page, pageSize, category) {
   const [state, setState] = useState({ rows: [], total: 0, loading: true, error: "" });
   const [retry, setRetry] = useState(0);
-  const identity = `${model.userId}:${filter}:${page}:${pageSize}`;
+  const identity = `${model.userId}:${filter}:${category}:${page}:${pageSize}`;
   useEffect(() => {
     let cancelled = false;
     setState(s => ({ ...s, loading: true, error: "" }));
     async function load() {
       try {
         let query = supabase.from("notifications").select(columns, { count: "exact" }).eq("recipient_user_id", model.userId);
+        if (categories[category]) query = query.in("type", categories[category]);
         if (filter !== "all") query = query.eq("is_read", filter === "read");
         const { data, count, error } = await query.order("created_at", { ascending: false })
           .order("id", { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
@@ -70,7 +73,7 @@ function useNotificationList(model, filter, page, pageSize) {
     }
     load();
     return () => { cancelled = true; };
-  }, [model.userId, model.version, filter, page, pageSize, retry, identity]);
+  }, [model.userId, model.version, filter, page, pageSize, category, retry, identity]);
   return { ...state, rows: state.identity === identity ? state.rows : [], retry: () => setRetry(v => v + 1) };
 }
 
@@ -89,11 +92,12 @@ function EmptyState({ filtered }) {
 }
 
 function NotificationList({ model, onOpen, compact = false }) {
+  const [category, setCategory] = useState("All");
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [actionError, setActionError] = useState("");
   const [busy, setBusy] = useState(false);
-  const list = useNotificationList(model, filter, page, compact ? 5 : 20);
+  const list = useNotificationList(model, filter, page, compact ? 5 : 20, category);
   const pageCount = Math.max(1, Math.ceil(list.total / 20));
   useEffect(() => { if (!list.loading && !list.error && page > pageCount) setPage(pageCount); }, [list.loading, list.error, page, pageCount]);
   async function perform(action) {
@@ -115,13 +119,17 @@ function NotificationList({ model, onOpen, compact = false }) {
       {["all", "unread", "read"].map(value => <button type="button" key={value} aria-pressed={filter === value}
         onClick={() => { setFilter(value); setPage(1); }}>{value[0].toUpperCase() + value.slice(1)}</button>)}
     </div>}
+    {!compact && <div className="notification-filters" aria-label="Notification categories">
+      {["All", ...Object.keys(categories)].map(value => <button type="button" key={value} aria-pressed={category === value}
+        onClick={() => { setCategory(value); setPage(1); }}>{value === "All" ? "All categories" : value}</button>)}
+    </div>}
     {actionError && <p role="alert">{actionError}</p>}
     {list.error && <p role="alert">{list.error} <button type="button" onClick={list.retry}>Retry</button></p>}
     {list.loading && !list.rows.length && <p role="status">Loading notifications…</p>}
     {!list.loading && !list.error && !list.rows.length && <EmptyState filtered={filter !== "all"} />}
     {compact ? <ul className="notification-recent">{list.rows.map(row => <li key={row.id} data-unread={!row.is_read}>
       <button type="button" disabled={busy} onClick={() => open(row)}>
-        <strong>{row.title}</strong><span>{row.message}</span><span>{row.metadata?.classroom_name} · {relativeNotificationTime(row.created_at)}</span>
+        <strong>{row.title}</strong>{row.type.startsWith("student_") && <span>{labels[row.type]}</span>}<span>{row.message}</span><span>{row.metadata?.classroom_name} · {relativeNotificationTime(row.created_at)}</span>
         {!row.is_read && <span className="notification-status">● Unread</span>}
       </button></li>)}</ul> : <>
       {!!list.rows.length && <table className="notification-table"><thead><tr>
@@ -134,7 +142,7 @@ function NotificationList({ model, onOpen, compact = false }) {
         <td data-label="Date/Time"><time dateTime={row.created_at}>{new Date(row.created_at).toLocaleString()}</time></td>
         <td data-label="Status">{row.is_read ? "Read" : "● Unread"}</td>
         <td data-label="Action"><button type="button" disabled={busy} onClick={() => open(row)}>
-          {row.type.startsWith("submission_") ? "Review submission" : row.type === "grade_posted" || row.type === "feedback_added" ? "View feedback / grade" : "View assignment"}
+          {row.type.startsWith("student_") ? "View comments" : row.type.startsWith("submission_") ? "Review submission" : row.type === "grade_posted" || row.type === "feedback_added" ? "View feedback / grade" : "View assignment"}
         </button></td>
       </tr>)}</tbody></table>}
       <Pagination label="Notifications" pagination={{ page, pageCount, setPage }} />

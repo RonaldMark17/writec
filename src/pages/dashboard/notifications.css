@@ -21,7 +21,7 @@
 .notification-status { font-weight: 650; }
 .notification-view-all { display: block; width: 100%; padding: 12px; border-top: 1px solid var(--workspace-border); }
 .notifications-page { border: 1px solid var(--workspace-border); border-radius: 12px; background: var(--workspace-surface); }
-.notification-filters { display: flex; gap: 8px; padding: 0 16px 16px; }
+.notification-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 16px; }
 .notification-filters button { border: 1px solid var(--workspace-border); }
 .notification-filters [aria-pressed="true"] { background: var(--accent-soft, #e6f4ea); font-weight: 700; }
 .notification-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .875rem; }

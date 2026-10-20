@@ -1,3 +1,4 @@
+import { validateDocumentContents, DOC_LIMITATION } from "./documentFiles";
 import { useEffect, useState } from "react";
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { extractTextFromImage, extractTextFromImages } from "./ocrService";
@@ -17,6 +18,10 @@ export default function useSubmissionTranscription(file, mode) {
     setState({ ...empty, file, status: "processing" });
     async function run() {
       try {
+        if (mode === "file") {
+          await validateDocumentContents(file);
+          if (/\.doc$/i.test(file.name)) throw new Error(DOC_LIMITATION);
+        }
         if (Array.isArray(file)) {
           const result = await extractTextFromImages(file, { signal: controller.signal,
             onProgress: progress => { if (!cancelled) setState({ ...empty, file, status: "processing", progress, pages: progress.pages }); },

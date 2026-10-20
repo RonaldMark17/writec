@@ -1,8 +1,8 @@
 import { apiFetch, getBackendUrl } from "../../apiFetch";
 import { extractTextFromImage } from "./ocrService";
+import { validateDocumentContents, DOC_LIMITATION } from "./documentFiles";
 
-export const ACCEPTED_CHECK_FILE_TYPES =
-  "image/png,image/jpeg,image/jpg,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/json,.txt,.md,.csv,.json,.pdf,.docx";
+export { DOCUMENT_ACCEPT as ACCEPTED_CHECK_FILE_TYPES } from "./documentFiles";
 
 const readableExtensions = [
   ".txt",
@@ -131,7 +131,9 @@ export async function readTextFromFiles(files = [], options = {}) {
       continue;
     }
 
-    if (/\.(pdf|docx)$/i.test(file.name)) {
+    if (/\.(pdf|doc|docx)$/i.test(file.name)) {
+      await validateDocumentContents(file);
+      if (/\.doc$/i.test(file.name)) throw new Error(DOC_LIMITATION);
       const form = new FormData();
       form.append("file", file);
       const backend = typeof getBackendUrl === "function" ? getBackendUrl() : (process.env.REACT_APP_BACKEND_URL || "http://localhost:8000");

@@ -1,3 +1,4 @@
+import { DOCUMENT_ACCEPT, validateDocumentContents } from "./dashboard/documentFiles";
 import StudentSubmissionReview, { StudentSubmissionContent } from "./dashboard/StudentSubmissionReview";
 import ClassroomInformation from "./dashboard/ClassroomInformation";
 import ValidatedForm, { ValidatedInput, ValidatedTextarea, ValidatedSelect } from "../ValidatedForm";
@@ -257,6 +258,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   const [isLeaving, setIsLeaving] =
     useState(false);
 
+  const documentSelection = useRef(0);
+  const [documentError, setDocumentError] = useState("");
   const [errorMessage, setErrorMessage] =
     useState("");
 
@@ -977,6 +980,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
   };
 
   const handleSubmissionModeChange = (mode) => {
+    documentSelection.current++;
+    setDocumentError("");
     setErrorMessage("");
     setSuccessMessage("");
     setSubmissionFile(null);
@@ -1062,9 +1067,9 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
       setErrorMessage("Choose a nonempty file up to 25 MB.");
       return;
     }
-    if (!/\.(png|jpe?g|webp|bmp|tiff?|pdf|docx|txt|md|csv|json)$/i.test(uploadFile.name)) {
-      setErrorMessage("Use an image, PDF, DOCX, TXT, MD, CSV, or JSON file. Convert DOC/RTF to DOCX or PDF first.");
-      return;
+    if (submissionDraft.mode === "file") {
+      try { await validateDocumentContents(uploadFile); }
+      catch (error) { setDocumentError(error.message); return; }
     }
     setIsSubmittingEssay(true);
 
@@ -1100,6 +1105,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           try {
             const formData = new FormData();
             formData.append("file", uploadFile);
+            formData.append("upload_mode", submissionDraft.mode);
             formData.append("assignment_id", selectedAssignment.id);
 
             const backendUrl = resolveBackendUrl();
@@ -1138,7 +1144,7 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             assignment_id: String(selectedAssignment.id), title: essayTitle,
-            file_url: uploadedFileUrl, text: reviewedText.trim(),
+            file_url: uploadedFileUrl, text: reviewedText.trim(), upload_mode: submissionDraft.mode,
             ...(selectedAssignment.revisionRequest ? { revision_request_id: selectedAssignment.revisionRequest.id } : {}),
             ...(submissionDraft.retryJobId ? { retry_job_id: submissionDraft.retryJobId } : {})
           }),
@@ -1960,16 +1966,23 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
                                         accept={
                                           submissionDraft.mode === "picture"
                                             ? "image/png,image/jpeg,image/jpg,image/webp"
-                                            : ".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf,.docx,.txt,.md,.csv,.json"
+                                            : DOCUMENT_ACCEPT
                                         }
-                                        onChange={(event) => {
+                                        onChange={async (event) => {
+                                          const selection = ++documentSelection.current;
                                           const files = Array.from(event.target.files || []);
-                                          try {
-                                            if (files.length > 1 || submissionDraft.mode === "picture") { validateEssayPages(files, uploadLimits); changeSubmissionPages(files); }
-                                            else setSubmissionFile(files[0] || null);
-                                            setErrorMessage("");
-                                          } catch (error) { setErrorMessage(error.message); }
                                           event.target.value = "";
+                                          try {
+                                            if (submissionDraft.mode === "picture") { validateEssayPages(files, uploadLimits); changeSubmissionPages(files); }
+                                            else {
+                                              await Promise.all(files.map(validateDocumentContents));
+                                              if (selection !== documentSelection.current) return;
+                                              if (files.length > 1) throw new Error("Choose one document at a time.");
+                                              setSubmissionFile(files[0] || null);
+                                            }
+                                            setDocumentError("");
+                                            setErrorMessage("");
+                                          } catch (error) { if (selection === documentSelection.current) setDocumentError(error.message); }
                                         }}
                                         className="sr-only"
                                       />
@@ -1977,6 +1990,8 @@ export default function StudentDashboard({ profile, onProfileUpdated }) {
 
                                     {previewPages.length > 0 && <EssayPagePicker files={previewPages} onChange={changeSubmissionPages} onError={setErrorMessage} disabled={isSubmittingEssay} />}
 
+                                    {submissionDraft.mode === "file" && <p className="mt-3 text-sm">Upload a PDF or Microsoft Word document (.pdf, .doc, .docx).</p>}
+                                    {documentError && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-red-700 dark:bg-red-950 dark:text-red-200">{documentError}</p>}
                                     {submissionFile && submissionDraft.mode === "file" && <SubmissionFilePreview file={submissionFile} />}
                                     {submissionFile && <SubmissionTranscription transcription={transcription} disabled={isSubmittingEssay} />}
                                     {submissionFile && (

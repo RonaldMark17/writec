@@ -1,3 +1,4 @@
+import { DOCUMENT_ACCEPT, validateDocumentContents } from "./dashboard/documentFiles";
 import { useEffect, useRef, useState } from "react";
 import { compareDemo, DEMO_KEY, reference, samples } from "./landingSamples";
 
@@ -37,15 +38,16 @@ export default function LandingDemo({ onAuth }) {
   }, []);
   function resetFeedback() { setError(""); setInfo(""); setResult(null); setStage(-1); }
   function changeMode(next) { setMode(next); resetFeedback(); setFile(null); setSample(null); }
-  function chooseFiles(list) {
+  async function chooseFiles(list) {
     if (busy) return;
     resetFeedback();
     const chosen = Array.from(list || []);
     if (chosen.length !== 1) { setError("Choose one essay file at a time."); return; }
     const item = chosen[0];
     const valid = mode === "picture" ? /\.(png|jpe?g|webp)$/i.test(item.name) && /image\/(png|jpeg|webp)/.test(item.type)
-      : /\.(pdf|docx|txt|md|csv|json)$/i.test(item.name);
+      : true;
     if (!valid) { setError(mode === "picture" ? "Choose a PNG, JPG, JPEG, or WebP image." : "Choose a PDF, DOCX, or text file."); return; }
+    if (mode === "file") { try { await validateDocumentContents(item); } catch (error) { setError(error.message); return; } }
     if (!item.size || item.size > 10 * 1024 * 1024) { setError("Choose a non-empty file smaller than 10 MB."); return; }
     setFile(item); setSample(null);
     setInfo("Your file stays in this browser. Sign in to process your own files, or choose an essay sample for the free demonstration.");
@@ -102,8 +104,8 @@ export default function LandingDemo({ onAuth }) {
             {mode === "text" ? <div className="demo-text-input"><label htmlFor="demo-essay">Your essay text</label><textarea id="demo-essay" rows={6} maxLength={12000} value={text} placeholder="Paste your essay text to preview the similarity-checking experience…" onChange={event => { setText(event.target.value); resetFeedback(); }} /><div className="demo-text-footer"><button type="button" onClick={() => { setText(samples[0].text); resetFeedback(); }}>Insert sample essay</button><span>{text.length.toLocaleString()} / 12,000</span></div></div> : <>
               <div className={`demo-dropzone ${dragging ? "is-dragging" : ""}`} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); chooseFiles(event.dataTransfer.files); }}>
                 {image ? <img className="demo-essay-image" src={image} alt={sample ? `${sample.label}: illustrative handwritten essay` : "Selected essay preview"} onError={() => { setError("This image could not be displayed. Try another image."); setFile(null); setSample(null); }} /> : <><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5" /></svg><strong>{mode === "picture" ? "Drop your essay photo here" : "Preview an essay document"}</strong><span>or choose a file</span></>}
-                <label className="demo-file-label">{image || file ? "Change file" : "Choose file"}<input ref={input} type="file" aria-label={mode === "picture" ? "Choose essay image" : "Choose essay document"} accept={mode === "picture" ? "image/png,image/jpeg,image/webp" : ".pdf,.docx,.txt,.md,.csv,.json"} onChange={event => { chooseFiles(event.target.files); event.target.value = ""; }} /></label>
-                <small>{mode === "picture" ? "PNG, JPG, JPEG, WebP" : "PDF, DOCX, text files"} · Up to 10 MB</small>
+                <label className="demo-file-label">{image || file ? "Change file" : "Choose file"}<input ref={input} type="file" aria-label={mode === "picture" ? "Choose essay image" : "Choose essay document"} accept={mode === "picture" ? "image/png,image/jpeg,image/webp" : DOCUMENT_ACCEPT} onChange={event => { chooseFiles(event.target.files); event.target.value = ""; }} /></label>
+                <small>{mode === "picture" ? "PNG, JPG, JPEG, WebP" : "PDF, DOC, DOCX"} · Up to 10 MB</small>
               </div>
               {(sample || file) && <div className="demo-attachment">{image && <img src={image} alt="" />}<div><strong>{sample ? `${sample.label} · prepared sample` : file.name}</strong><span>{file ? `${(file.size / 1024).toFixed(1)} KB · local preview` : "Prepared transcript included"}</span></div><button type="button" aria-label="Remove selected essay" onClick={() => { setFile(null); setSample(null); resetFeedback(); }}>×</button></div>}
             </>}

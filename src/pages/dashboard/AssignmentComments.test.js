@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import AssignmentComments from "./AssignmentComments";
 import { supabase } from "../../supabaseClient";
 jest.mock("../../supabaseClient", () => ({ supabase: { rpc: jest.fn() } }));
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => { jest.resetAllMocks(); Object.defineProperty(globalThis, "crypto", { configurable: true, value: require("crypto").webcrypto }); });
 
 test.each([['class', 'Class Comment', 'Post class comment'], ['private', 'Private Comment', 'Post private comment']])("posts a %s comment with exact scope", async (kind, label, button) => {
   let posted = false;
@@ -15,7 +15,7 @@ test.each([['class', 'Class Comment', 'Post class comment'], ['private', 'Privat
   fireEvent.change(screen.getByLabelText(label), { target: { value: "My question" } });
   fireEvent.click(screen.getByRole("button", { name: button }));
   expect(await screen.findByText("Alex Santos")).toBeInTheDocument();
-  expect(supabase.rpc).toHaveBeenCalledWith("post_assignment_comment", { requested_assignment_id: "a", requested_classroom_id: "A", comment_text: "My question", comment_kind: kind, recipient_student_id: null });
+  expect(supabase.rpc).toHaveBeenCalledWith("post_assignment_comment", { requested_assignment_id: "a", requested_classroom_id: "A", comment_text: "My question", comment_kind: kind, recipient_student_id: null, request_id: expect.any(String) });
 });
 
 test("teacher selects the private conversation and replies to that student", async () => {
@@ -34,4 +34,26 @@ test("teacher selects the private conversation and replies to that student", asy
   rerender(<AssignmentComments assignmentId="b" classroomId="B" profile={{ role: "teacher" }} />);
   await screen.findByText("No comments yet.");
   expect(screen.queryByText("Private question")).not.toBeInTheDocument();
+});
+
+test.each(["class", "private"])("notification focuses %s section and selects only an authorized conversation", async kind => {
+  supabase.rpc.mockImplementation(name => Promise.resolve({ data: name === "get_classroom_roster" ? [{ student_id: "s", student_name: "Alex" }] : [] }));
+  render(<AssignmentComments assignmentId="a" classroomId="A" profile={{ role: "teacher" }} target={{ assignmentId: "a", kind, studentId: "s", id: "n" }} />);
+  await screen.findByText("Alex");
+  expect(screen.getByRole("region", { name: kind === "class" ? "Class Comments" : "Private Comments" })).toHaveFocus();
+  if (kind === "private") await waitFor(() => expect(screen.getByLabelText("Student conversation")).toHaveValue("s"));
+});
+
+test("lost response retries retain the comment request ID", async () => {
+  supabase.rpc.mockImplementation(name => Promise.resolve(name === "post_assignment_comment" ? { error: { message: "Network error" } } : { data: [] }));
+  render(<AssignmentComments assignmentId="a" classroomId="A" profile={{ id: "s", role: "student" }} />);
+  await screen.findAllByText("No comments yet.");
+  fireEvent.change(screen.getByLabelText("Class Comment"), { target: { value: "Question" } });
+  fireEvent.click(screen.getByRole("button", { name: "Post class comment" }));
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "Post class comment" }));
+  await screen.findByRole("alert");
+  const posts = supabase.rpc.mock.calls.filter(([name]) => name === "post_assignment_comment");
+  expect(posts).toHaveLength(2);
+  expect(posts[0][1].request_id).toBe(posts[1][1].request_id);
 });

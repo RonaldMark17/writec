@@ -1,3 +1,4 @@
+import { DOC_LIMITATION, validateDocumentContents } from "./dashboard/documentFiles";
 import { CloseIcon } from "./dashboard/shared";
 import { NotificationBell, NotificationsPage, useNotifications } from "./dashboard/Notifications";
 import ClassroomInformation, { ClassCode } from "./dashboard/ClassroomInformation";
@@ -123,6 +124,8 @@ function getTeacherActivePage(profileId) {
 
 export default function TeacherDashboard({ profile, onProfileUpdated }) {
   const notifications = useNotifications(profile?.id);
+  const [commentTarget, setCommentTarget] = useState(null);
+  const manualSelection = useRef(0);
   const uploadLimits = useUploadLimits();
   const [openedClassroomId, setOpenedClassroomId] = useState(null);
 
@@ -533,6 +536,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
   // Leaving assignment detail clears its scan link, without touching scan content or the classroom.
   function clearAssignmentContext() {
     setSelectedAssignmentId(null);
+    setCommentTarget(null);
     setLinkedScanAssignmentId("all");
   }
 
@@ -1558,6 +1562,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setAssignments(rows => rows.filter(row => String(row.id) !== String(id)));
     setSubmissions(rows => rows.filter(row => String(row.assignmentId) !== String(id)));
     setSelectedAssignmentId(null);
+    setCommentTarget(null);
     setLinkedScanAssignmentId(current => String(current) === String(id) ? "all" : current);
     if (String(loadedSubmissionInfo?.assignmentId) === String(id)) setLoadedSubmissionInfo(null);
     if (String(reviewingSubmission?.assignmentId) === String(id)) {
@@ -1796,11 +1801,13 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     }
   };
 
-  const changeManualPages = nextFiles => {
+  const changeManualPages = async nextFiles => {
+    const selection = ++manualSelection.current;
     try {
-      if (nextFiles.some(file => isEssayImage(file) || file.type?.startsWith("image/"))) validateEssayPages(nextFiles, uploadLimits);
-      else if (uploadMode === "picture" && nextFiles.length) validateEssayPages(nextFiles, uploadLimits);
-    } catch (error) { setManualCheckError(error.message); return; }
+      if (uploadMode === "picture") validateEssayPages(nextFiles, uploadLimits);
+      else await Promise.all(nextFiles.map(validateDocumentContents));
+    } catch (error) { if (selection === manualSelection.current) setManualCheckError(error.message); return; }
+    if (selection !== manualSelection.current) return;
     // Changing the preview order invalidates the previously assembled essay.
     setManualCheckFiles(nextFiles);
     setManualCheckResult(null);
@@ -1838,6 +1845,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     setIsScanningManualCheck(true);
 
     try {
+      if (uploadMode === "file") await Promise.all(manualCheckFiles.map(validateDocumentContents));
       let fileText;
 
       if (hasImage) {
@@ -2637,7 +2645,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
           </div>
         </div>
         )}
-        {!reviewingSubmission && <AssignmentComments key={`${selectedAssignment.classroomId}:${selectedAssignment.id}`} assignmentId={selectedAssignment.id} classroomId={selectedAssignment.classroomId} profile={profile} />}
+        {!reviewingSubmission && <AssignmentComments key={`${selectedAssignment.classroomId}:${selectedAssignment.id}`} assignmentId={selectedAssignment.id} classroomId={selectedAssignment.classroomId} profile={profile} target={commentTarget} />}
       </div>
     );
   };
@@ -2647,14 +2655,18 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
     if (!fresh) throw new Error("Could not refresh this submission. Please retry.");
     const assignment = fresh.assignments.find(a => String(a.id) === notification.assignment_id && String(a.classroomId) === notification.classroom_id);
     const submission = fresh.submissions.find(s => String(s.id) === notification.submission_id && String(s.assignmentId) === notification.assignment_id && String(s.classroomId) === notification.classroom_id);
-    if (!assignment || !submission) throw new Error("This submission is no longer available to you.");
+    const isComment = ["student_class_comment", "student_private_comment"].includes(notification.type);
+    if (!assignment || (!isComment && !submission)) throw new Error("This assignment or submission is no longer available to you.");
     return () => {
       setOpenedClassroomId(assignment.classroomId);
       setAssignmentFilterClassroomId(assignment.classroomId);
       setSelectedSubmissionsClassroomId(assignment.classroomId);
       setSelectedAssignmentId(assignment.id);
       setActivePage("assignments");
-      handleOpenReview(submission);
+      if (isComment) {
+        setReviewingSubmission(null);
+        setCommentTarget({ assignmentId: assignment.id, kind: notification.type === "student_private_comment" ? "private" : "class", studentId: notification.metadata?.student_id, id: notification.id });
+      } else { setCommentTarget(null); handleOpenReview(submission); }
     };
   };
 
@@ -3667,7 +3679,11 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           type="button"
                           disabled={isTranscribing || isScanningManualCheck}
                           onClick={() => {
+                            manualSelection.current++;
                             setUploadMode(id);
+                            setManualCheckFiles([]);
+                            setTranscribedText("");
+                            setTranscriptionResult(null);
                             setManualCheckResult(null);
                             setManualLiveOcrResult(null);
                             setManualCheckError("");
@@ -3761,6 +3777,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                           </div>
                         )}
 
+                        {uploadMode === "file" && manualCheckFiles.some(file => /\.doc$/i.test(file.name)) && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-700 dark:bg-red-950 dark:text-red-200">{DOC_LIMITATION}</p>}
                         {uploadMode === "file" && manualCheckFiles.map((file) => (
                           <SubmissionFilePreview key={`${file.name}-${file.lastModified}`} file={file} />
                         ))}
@@ -3889,7 +3906,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                                 <span className="mt-2 max-w-[520px] text-sm font-semibold leading-6 text-gray-500">
                                   {uploadMode === "picture"
                                     ? "Select a PNG, JPG, JPEG, or WEBP photo of handwritten student work to transcribe."
-                                    : "Select a PDF, DOCX, TXT, MD, CSV, JSON, or other supported classroom file."}
+                                    : "Upload a PDF or Microsoft Word document (.pdf, .doc, .docx)."}
                                 </span>
                               </>
                             )}
@@ -4144,7 +4161,7 @@ export default function TeacherDashboard({ profile, onProfileUpdated }) {
                   </div>
 
                   {manualCheckError && (
-                    <p className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                    <p role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:bg-red-950 dark:text-red-200">
                       {manualCheckError}
                     </p>
                   )}

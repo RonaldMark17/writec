@@ -10,12 +10,12 @@ const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const h = React.createElement;
 let compact = false, opened = false;
-const rows = [{id:'n',type:'resubmission_requested',title:'Resubmission requested',
+const rows = [{id:'n',type:'student_private_comment',title:'New private comment',
   message:'Action required: revise your assignment. ' + 'LongAssignmentTitle'.repeat(15),
   classroom_id:'c',assignment_id:'a',submission_id:'s',metadata:{classroom_name:'Methods of Research'},
   created_at:'2026-10-14T02:30:00Z',is_read:false}];
 const react = {...React, useState(initial) {
-  if (initial && Array.isArray(initial.rows)) initial = {...initial,rows,total:1,loading:false,identity:`s:all:1:${compact?5:20}`};
+  if (initial && Array.isArray(initial.rows)) initial = {...initial,rows,total:1,loading:false,identity:`s:all:All:1:${compact?5:20}`};
   if (compact && initial === false && !opened) { initial = true; opened = true; }
   return React.useState(initial);
 }};

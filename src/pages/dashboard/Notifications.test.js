@@ -11,7 +11,7 @@ beforeEach(() => {
   jest.clearAllMocks(); calls = []; response = { data: [row], count: 1 };
   supabase.from.mockImplementation(table => {
     const query = { then: (resolve, reject) => Promise.resolve(response).then(resolve, reject) };
-    ["select", "eq", "order", "range"].forEach(method => { query[method] = (...args) => { calls.push([table, method, ...args]); return query; }; });
+    ["select", "eq", "in", "order", "range"].forEach(method => { query[method] = (...args) => { calls.push([table, method, ...args]); return query; }; });
     return query;
   });
   supabase.rpc.mockResolvedValue({ data: 1 });
@@ -85,4 +85,18 @@ test("quiet count uses HEAD, refreshes on focus, and uses the protected read RPC
   const count = supabase.from.mock.calls.length;
   unmount(); fireEvent.focus(window);
   expect(supabase.from).toHaveBeenCalledTimes(count);
+});
+
+ test.each(["student_class_comment", "student_private_comment"])("comment type %s is categorized and opens safely", async type => {
+  const item = { ...row, type, title: type === "student_class_comment" ? "New class comment" : "New private comment", submission_id: null };
+  response = { data: [item], count: 1 };
+  const state = model(); const navigate = jest.fn(); const open = jest.fn().mockResolvedValue(navigate);
+  render(<NotificationsPage model={state} onOpen={open} />);
+  await screen.findByText(type === "student_class_comment" ? "Class Comment" : "Private Comment");
+  fireEvent.click(screen.getByRole("button", { name: "Comments" }));
+  await waitFor(() => expect(calls).toContainEqual(["notifications", "in", "type", ["student_class_comment", "student_private_comment"]]));
+  fireEvent.click(await screen.findByRole("button", { name: "View comments" }));
+  await waitFor(() => expect(navigate).toHaveBeenCalled());
+  expect(open).toHaveBeenCalledWith(item);
+  expect(state.markRead).toHaveBeenCalledWith(item.id);
 });

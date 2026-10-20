@@ -186,3 +186,34 @@ test("student reorders three pages, reviews them, and submits one complete essay
   expect(storageUpload).not.toHaveBeenCalled();
   await waitFor(() => expect(screen.queryByLabelText("Essay transcription")).not.toBeInTheDocument());
 });
+
+test("document selection rejects unsupported files before extraction and permits valid replacement", async () => {
+  jest.clearAllMocks(); useSubmissionProgress.mockImplementation(() => "");
+  URL.createObjectURL = jest.fn(() => "blob:document"); URL.revokeObjectURL = jest.fn();
+  const upload = jest.fn(); supabase.storage.from.mockReturnValue({ upload });
+  supabase.rpc.mockResolvedValue({ data: [], error: null });
+  supabase.from.mockImplementation(table => {
+    const data = table === "classroomMembers" ? [{ classroom_id: "class", student_id: student }]
+      : table === "classroomTable" ? [{ id: "class", classroom_name: "English", classroom_code: "ENG" }]
+      : table === "assignmentTable" ? [{ id: assignment, classroom_id: "class", title: "Document essay" }] : [];
+    const query = { then: resolve => Promise.resolve({ data, error: null }).then(resolve) };
+    for (const method of ["select", "eq", "in", "order"]) query[method] = () => query;
+    return query;
+  });
+  apiFetch.mockResolvedValue({ ok: true, json: async () => ({ text: "Extracted PDF essay" }) });
+  const { container } = render(<StudentDashboard profile={{ id: student, role: "student" }} />);
+  fireEvent.click(screen.getByText("Assignments tab"));
+  fireEvent.click(await screen.findByRole("button", { name: "Add or create" }));
+  fireEvent.click(screen.getByRole("button", { name: "File" }));
+  const choose = file => fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [file] } });
+  choose(new File(["text"], "bad.txt", { type: "text/plain" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Unsupported file type. Please upload a PDF, DOC, or DOCX file only.");
+  expect(apiFetch).not.toHaveBeenCalled(); expect(upload).not.toHaveBeenCalled(); expect(extractTextFromImage).not.toHaveBeenCalled();
+  choose(new File(["%PDF-1.7"], "essay.pdf", { type: "application/pdf" }));
+  await waitFor(() => expect(screen.getByLabelText("Essay transcription")).toHaveValue("Extracted PDF essay"));
+  choose(new File(["image"], "bad.jpg", { type: "image/jpeg" }));
+  await screen.findByRole("alert");
+  expect(screen.getAllByText("essay.pdf").length).toBeGreaterThan(0);
+  expect(screen.getByLabelText("Essay transcription")).toHaveValue("Extracted PDF essay");
+  expect(apiFetch).toHaveBeenCalledTimes(1); expect(upload).not.toHaveBeenCalled();
+});

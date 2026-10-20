@@ -634,3 +634,37 @@ test("deleting a still-linked assignment clears Scan Station after a notificatio
   fireEvent.click(screen.getByText("Scan tab"));
   expectUnlinkedStation();
 });
+
+test.each(["class", "private"])("student %s notification opens assignment comments without a submission", async kind => {
+  notificationRows = [{ id: "commentNotice", type: `student_${kind}_comment`, title: `New ${kind} comment`, message: "Alex commented on Essay B",
+    classroom_id: "B", assignment_id: "essayB", submission_id: null, metadata: { student_id: "s" }, is_read: false, created_at: "2026-10-14" }];
+  supabase.rpc.mockImplementation(name => Promise.resolve({ data: name === "get_classroom_roster" ? [{ student_id: "s", student_name: "Alex" }] : [] }));
+  render(<TeacherDashboard profile={{ id: "t", role: "teacher" }} />);
+  await screen.findByRole("button", { name: "Class A" });
+  fireEvent.click(await screen.findByRole("button", { name: "Notifications, 1 unread" }));
+  fireEvent.click(await screen.findByRole("button", { name: new RegExp(`New ${kind} comment`) }));
+  await waitFor(() => expect(screen.getByRole("region", { name: kind === "class" ? "Class Comments" : "Private Comments" })).toHaveFocus());
+  expect(screen.getByRole("heading", { name: "Essay B" })).toBeInTheDocument();
+  if (kind === "private") await waitFor(() => expect(screen.getByLabelText("Student conversation")).toHaveValue("s"));
+  expect(screen.queryByPlaceholderText("Leave remarks or suggestions for the student...")).not.toBeInTheDocument();
+  expect(supabase.rpc).toHaveBeenCalledWith("mark_notifications_read", { notification_key: "commentNotice" });
+});
+
+test("File mode rejects unsupported input, recovers with PDF, and retains valid file on bad replacement", async () => {
+  URL.createObjectURL = jest.fn(() => "blob:document"); URL.revokeObjectURL = jest.fn();
+  const { container } = render(<TeacherDashboard profile={{ id: "t", role: "teacher" }} />);
+  await screen.findByRole("button", { name: "Class A" });
+  fireEvent.click(screen.getByText("Scan tab"));
+  fireEvent.click(screen.getByRole("button", { name: "File" }));
+  const choose = file => fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [file] } });
+  choose(new File(["text"], "essay.txt", { type: "text/plain" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Unsupported file type. Please upload a PDF, DOC, or DOCX file only.");
+  expect(container.querySelector('input[type="file"]').value).toBe("");
+  choose(new File(["%PDF-1.7"], "valid.pdf", { type: "application/pdf" }));
+  await screen.findAllByText("valid.pdf");
+  choose(new File(["image"], "photo.jpg", { type: "image/jpeg" }));
+  await screen.findByRole("alert");
+  expect(screen.getAllByText("valid.pdf").length).toBeGreaterThan(0);
+  expect(screen.queryByText("photo.jpg")).not.toBeInTheDocument();
+  expect(checkPlagiarismViaBackend).not.toHaveBeenCalled();
+});

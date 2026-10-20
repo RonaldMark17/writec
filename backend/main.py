@@ -622,7 +622,7 @@ async def health():
 
 
 @app.post("/api/submissions/upload")
-def upload_submission_file(request: Request, file: UploadFile = File(...), assignment_id: str = Form(...)):
+def upload_submission_file(request: Request, file: UploadFile = File(...), assignment_id: str = Form(...), upload_mode: str = Form("auto")):
     """Uploads student essay files locally when Supabase bucket is missing or fails."""
     account = require_assignment(request, assignment_id)
     if account['role'] != 'student':
@@ -647,6 +647,14 @@ def upload_submission_file(request: Request, file: UploadFile = File(...), assig
     if is_image:
         try:
             validate_image(data)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+    if upload_mode not in {'auto', 'file', 'picture', 'text'}:
+        raise HTTPException(400, 'Invalid upload mode.')
+    if upload_mode == 'file' or (not is_image and not (upload_mode in {'text', 'auto'} and safe_name.lower().endswith('.txt'))):
+        from document_validation import validate_document
+        try:
+            validate_document(data, safe_name, file.content_type)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
     target_path.write_bytes(data)
@@ -1039,8 +1047,13 @@ async def check_plagiarism(
     sandbox = False
 
     if file:
-        file_bytes = await file.read()
+        file_bytes = await file.read(25 * 1024**2 + 1)
         filename = file.filename
+        from document_validation import validate_document
+        try:
+            validate_document(file_bytes, filename or '', file.content_type)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
     elif request:
         try:
             body = await request.json()
@@ -1406,13 +1419,15 @@ def submission_image_ocr(data, filename):
 def extract_uploaded_document(file: UploadFile = File(...)):
     """Extract uploaded documents through the same path as automatic submissions."""
     from document_text import extract_document
+    from document_validation import validate_document
     data = file.file.read(25 * 1024 * 1024 + 1)
     try:
+        validate_document(data, file.filename or '', file.content_type)
         text = extract_document(data, file.filename or '', submission_image_ocr)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(422, "This document could not be read. Use a readable PDF, DOCX, text file, or image.") from exc
+        raise HTTPException(422, "This document could not be read. Use a readable PDF or DOCX document.") from exc
     return {"text": text}
 
 

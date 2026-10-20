@@ -66,13 +66,13 @@ test("rejects unsupported or oversized images and supports drag/drop", () => {
   fireEvent.drop(document.querySelector(".demo-dropzone"), { dataTransfer: { files: [new File(["x"], "essay.jpg", { type: "image/jpeg" })] } });
   expect(screen.getByText("essay.jpg")).toBeInTheDocument();
 });
-test("tabs support arrow keys and document mode preserves sign-in processing access", () => {
+test("tabs support arrow keys and document mode preserves sign-in processing access", async () => {
   const auth = jest.fn(); render(<LandingDemo onAuth={auth} />);
   fireEvent.keyDown(screen.getByRole("tab", { name: "Picture" }), { key: "ArrowRight" });
   expect(screen.getByRole("tab", { name: "Document" })).toHaveFocus();
   expect(screen.getByRole("tab", { name: "Document" })).toHaveAttribute("aria-selected", "true");
-  fireEvent.change(screen.getByLabelText("Choose essay document"), { target: { files: [new File(["doc"], "essay.pdf", { type: "application/pdf" })] } });
-  fireEvent.click(screen.getByRole("button", { name: "Sign in" })); expect(auth).toHaveBeenCalledWith("login");
+  fireEvent.change(screen.getByLabelText("Choose essay document"), { target: { files: [new File(["%PDF-1.7"], "essay.pdf", { type: "application/pdf" })] } });
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in" })); expect(auth).toHaveBeenCalledWith("login");
 });
 test("landing has one theme control, demo anchor and observer-based section state", async () => {
   let observeCallback;

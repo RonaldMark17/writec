@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from admin_api import supabase_request
 from submission_access import require_assignment, file_reference, local_file, storage_download
@@ -15,6 +16,7 @@ router = APIRouter(prefix='/api/submissions', tags=['Submissions'])
 
 
 class ReviewedSubmission(BaseModel):
+    upload_mode: Literal["auto", "file", "picture", "text"] = "auto"
     retry_job_id: uuid.UUID | None = None
     revision_request_id: uuid.UUID | None = None
     assignment_id: uuid.UUID
@@ -52,6 +54,17 @@ def submit_reviewed_work(body: ReviewedSubmission, request: Request):
 
     # Originals are validated on the server even when the browser uploaded
     # directly to Supabase. A bundle cannot enqueue a partial/changed transcript.
+    if body.upload_mode == 'file' or (not key.lower().endswith(('.essay.zip', '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.txt'))):
+        from document_validation import validate_document
+        try:
+            if kind == 'local':
+                with local_file(request.app.state.upload_root, key).open('rb') as original:
+                    data = original.read(25 * 1024**2 + 1)
+            else:
+                data = storage_download(request, key, max_bytes=25 * 1024**2)
+            validate_document(data, key)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
     if key.endswith('.essay.zip'):
         if kind != 'local':
             raise HTTPException(400, 'Essay bundles must use server-managed storage.')

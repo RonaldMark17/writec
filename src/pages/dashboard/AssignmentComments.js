@@ -1,10 +1,22 @@
 import ValidatedForm, { ValidatedTextarea, ValidatedSelect } from "../../ValidatedForm";
 import { PaginatedList } from "./Pagination";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../supabaseClient";
 import { formatDateTime } from "./shared";
 
-export default function AssignmentComments({ assignmentId, classroomId, profile }) {
+function commentRequestId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export default function AssignmentComments({ assignmentId, classroomId, profile, target }) {
+  const root = useRef(null);
+  const requestKeys = useRef({});
+  const focusedTarget = useRef(null);
   const [comments, setComments] = useState([]);
   const [roster, setRoster] = useState([]);
   const [recipient, setRecipient] = useState("");
@@ -35,17 +47,30 @@ export default function AssignmentComments({ assignmentId, classroomId, profile 
     return () => { cancelled = true; };
   }, [assignmentId, classroomId, teacher, attempt]);
 
+  useEffect(() => {
+    if (loading || !target || focusedTarget.current === target || String(target.assignmentId) !== String(assignmentId)) return;
+    focusedTarget.current = target;
+    if (target.kind === "private" && teacher && (roster.some(r => r.student_id === target.studentId) || comments.some(c => c.student_id === target.studentId))) setRecipient(target.studentId);
+    const section = root.current?.querySelector(`[data-comment-kind="${target.kind}"]`);
+    section?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    section?.focus({ preventScroll: true });
+  }, [target, loading, assignmentId, teacher, roster, comments]);
+
   async function submit(event, kind) {
     event.preventDefault();
     if (saving || (teacher && !recipient)) return;
     setSaving(kind); setError("");
     try {
+      const signature = JSON.stringify([assignmentId, classroomId, kind, recipient, drafts[kind].trim()]);
+      if (requestKeys.current[kind]?.signature !== signature) requestKeys.current[kind] = { signature, id: commentRequestId() };
       const { error } = await supabase.rpc("post_assignment_comment", {
         requested_assignment_id: String(assignmentId), requested_classroom_id: String(classroomId),
         comment_text: drafts[kind].trim(), comment_kind: kind,
         recipient_student_id: teacher ? recipient : null,
+        request_id: requestKeys.current[kind].id,
       });
       if (error) throw error;
+      delete requestKeys.current[kind];
       setDrafts((current) => ({ ...current, [kind]: "" }));
       setAttempt((value) => value + 1);
     } catch (error) { setError(error.message || "Unable to post comment."); }
@@ -56,14 +81,14 @@ export default function AssignmentComments({ assignmentId, classroomId, profile 
   comments.filter((row) => row.visibility === "private").forEach((row) => {
     if (!recipients.has(row.student_id)) recipients.set(row.student_id, row.recipient_name || "Student");
   });
-  return <div aria-label="Assignment comments" className="mt-5 space-y-5">
+  return <div ref={root} aria-label="Assignment comments" className="mt-5 space-y-5">
     {error && <p role="alert" className="text-sm text-red-700">{error} <button type="button" onClick={() => setAttempt((value) => value + 1)} className="underline">Retry</button></p>}
     {["class", "private"].map((kind) => {
       const title = kind === "class" ? "Class Comments" : "Private Comments";
       const rows = comments.filter((row) => (row.visibility || "private") === kind &&
         (kind === "class" || !teacher || row.student_id === recipient));
       const canPost = profile?.role === "student" || (teacher && kind === "private" && roster.some((r) => r.student_id === recipient));
-      return <section key={kind} aria-label={title} className="space-y-4 rounded-xl border border-[#dadce0] bg-white p-5">
+      return <section key={kind} data-comment-kind={kind} tabIndex={-1} aria-label={title} className="space-y-4 rounded-xl border border-[#dadce0] bg-white p-5">
         <h3 className="font-medium text-[#202124]">{title}</h3>
         <p className="text-xs text-gray-500">{kind === "class" ? "Visible to enrolled classmates and the classroom teacher." : "Visible only to the student in this conversation and the classroom teacher."}</p>
         {teacher && kind === "private" && <label className="block text-sm">Student conversation
